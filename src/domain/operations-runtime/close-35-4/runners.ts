@@ -12,8 +12,12 @@
  * officer approval): `STEP_RUNNERS`. `form_1098` (the kind `tax_year` period's furnish step) is 7.1's `furnishForm1098`
  * per loan and stays an ask of 7.1 (its runner needs the rendered form 35.2 stores) — the tax-year board shows it planned.
  *
- * Until 35.3's executor is merged, sweep.ts runs the units planned in a pass through `runUnitsInline`; with 35.3 present
- * its `cycles.ts` names these runners (`CLOSE_RUNNERS`) and this process plans jobs only.
+ * With 35.3 on the runtime its registry names these runners (src/domain/operations-runtime/cycles-35-4.ts attaches them to
+ * runners.ts's RUNNERS — `ledger_period_close`, `investor_period_close`, `form_496_monthly`, `form_496a_monthly`, `star_monthly`)
+ * and this process plans jobs only (ports.ts: the run 35.3's planner opened, its blocked units queued when the chain's
+ * dependencies are met); 35.3's executor runs them. A unit whose owner has not landed in 35.3's registry (6.3's daily and
+ * 5.1's LAR at HEAD), or every unit on a runtime where 35.3's cycles pass does not run (no `databaseUrl`), is run by sweep.ts
+ * through `runUnitsInline` (ports.ts ownerRuns decides per cycle).
  */
 import { randomUUID } from "node:crypto";
 import type { Actor } from "../../../kernel/events/index.ts";
@@ -24,16 +28,18 @@ import { computeMetrics, type CohortCounts } from "../../qc-audit/ops-18-3.ts";
 import { computeFigures } from "./attest.ts";
 import { etDate } from "./calendar.ts";
 import type { UnitsToRun } from "./plan.ts";
-import { closePorts } from "./ports.ts";
+import { closePorts, ownerRuns } from "./ports.ts";
+import { periodEndOf, periodStartOf } from "./calendar.ts";
 import { statementOfRecord } from "./reads.ts";
 import { periodByKey, stepsOf } from "./store.ts";
 import { CLOSE_AGENT, CLOSE_PROMPT_VERSION, CLOSE_REVIEWER_AGENT, type ClosePeriodRow } from "./types.ts";
 import { piUnits } from "./open.ts";
 
-export type RunnerOutcome = { outcome: "done" | "skipped"; detail?: string };
+/** `done`: the owner's command ran; `skipped`: nothing to run (the receipt is already on the bus, the unit is not the owner's to run); `drafted`: 6.3's form drafted for its own review (rule 7's officer record still to come) — the step's receipt is the owner's completion. */
+export type RunnerOutcome = { outcome: "done" | "skipped" | "drafted"; detail?: string };
 export type CloseRunner = (rt: Runtime, unit: { unit_id: string; period_key: string; input: Record<string, unknown> }, at: string) => Promise<RunnerOutcome>;
 /** A receipt-only step this process drives itself: the whole step for the period at once (it knows its own units). */
-export type StepRunner = (rt: Runtime, p: ClosePeriodRow, at: string, o: { runId: string; officer: Actor | null; executorPresent: boolean }) => Promise<RunnerOutcome>;
+export type StepRunner = (rt: Runtime, p: ClosePeriodRow, at: string, o: { runId: string; officer: Actor | null }) => Promise<RunnerOutcome>;
 
 const CUSTODIAL_RECON: Actor = { kind: "agent", id: CLOSE_AGENT };
 const INVESTOR_REPORTING: Actor = { kind: "agent", id: "investor-reporting" };
@@ -49,6 +55,8 @@ async function periodOfUnit(rt: Runtime, key: string): Promise<ClosePeriodRow> {
   const p = await periodByKey(rt.db, "month", key, servicer); if (!p) throw new RangeError(`35.4 runner: no close period ${key}`);
   return p;
 }
+/** The month a 35.3 period key names (`YYYY-MM`), whether or not this chain has opened its close period (35.3's executor may run 5.1's close for a period the chain has not seen). */
+const monthOfKey = (key: string): { period: string; period_start: PlainDate; period_end: PlainDate } => { if (!/^\d{4}-\d{2}$/.test(key)) throw new RangeError(`35.4 runner: period key ${key} is not a month`); return { period: key, period_start: periodStartOf(key), period_end: periodEndOf(key) }; };
 const balance = async (rt: Runtime, account: string, ledger: string, asOf: PlainDate): Promise<bigint> => big((await rt.db.query<{ s: string }>(`SELECT coalesce(sum(l.amount_cents), 0)::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id WHERE l.scope = 'custodial' AND l.custodial_account_id = $1 AND l.account = $2 AND e.effective_date <= $3::date`, [account, ledger, asOf]))[0]?.s);
 /** 6.3's Section III rows for the account as of the day: the open reconciliation items (each with its loan, root cause, first-seen date and evidence — 6.3-T11's reviewer requirements). */
 async function sectionIII(rt: Runtime, account: string, asOf: PlainDate, statementDocId: string | null): Promise<Record<string, unknown>[]> {
@@ -72,8 +80,9 @@ async function officerApprovalId(rt: Runtime, p: ClosePeriodRow, unit: { custodi
 export const CLOSE_RUNNERS: Readonly<Record<string, CloseRunner>> = {
   /** 6.3's month-end cut-off per custodial account (`timer.*{op: close_period}` → `ledger.period.closed{period_end}`; for a P&I account the following month's remittance schedule). */
   async ledger_period_close(rt, u, _at) {
-    const account = str(u.input, "custodial_account_id"); const periodEnd = str(u.input, "period_end") || str(u.input, "as_of_date"); const kind = str(u.input, "account_kind") || "pi";
+    const account = str(u.input, "custodial_account_id"); const periodEnd = str(u.input, "period_end") || str(u.input, "as_of_date") || (/^\d{4}-\d{2}$/.test(u.period_key) ? periodEndOf(u.period_key) : ""); const kind = str(u.input, "account_kind") || str(u.input, "kind") || "pi";
     if (!account || !periodEnd) throw new RangeError("ledger_period_close unit needs custodial_account_id and period_end");
+    if (kind !== "pi" && kind !== "ti") return { outcome: "skipped", detail: `no month-end cut-off of 6.3's for a ${kind} account (the chain closes the P&I and T&I ledgers)` };
     if (await receiptExists(rt, "ledger.period.closed", { period_end: periodEnd, custodial_account_id: account })) return { outcome: "skipped", detail: "ledger.period.closed already on the bus" };
     const remittance = str(u.input, "remittance_type");
     await rt.execute({ process: "6.3", name: "timer.*", loanId: "", actor: CUSTODIAL_RECON, input: { op: "close_period", period_end: periodEnd, custodial_account_id: account, account_kind: kind, ...(remittance ? { remittance_type: remittance } : {}) } });
@@ -84,7 +93,7 @@ export const CLOSE_RUNNERS: Readonly<Record<string, CloseRunner>> = {
     const period = u.period_key;
     if (await receiptExists(rt, "investor_reporting_periods.closed", { period, checklist_complete: true })) return { outcome: "skipped", detail: "investor_reporting_periods.closed already on the bus" };
     const servicer = await closePorts(rt).servicer.servicerNumber(rt.db);
-    const p = await periodOfUnit(rt, period);
+    const p = monthOfKey(period);
     const active = Number((await rt.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loans WHERE status = 'active'`))[0]!.c);
     const hard = Number((await rt.db.query<{ c: string }>(`SELECT count(DISTINCT ie.loan_id)::text AS c FROM investor_event_exceptions x JOIN investor_events ie ON ie.id = x.event_id WHERE x.severity IN ('hard', 'invalid') AND x.resolved_at IS NULL AND x.detected_at <= $1::timestamptz`, [at]).catch(() => [{ c: "0" }]))[0]!.c);
     const soft = Number((await rt.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM investor_event_exceptions WHERE severity = 'soft' AND resolved_at IS NULL AND triage IS NULL AND detected_at <= $1::timestamptz`, [at]).catch(() => [{ c: "0" }]))[0]!.c);
@@ -103,17 +112,21 @@ export const CLOSE_RUNNERS: Readonly<Record<string, CloseRunner>> = {
     if (!unit.custodial_account_id) throw new RangeError("form_496_monthly unit needs custodial_account_id");
     if (await receiptExists(rt, "custodial.reconciliation.completed", { kind: "monthly_form_496", period: p.period }, unit.custodial_account_id)) return { outcome: "skipped", detail: "custodial.reconciliation.completed already on the bus" };
     const f = await computeFigures(rt.db, unit, p);
-    if (f.bank_closing_ledger_cents === null) throw new RangeError(`no statement of record for ${unit.custodial_account_id} as of ${p.period_end} (6.3 rule 1: the closing ledger is the balance of record)`);
+    // 6.3 rule 1: the closing ledger is the balance of record — 6.3's own statement of record for the day, else the day's prior-day statement from the custodial bank port (the FAKE in every build stage; what 6.3's daily pull reads)
+    let bank = f.bank_closing_ledger_cents;
+    if (bank === null && rt.ports.custodialBank) bank = (await rt.ports.custodialBank.priorDay(unit.custodial_account_id, p.period_end)).closingLedgerCents;
+    if (bank === null) throw new RangeError(`no statement of record for ${unit.custodial_account_id} as of ${p.period_end} (6.3 rule 1: the closing ledger is the balance of record)`);
     const ports = closePorts(rt); const servicer = await ports.servicer.servicerNumber(rt.db);
     const flag = await ports.config.humanApprovalOn(rt.db, p.period, p.period_end);
     const approval = flag ? await officerApprovalId(rt, p, unit) : null;
-    if (flag && !approval) return { outcome: "skipped", detail: "custodial.form496.human_approval is on and no officer approval record exists yet (rule 7)" };
+    // rule 7: under the flag the form completes on the officer's record; without one it is drafted (6.3's draft → review → complete) and 6.3's own chain completes it — the step's receipt is that completion, never this unit's outcome
+    const complete = !flag || !!approval;
     const kind = formKind(unit.remittance_type);
     await rt.execute({ process: "6.3", name: "form496.generate", loanId: "", actor: CUSTODIAL_RECON, input: { kind, period: p.period, custodial_account_id: unit.custodial_account_id, servicer_number: servicer, remittance_type: unit.remittance_type,
-      section_i: { bank_closing_ledger_cents: f.bank_closing_ledger_cents, deposits_in_transit_cents: f.deposits_in_transit_cents, disbursements_in_transit_cents: f.disbursements_in_transit_cents, adjustments_cents: f.depository_adjustments_cents },
+      section_i: { bank_closing_ledger_cents: bank, deposits_in_transit_cents: f.deposits_in_transit_cents, disbursements_in_transit_cents: f.disbursements_in_transit_cents, adjustments_cents: f.depository_adjustments_cents },
       composition: form496Composition(kind, f.composition), cashbook_cents: f.cashbook_cents, section_iii: await sectionIII(rt, unit.custodial_account_id, p.period_end, f.statement_document_id),
-      preparer_run_id: `close-35-4:${p.period}:${unit.custodial_account_id}`, posting_run_ids: [], human_approval_on: flag, officer_approval_id: approval, complete: true } });
-    return { outcome: "done" };
+      preparer_run_id: `close-35-4:${p.period}:${unit.custodial_account_id}`, posting_run_ids: [], human_approval_on: flag, officer_approval_id: approval, complete } });
+    return complete ? { outcome: "done" } : { outcome: "drafted", detail: "custodial.form496.human_approval is on and no officer approval record exists yet (rule 7): the form is drafted; 6.3's chain completes it on the officer's record" };
   },
   /** 6.4's Form 496A per T&I account (`form496a.generate`) from the account's statement of record and its ledger balances (P/N from the T&I cash balance's sign, U unapplied, I interest; advances, loss drafts, buydown and other are their own ledgers when 6.4 posts them). */
   async form_496a_monthly(rt, u, _at) {
@@ -144,11 +157,33 @@ export const CLOSE_RUNNERS: Readonly<Record<string, CloseRunner>> = {
   },
 };
 
-/** The receipt-only steps this process drives (see the header). */
+/** The receipt-only steps this process drives (see the header), and the completion leg of 6.3's Form 496 under rule 7. */
 export const STEP_RUNNERS: Readonly<Record<string, StepRunner>> = {
+  /**
+   * 6.3's Form 496 chain is draft → review → complete (rule 1's table): the cycle's unit (35.3's executor, or the inline run) drafts the
+   * form when the officer's record does not exist yet under the flag (CLOSE_RUNNERS.form_496_monthly); the close pass completes a drafted
+   * form the moment rule 7's record exists (the FAKE officer's in every build stage before go-live, the person's in production — the
+   * same `close.attest{op: approve}` record the attestation needs), by re-running 6.3's `form496.generate` with `complete` — 6.3's own
+   * tool upserts its `f496-<account>-<period>` reconciliation and emits `custodial.reconciliation.completed`, the step's receipt.
+   * Never before the draft exists: 35.3's job stays the unit that runs first.
+   */
+  async form496(rt, p, at, _o) {
+    const step = (await stepsOf(rt.db, p.id)).find((s) => s.code === "form496");
+    if (!step || !["planned", "running", "stalled"].includes(step.status)) return { outcome: "skipped", detail: `form496 is ${step?.status ?? "absent"}` };
+    const flag = await closePorts(rt).config.humanApprovalOn(rt.db, p.period, p.period_end);
+    let ran = 0;
+    for (const unit of await piUnits(rt.db, p.period)) {
+      if (await receiptExists(rt, "custodial.reconciliation.completed", { kind: "monthly_form_496", period: p.period }, unit.custodial_account_id)) continue;
+      if (!(await receiptExists(rt, "custodial.reconciliation.drafted", { kind: "monthly_form_496", period: p.period }, unit.custodial_account_id))) continue;   // the cycle's unit drafts first
+      if (flag && !(await officerApprovalId(rt, p, unit))) continue;   // rule 7: the officer's record is what completes it
+      const r = await CLOSE_RUNNERS["form_496_monthly"]!(rt, { unit_id: `${unit.custodial_account_id}:${unit.remittance_type}`, period_key: p.period, input: { custodial_account_id: unit.custodial_account_id, remittance_type: unit.remittance_type, period_end: p.period_end, as_of_date: p.period_end } }, at);
+      if (r.outcome === "done") ran++;
+    }
+    return ran ? { outcome: "done", detail: `${ran} form(s) completed on the officer's record` } : { outcome: "skipped", detail: "no drafted Form 496 with the officer's record to complete" };
+  },
   /** 6.3's 17:00 three-way close of the month's last day per P&I account (`timer.*{op: close_day}` → `custodial.reconciliation.daily_completed{as_of_date}`), from the unit's own figures. */
-  async custodial_day_close(rt, p, _at, o) {
-    if (o.executorPresent) return { outcome: "skipped", detail: "6.3's daily close is 35.3's job when its executor is present" };
+  async custodial_day_close(rt, p, _at, _o) {
+    if (ownerRuns(rt, "custodial_recon_daily")) return { outcome: "skipped", detail: "6.3's daily close is 35.3's custodial_recon_daily unit on this runtime" };
     let ran = 0;
     for (const unit of await piUnits(rt.db, p.period)) {
       if (await receiptExists(rt, "custodial.reconciliation.daily_completed", { as_of_date: p.period_end, custodial_account_id: unit.custodial_account_id })) continue;
@@ -185,10 +220,11 @@ export const STEP_RUNNERS: Readonly<Record<string, StepRunner>> = {
   },
 };
 
-/** The inline executor of last resort (no 35.3): every planned unit of every step through its runner, sequentially, in chain order; a unit without a runner is skipped and reported. `extra` are the FAKE neighbours' runners (nonprod only). */
+/** The inline executor of last resort: every planned unit of every step whose owner does not run on this runtime (ports.ts ownerRuns — no 35.3 runner for the cycle, or no 35.3 cycles pass here at all) through its runner, sequentially, in chain order; a unit 35.3's executor owns, or one without a runner, is left alone. `extra` are the FAKE neighbours' runners (nonprod only). */
 export async function runUnitsInline(rt: Runtime, units: readonly UnitsToRun[], at: string, extra: Readonly<Record<string, CloseRunner>> = {}): Promise<number> {
   let ran = 0;
   for (const u of units) {
+    if (ownerRuns(rt, u.cycle_code)) continue;   // 35.3's executor runs the owner's unit (the jobs ports.ts queued)
     const runner = extra[u.cycle_code] ?? CLOSE_RUNNERS[u.cycle_code]; if (!runner) continue;   // a FAKE registers itself only where the owner cannot run here, and then it is the one to run
     for (const unit of u.units) {
       try { const r = await runner(rt, { unit_id: unit.unit_id, period_key: u.tax_year !== null ? String(u.tax_year) : u.period, input: unit.input }, at); if (r.outcome === "done") ran++; }
@@ -199,12 +235,12 @@ export async function runUnitsInline(rt: Runtime, units: readonly UnitsToRun[], 
 }
 
 /** The receipt-only steps this process drives, for every open month period whose step is planned or running, in chain order. */
-export async function runStepsInline(rt: Runtime, periods: readonly ClosePeriodRow[], at: string, o: { runId: string; officer: Actor | null; executorPresent: boolean }): Promise<number> {
+export async function runStepsInline(rt: Runtime, periods: readonly ClosePeriodRow[], at: string, o: { runId: string; officer: Actor | null }): Promise<number> {
   let ran = 0;
   for (const p of periods) {
     const steps = await stepsOf(rt.db, p.id);
     for (const s of steps) {
-      const runner = STEP_RUNNERS[s.code]; if (!runner || !["planned", "running"].includes(s.status)) continue;
+      const runner = STEP_RUNNERS[s.code]; if (!runner || !["planned", "running", "stalled"].includes(s.status)) continue;
       try { const r = await runner(rt, p, at, o); if (r.outcome === "done") ran++; }
       catch (e) { rt.logger?.error("close step runner failed", { period: p.period, step: s.code, error: e instanceof Error ? e.message : String(e) }); }
     }

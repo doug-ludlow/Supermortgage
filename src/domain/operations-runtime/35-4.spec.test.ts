@@ -5,12 +5,14 @@
 //
 // Every T-id runs against Postgres (the file has its own database, src/infra/db/test-db.ts; REQUIRE_DB=1 in CI); a T-id
 // whose Given contradicts the main scenario's state (T6's restated statement, T8's flag, T9's runs) gets a side database
-// of its own driven to the same state. The receipts the chain waits on are the owning sections' own events: where the
-// section's emitter exists it is run here (6.3 `timer.*{close_period | close_day}` and `form496.generate`, 5.1
-// `closeReportingPeriod`, 18.1 `qcScheduleTicks`); where the owner is a sibling process not yet in this tree (35.5's
-// `cashiering.daily.run_completed`, 35.3's `investor.lar.run_completed`) or its builder needs a book this fixture has no
-// use for (8.1's snapshot) the fixture appends that literal under the owner's actor as its stand-in — the Given of the
-// sentence, never production code (rule 2: this process emits none of them).
+// of its own driven to the same state. The hand-driven scenarios run a Runtime without `databaseUrl`, so 35.3's cycles
+// pass (its planner and executor) does not run on it and the sweep's close pass is the fallback emitter of
+// `ledger.month.ended` (close-35-4/sweep.ts); the receipts the chain waits on are the owning sections' own events: where
+// the section's emitter exists it is run here (6.3 `timer.*{close_period | close_day}` and `form496.generate`, 5.1
+// `closeReportingPeriod`, 18.1 `qcScheduleTicks`); where the owner's unit runs only through 35.3's executor (35.5's
+// `cashiering.daily.run_completed`, 35.3's `investor.lar.run_completed`, 8.1's snapshot) the fixture appends that literal
+// under the owner's actor as its stand-in — the Given of the sentence, never production code (rule 2: this process emits
+// none of them). T4 is the hosted runtime (`databaseUrl` set): 35.3's planner and executor run every cycle each demo day.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
@@ -66,10 +68,10 @@ class Scenario {
   static async open(suffix?: string, o: { demo?: boolean } = {}): Promise<Scenario> {
     const s = new Scenario();
     const t = suffix ? await testDatabase(import.meta.url, { suffix }) : { url: DB_URL, close: async () => undefined };
-    s.db = connect(t.url); s.closeDb = async () => { await s.db.end(); await t.close(); };
-    // T4: the hosted runtime's demo clock (an OffsetClock over a stand-still base) with the FAKE reviewers on, as the demo environment runs
+    s.db = connect(t.url); s.closeDb = async () => { await s.db.end(); if (!process.env["KEEP_TEST_DB"]) await t.close(); };   // KEEP_TEST_DB=1 keeps the side database for a look afterwards (src/infra/db/test-db.ts)
+    // T4: the hosted runtime's demo clock (an OffsetClock over a stand-still base) with the FAKE reviewers on, as the demo environment runs — and `databaseUrl` for 35.3's planner lock, so its cycles pass (the production registry: `month_end`, `cashiering_daily`, `metro2_monthly`, this process's own units) runs every demo day (35.3 D13 / rule 10)
     if (o.demo) s.clock = await loadDemoClock(s.db, { base: new FixedClock("2026-09-28T16:00:00.000Z") });
-    s.rt = new Runtime({ db: s.db, registry: loadOverriddenRegistry(), clock: s.clock, env: { ...process.env, ENVIRONMENT: "nonprod", ...(o.demo ? {} : { CLOSE_SWEEP_RUNNERS: "off" }) }, environment: "nonprod", ...(o.demo ? { reviewers: new FakeReviewers({ delaySeconds: 0 }), logger: s.logger } : {}) });
+    s.rt = new Runtime({ db: s.db, registry: loadOverriddenRegistry(), clock: s.clock, env: { ...process.env, ENVIRONMENT: "nonprod", ...(o.demo ? {} : { CLOSE_SWEEP_RUNNERS: "off" }) }, environment: "nonprod", ...(o.demo ? { reviewers: new FakeReviewers({ delaySeconds: 0 }), logger: s.logger, databaseUrl: t.url } : {}) });
     const bytes: DocumentBytesPort = { async read(_q, id) { return s.docs.get(id) ?? null; } };
     const config: ConfigPort = { async humanApprovalOn() { return s.humanApproval; } };
     setClosePorts(s.rt, { documents: bytes, config });
@@ -276,9 +278,14 @@ test("35.4-T4: Given the demo clock advanced from 2026-09-28 to 2026-11-16 with 
     const sep = (await T.db.query<{ attested_at: string }>(`SELECT to_char(attested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS attested_at FROM close_periods WHERE kind = 'month' AND period = '2026-09' AND servicer_number = $1`, [SN]))[0]!;
     assert.ok(sep.attested_at <= et("2026-10-07", "17:00"), `2026-09 attested at ${sep.attested_at}`);
     assert.equal((await T.timer("SM_CLOSE_ATTEST_BD5", periodAggregate(SN, "2026-09").id))[0]!.status, "satisfied");
-    // the owners' receipts are the owners' own events under their own actors; the stand-ins say FAKE, the real runs (6.3's day close and cut-off, 5.1's close, 6.3's Form 496, 6.4's Form 496A, 18.3's compute) do not
-    assert.equal(await T.count(`FROM loan_events WHERE type IN ('cashiering.daily.run_completed', 'investor.lar.run_completed', 'credit.cycle.snapshot_completed', 'qc.cycle.signed', 'eligibility.computed') AND payload->>'vendor' = 'FAKE'`), 5 + 5 - 1);   // eligibility only at the quarter end
+    // the owners' receipts are the owners' own events under their own actors: 35.5's day and 8.1's snapshot ran as 35.3's `cashiering_daily` and `metro2_monthly` units on this hosted runtime (the election's literal, 8.1's own builder — no FAKE); the stand-ins for the owners whose unit does not run here (5.1's LAR, 18.1's signed cycle, 18.7's quarterly test) say FAKE; the real runs (6.3's day close and cut-off, 5.1's close, 6.3's Form 496, 18.3's compute — 35.3's executor running this process's own units) do not
+    assert.equal(await T.count(`FROM loan_events WHERE type IN ('cashiering.daily.run_completed', 'credit.cycle.snapshot_completed') AND payload ? 'vendor'`), 0, "35.5's day and 8.1's snapshot are 35.3's units on the hosted runtime");
+    assert.equal(await T.count(`FROM loan_events WHERE type = 'cashiering.daily.run_completed' AND payload->>'as_of_date' IN ('2026-09-30', '2026-10-31') AND payload->>'emitted_by' LIKE 'planner:%'`), 2, "35.3's election of the day's cashiering run (a zero-unit run on a book without a servicing configuration row)");
+    assert.equal(await T.count(`FROM loan_events WHERE type = 'credit.cycle.snapshot_completed' AND payload->>'as_of_date' IN ('2026-09-30', '2026-10-31') AND actor_id = 'credit-reporting'`), 2, "8.1's own snapshot per period end");
+    assert.equal(await T.count(`FROM loan_events WHERE type IN ('investor.lar.run_completed', 'qc.cycle.signed', 'eligibility.computed') AND payload->>'vendor' = 'FAKE'`), 2 + 2 + 1);   // eligibility only at the quarter end
     assert.equal(await T.count(`FROM loan_events WHERE (type IN ('custodial.reconciliation.daily_completed', 'ledger.period.closed', 'investor_reporting_periods.closed', 'star.metrics.computed') OR (type = 'custodial.reconciliation.completed' AND payload->>'kind' = 'monthly_form_496')) AND payload ? 'vendor'`), 0);
+    // this process's own units ran as 35.3's jobs (cycles-35-4.ts): one `ledger_period_close`, `investor_period_close`, `form_496_monthly`, `form_496a_monthly` and `star_monthly` run per period, each completed with its receipt row
+    for (const code of ["ledger_period_close", "investor_period_close", "form_496_monthly", "form_496a_monthly", "star_monthly"]) for (const period of ["2026-09", "2026-10"]) assert.equal(await T.count(`FROM cycle_runs r JOIN cycle_receipts c ON c.run_id = r.id WHERE r.cycle_code = $1 AND r.period_key = $2 AND r.status = 'completed' AND r.units_dead = 0`, [code, period]), 1, `${code}:${period} ran as 35.3's job to its receipt`);
     assert.equal(await T.count(`FROM loan_events WHERE type = 'custodial.reconciliation.completed' AND payload->>'kind' = 'monthly_form_496' AND payload ? 'xlsx_sha256'`), 2, "6.3's own Form 496 per period, rendered");
     // 6.4's form496a.generate is not on the bus (spec/registry/agents.json's 6.4 row is empty — src/app/tools/section06.ts): the FAKE stands in for the T&I receipt, marked as such, until 6.4 registers it
     assert.equal(await T.count(`FROM loan_events WHERE type = 'custodial.reconciliation.completed' AND payload->>'kind' = 'monthly_form_496a' AND payload->>'vendor' = 'FAKE'`), 2);

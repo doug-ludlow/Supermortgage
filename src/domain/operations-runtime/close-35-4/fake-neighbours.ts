@@ -1,13 +1,14 @@
 /**
- * §35.4 — FAKE neighbours: the receipts of the chain whose owners are not in this tree yet (35.5's cashiering day,
- * 35.3's LAR cycle) or whose real run needs a book the demo has no use for (8.1's Metro 2 snapshot, 18.1's QC cycle
- * signed by its officer, 18.7's quarterly eligibility test over GL snapshots). In every build stage before go-live
- * (35.7: "every human is a FAKE"; CLAUDE.md: every vendor an in-repo FAKE) the sweep lets this FAKE stand in for each
- * absent owner so the demo clock walks a whole close (35.4-T4, 35.3-T9) — each stand-in is the owner's own event type
- * under the owner's own actor with the fields the chain's receipt filter reads, and carries `vendor: "FAKE"` so nobody
- * mistakes it for the owner's run. Never in production (NO_FAKE_IN_PRODUCTION); off with `CLOSE_FAKE_NEIGHBOURS=off`
- * or when the FAKE reviewers are off; a neighbour steps aside the moment its own table exists in the database
- * (`cashiering_runs` for 35.5, `cycle_runs` for 35.3) — then its receipts are the owner's to emit.
+ * §35.4 — FAKE neighbours: the receipts of the chain whose owners' units do not run on this runtime (ports.ts ownerRuns:
+ * 35.3's registry has no runner for the cycle yet — 5.1's LAR at HEAD — or 35.3's cycles pass does not run here) or whose
+ * real run needs a book the demo has no use for (18.1's QC cycle signed by its officer, 18.7's quarterly eligibility test
+ * over GL snapshots). In every build stage before go-live (35.7: "every human is a FAKE"; CLAUDE.md: every vendor an
+ * in-repo FAKE) the sweep lets this FAKE stand in for each absent owner so the demo clock walks a whole close (35.4-T4,
+ * 35.3-T9) — each stand-in is the owner's own event type under the owner's own actor with the fields the chain's receipt
+ * filter reads, and carries `vendor: "FAKE"` so nobody mistakes it for the owner's run. Never in production
+ * (NO_FAKE_IN_PRODUCTION); off with `CLOSE_FAKE_NEIGHBOURS=off` or when the FAKE reviewers are off; a neighbour steps
+ * aside the moment its unit runs on the runtime (35.5's `cashiering_daily` and 8.1's `metro2_monthly` through 35.3's
+ * executor on the hosted runtime) — then its receipts are the owner's to emit.
  *
  * The FAKE officer of rule 7 (the approval record on the balance attestation) is the same FAKE person the reviewers
  * pass uses (`{kind: "human", id: "FAKE:officer", role: "officer"}`), subject to 35.7 rule 6's handover: a role handed to
@@ -20,6 +21,7 @@ import type { Runtime } from "../../../runtime/app.ts";
 import { signCycle } from "../../qc-audit/ops-18-1.ts";
 import { isProduction } from "../roles-35-7/types.ts";
 import { bd1Of, etDate } from "./calendar.ts";
+import { ownerRuns } from "./ports.ts";
 import type { CloseRunner } from "./runners.ts";
 import { stepsOf } from "./store.ts";
 import type { ClosePeriodRow } from "./types.ts";
@@ -30,7 +32,6 @@ const INVESTOR_REPORTING: Actor = { kind: "agent", id: "investor-reporting" };
 const CREDIT_REPORTING: Actor = { kind: "agent", id: "credit-reporting" };
 const QC_AUDIT: Actor = { kind: "agent", id: "qc-audit" };
 const CUSTODIAL_RECON: Actor = { kind: "agent", id: "custodial-recon" };
-const exists = async (rt: Runtime, table: string): Promise<boolean> => (await rt.db.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${table}`]))[0]?.r !== null;
 const onBus = async (rt: Runtime, type: string, filter: Record<string, unknown>): Promise<boolean> => Number((await rt.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loan_events WHERE type = $1 AND payload @> $2::jsonb`, [type, JSON.stringify(filter)]))[0]!.c) > 0;
 const append = (rt: Runtime, e: { type: string; actor: Actor; payload: Record<string, unknown>; aggregate?: { kind: string; id: string } }) => rt.uow.run({}, (ctx) => ctx.events.append({ type: e.type, actor: e.actor, payload: { ...e.payload, vendor: FAKE_NEIGHBOUR_NAME }, ...(e.aggregate ? { aggregate: e.aggregate } : {}) }), { clock: rt.clock });
 
@@ -49,19 +50,19 @@ export async function fakeOfficer(rt: Runtime): Promise<Actor | null> {
   return set.includes("officer") ? rt.reviewers!.actor("officer") : null;
 }
 
-/** The cycles the FAKE runs for an absent owner (35.3's `lar_daily`, 8.1's `metro2_monthly`) — a runner per cycle code, keyed like `CLOSE_RUNNERS`. */
+/** The cycles the FAKE runs for an absent owner (5.1's `lar_daily`, 8.1's `metro2_monthly` — each only while its unit does not run on this runtime) — a runner per cycle code, keyed like `CLOSE_RUNNERS`. */
 export async function fakeNeighbourRunners(rt: Runtime): Promise<Readonly<Record<string, CloseRunner>>> {
   if (!fakeNeighboursOn(rt)) return {};
   const out: Record<string, CloseRunner> = {};
-  if (!(await exists(rt, "cycle_runs"))) out["lar_daily"] = async (r, u) => {
+  if (!ownerRuns(rt, "lar_daily")) out["lar_daily"] = async (r, u) => {
     const bd1 = bd1Of(u.period_key);
     if (await onBus(r, "investor.lar.run_completed", { as_of_date: bd1 })) return { outcome: "skipped" };
     const loans = Number((await r.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loans WHERE status = 'active'`))[0]!.c);
     await append(r, { type: "investor.lar.run_completed", actor: INVESTOR_REPORTING, payload: { as_of_date: bd1, run_id: randomUUID(), cycle_code: "lar_daily", period_key: bd1, units_total: loans, units_done: loans } });
     return { outcome: "done", detail: "35.3 lar_daily stood in by FAKE" };
   };
-  // 8.1's builder is a domain class fed by the credit book (src/domain/credit-reporting/ops.ts) with no bus tool to run it on the demo book: the FAKE stands in for the month-end snapshot receipt
-  out["metro2_monthly"] = async (r, u) => {
+  // 8.1's builder runs as 35.3's `metro2_monthly` unit on the hosted runtime (runners.ts metro2MonthlyRunner); where that unit does not run the FAKE stands in for the month-end snapshot receipt
+  if (!ownerRuns(rt, "metro2_monthly")) out["metro2_monthly"] = async (r, u) => {
     const asOf = String(u.input["as_of_date"] ?? u.input["period_end"]);
     if (await onBus(r, "credit.cycle.snapshot_completed", { as_of_date: asOf })) return { outcome: "skipped" };
     const loans = Number((await r.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loans WHERE status = 'active'`))[0]!.c);
@@ -83,7 +84,7 @@ export async function fakeNeighbourRunners(rt: Runtime): Promise<Readonly<Record
 export async function fakeNeighbourReceipts(rt: Runtime, periods: readonly ClosePeriodRow[], at: string): Promise<number> {
   if (!fakeNeighboursOn(rt)) return 0;
   let emitted = 0;
-  const cashieringAbsent = !(await exists(rt, "cashiering_runs"));
+  const cashieringAbsent = !ownerRuns(rt, "cashiering_daily");   // 35.5's day runs as 35.3's `cashiering_daily` unit on the hosted runtime (its election emits the literal)
   for (const p of periods) {
     if (p.kind !== "month") continue;
     for (const s of await stepsOf(rt.db, p.id)) {

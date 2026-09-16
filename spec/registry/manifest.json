@@ -15547,7 +15547,7 @@
    },
    {
     "n": 8,
-    "text": "Talk to a person \u2014 Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists."
+    "text": "Talk to a person \u2014 Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the Apply tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists."
    },
    {
     "n": 9,
@@ -15555,15 +15555,15 @@
    },
    {
     "n": 10,
-    "text": "Mobile parity \u2014 Given every card kind at 390 px, then it is operable on the record sheet, and the phone shell shows the badge and next event (My Loan) and the needed-from-you count (the Tasks tab badge)."
+    "text": "Mobile parity \u2014 Given every card kind at 390 px, then it is operable in Tasks and Review, My Loan shows the badge and next event, and Tasks shows the needed count."
    },
    {
     "n": 11,
-    "text": "Deep links \u2014 Given an SMS deep link opened without a session, then L1 is required before any loan data renders; the token resolves to the card and expires at 7 days."
+    "text": "Deep links \u2014 Given an SMS deep link opened without a session, then L1 is required through `Account` with the token retained before any loan data renders, then the card renders on its step or in Tasks; the token expires at 7 days."
    },
    {
     "n": 12,
-    "text": "Degraded vendor \u2014 Given Truv returns an error, then the `ConnectCard` shows `failed` with the upload fallback and no error code is shown to the borrower."
+    "text": "Degraded vendor \u2014 Given Truv returns an error, then the Connect step shows `failed` with the upload fallback and no error code is shown to the borrower."
    },
    {
     "n": 13,
@@ -15575,7 +15575,7 @@
    },
    {
     "n": 15,
-    "text": "Nothing-needed \u2014 Given zero `owner=you` items, then the nothing-needed state renders and no reminder is sent."
+    "text": "Nothing-needed \u2014 Given zero `owner=you` items, then Tasks renders the nothing-needed state and no reminder is sent."
    },
    {
     "n": 16,
@@ -15619,7 +15619,7 @@
    },
    {
     "n": 7,
-    "text": "Given a lead with goal `limited_cash_out`, occupancy `primary`, state `AZ`, when the visitor verifies an SMS code with the lead cookie, then `lead.linked{party_id}` and `lead.authenticated{level=L1}` are logged, an `applications` row exists with `channel=organic`, `transaction_type=limited_cash_out`, `occupancy=primary`, the property `tbd` with state `AZ`, the thread shows the session's disclosure line then `entry.resumed`, and no goal card is sent."
+    "text": "Given a lead with goal `limited_cash_out`, occupancy `primary`, state `AZ`, when the visitor verifies an SMS code with the lead cookie, then `lead.linked{party_id}` and `lead.authenticated{level=L1}` are logged, an `applications` row exists with `channel=organic`, `transaction_type=limited_cash_out`, `occupancy=primary`, the property `tbd` with state `AZ`, the page lands on the Apply step the record is at, and no goal card is sent."
    },
    {
     "n": 8,
@@ -15639,7 +15639,7 @@
    },
    {
     "n": 12,
-    "text": "Given a first successful session, then no `auth.passkey.offer` line renders in any session (retired by 32.16 \u00a70.4); given a registered passkey, when the visitor returns, then a successful assertion lands in the thread with the Record open to `next`."
+    "text": "Given a first successful session, then no `auth.passkey.offer` line renders in any session (retired by 32.16 \u00a70.4); given a registered passkey, when the visitor returns, then a successful assertion lands on Apply."
    },
    {
     "n": 13,
@@ -15655,11 +15655,11 @@
    },
    {
     "n": 16,
-    "text": "Given a deep-link token for a pending card, when opened without a session, then the sign-in chooser renders with the token retained; after the code, `ui_events{deep_link_opened}` is written and the card is pinned; given an expired token, then `deep_link.expired` renders with the sign-in offer; given another party's token, then `error.party_scope` and no target is revealed."
+    "text": "Given a deep-link token for a pending card, when opened without a session, then the sign-in chooser is `Account` with the token retained; after the code, `ui_events{deep_link_opened}` is written and the card is on its step or in Tasks; given an expired token, then `deep_link.expired` renders with the sign-in offer; given another party's token, then `error.party_scope` and no target is revealed."
    },
    {
     "n": 17,
-    "text": "Given a servicing-book borrower whose phone is on `application_borrowers.contact`, when they open Sign in and verify a code to that phone, then the session resolves to their existing party, the thread renders with the Record, and on-file numbers stay hidden until L2."
+    "text": "Given a servicing-book borrower whose phone is on `application_borrowers.contact`, when they open Sign in and verify a code to that phone, then the session resolves to their existing party and lands on My Loan with the record, and on-file numbers stay hidden until L2."
    },
    {
     "n": 18,
@@ -15743,19 +15743,19 @@
    },
    {
     "n": 13,
-    "text": "Given the refinance fixture at R8, then `journey_progress` shows E1\u2013R7 `done`, R8 `current`, and Progress renders \"7 of 12\"."
+    "text": "Given the refinance fixture at R8, then `journey_progress` shows E1\u2013R7 `done`, R8 `current`, and Tasks renders Progress \"7 of 12\" from `journey_progress`."
    },
    {
     "n": 14,
-    "text": "Given `credit_reports.frozen_repositories` non-empty, then the rail shows a caution row with the lift-instructions card, and no toast or modal exists in the DOM."
+    "text": "Given `credit_reports.frozen_repositories` non-empty, then the You step shows the caution row with the lift-instructions card, and no toast or modal exists in the DOM."
    },
    {
     "n": 15,
-    "text": "Given a `DocumentCard{LE}` under Documents, when expanded, then the viewer and \"Confirm receipt\" render and confirming writes `receipt_evidence = esign_confirmed` (32.3 32.3-T22 unchanged)."
+    "text": "Given a `DocumentCard{LE}` under My Loan's documents, when expanded, then the viewer and \"Confirm receipt\" render and confirming writes `receipt_evidence = esign_confirmed` (32.3 32.3-T22 unchanged)."
    },
    {
     "n": 16,
-    "text": "Given a phone width, then the tab shell shows the badge and next event (My Loan) and the needed count (the Tasks tab badge), and the record sheet shows the same rail sections."
+    "text": "Given a phone width, then the Apply tab shell shows the badge and next event on My Loan and the needed count on Tasks, and every rail section is reachable from Tasks or My Loan."
    },
    {
     "n": 17,
@@ -15795,7 +15795,7 @@
    },
    {
     "n": 26,
-    "text": "Given Continue with Google with `email_verified = true`, then a session opens with `auth_method: oidc_google` keyed on `sub`; with `email_verified = false` the sign-in is refused (`OIDC_EMAIL_UNVERIFIED`); a Google e-mail already on file lands in that party's thread."
+    "text": "Given Continue with Google with `email_verified = true`, then a session opens with `auth_method: oidc_google` keyed on `sub`; with `email_verified = false` the sign-in is refused (`OIDC_EMAIL_UNVERIFIED`); a Google e-mail already on file lands on that party's Apply / My Loan."
    },
    {
     "n": 27,
@@ -15819,7 +15819,7 @@
    },
    {
     "n": 32,
-    "text": "Given the agent turn configured, when an account is created and the borrower then types \"yes\" and \"I want a human\", then the thread carries no flow copy line and no flow-sent chip, the first reply carries the goal card, `pinned_card` is the card the model placed last, and both typed lines are answered by the turn (no deep-link line, no fixed human line)."
+    "text": "Given the agent turn configured, when an account is created and the borrower then types \"yes\" and \"I want a human\", then the thread carries no flow copy line and no flow-sent chip, the first reply on Chat names the Apply step, `pinned_card` is the goal card, and both typed lines are answered by the turn (no deep-link line, no fixed human line)."
    }
   ],
   "tables": [
@@ -16012,6 +16012,90 @@
   "tools": [
    "underwriting.run"
   ]
+ },
+ {
+  "process": "32.19",
+  "title": "The Apply product",
+  "path": "sections/32-borrower-experience/32-19-the-apply-product.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "The door \u2014 Given a new browser with no cookies, when `/app` renders, then `[data-testid=\"apply\"][data-door=\"welcome\"]` renders on `.sm-proto` paper with the mark and a 430 px column at 1280 (full width at 390), no `thread`, `record` or `action-bar` test id exists, `footer.disclosure` is on the screen, Continue renders `data-door=\"intro\"`, \"Create an account\" renders `Account` in `sign_up`, and \"Already have an account?\" renders it in `sign_in`."
+   },
+   {
+    "n": 2,
+    "text": "The account lands on Apply \u2014 Given the account door, when an e-mail + password account is created (or the FAKE Google form under `INTEGRATIONS=fake`), then `sessions{level: L1, auth_method: password | oidc_google}` opens, `GET /v1/borrower/me` lists the organic application (`channel = organic`, created by `landSession`), the page lands on `data-tab=\"apply\" data-step=\"goal\"` with the pending `entry.goal.question` card loaded, and a returning cookie holder lands there without the door."
+   },
+   {
+    "n": 3,
+    "text": "Buy with an address \u2014 Given Buy a home, an occupancy, an address, a state, a price, a down payment, the estate type and the clean-energy lien answer, when Continue on Property, then `entry.goal.question` is resolved with `option_id = buy` and `args.property = {address, state}`, `applications.transaction_type = purchase` and `occupancy` as tapped, the three consents are written on that tap (`consents{esign: pending_verification}`, `{tcpa_sms: active}`, `credit.authorization.captured{kind = hard_pull}` \u2014 no ConsentCard, no checkbox), `application.confirmField{path = property_address}` captured the six-item address and wrote `estate_type` and `existing_clean_energy_lien` on the subject `application_properties` row before the goal tap, no `preapproval.intro` or `preapproval.where` card was sent, and the price and down payment are not yet written."
+   },
+   {
+    "n": 4,
+    "text": "Buy, still looking \u2014 Given Buy a home with Still looking, a state, a price range, a down payment and the first-time answer, when Continue, then the goal resolves with `args.property = {tbd: true, state}` and the result carries `property_tbd = true`, `preapproval.intro` and `preapproval.where` are sent, `preapproval.where` is resolved with `state`, `price_min_cents`, `price_max_cents`, `down_payment_cents`, no `property_address` six-item is captured, and after the demographics `preapproval.target` is resolved with the target price, the down payment, the loan amount and `FRM30`; the file stays `received` and Review reads the badge with `apply.review.tbd`."
+   },
+   {
+    "n": 5,
+    "text": "Refinance \u2014 Given Refinance my home with Lower payment, Pay off sooner or Take cash out, then the goal resolves with `lower_rate`, `lower_rate` or `cash_out` (`transaction_type = limited_cash_out | limited_cash_out | cash_out`), Property shows no shopping switch, the address, estate type and lien answer are held until `refi.home.confirm` is sent \u2014 with the SSN card, on `application.field.captured{current_address}` \u2014 and then resolve it (`edited = true`, the six-item address and the subject row), and Pay off sooner resolves `refi.product.choice` with `FRM15`."
+   },
+   {
+    "n": 6,
+    "text": "You \u2014 Given the You screen with a legal name, a date of birth, an SSN, \"I live here as\" and the months, when Continue, then `POST /v1/borrower/identity/stripe/session {fake_complete: true}` ran on the pending `identity.stripe.purpose` card, `identity.confirm.title` was resolved with the typed values as edits (`source = borrower`) and the residence basis (one Current `du_residences` row), `identity.ssn.title` was resolved (`tin_last4` set, the SSN never echoed), a prior-address panel renders only when the months are under 24 and resolves `identity.prior_residence.title`, and the page posted no `credit.authorize` and needed no L2."
+   },
+   {
+    "n": 7,
+    "text": "Connect \u2014 Given the Connect screen with a monthly income and an employer, when Connect and continue, then `POST /v1/borrower/connect/truv_income/session {card_instance_id, fake_complete: true}` ran on the pending payroll card, `income.confirm.title` was resolved with the typed income and employer as edits (`application_income` with `employer_id` and `employment_income = true`; six-item `income`), `POST /v1/borrower/connect/plaid_assets/session` ran on the assets card (`verification.received{kind = assets}`, the card `connected`), and the page never posted `verification.connect`."
+   },
+   {
+    "n": 8,
+    "text": "Details \u2014 Given Details, when Continue with citizenship, marital status, dependents, military service and language, then `profile.title` resolves with the five fields (`application_borrowers.citizenship_status`, `marital_status`, `language_preference`); when Continue without citizenship, then the step stays with `.sm-error` and nothing is posted; given married, then `apply.details.spouse_later` renders and no `application.inviteParty` is posted."
+   },
+   {
+    "n": 9,
+    "text": "Declarations \u2014 Given \"Do any apply?\", when None, then `declarations.occupancy`, `declarations.clean_energy_lien` and `declarations.title{none}` are resolved one at a time and the borrower's `du_declarations` row carries the fourteen typed answers (32.3-T14 unchanged); when Something applies, then each `declarations.item` card renders one question at a time and every Yes with its follow-up persists."
+   },
+   {
+    "n": 10,
+    "text": "Demographics \u2014 Given Demographics, when \"I do not wish to provide this information\", then `demographics.title` resolves with `[\"do_not_wish\"]` for ethnicity and race and `\"do_not_wish\"` for sex and `applicant_demographics.* = declined` with `collection_method = internet`; when answered, then only the card's own option ids are sent and the answers are never kept on the card."
+   },
+   {
+    "n": 11,
+    "text": "Review is a readiness view \u2014 Given Review, then it reads `record.status.badge` and the pending cards from `/v1/borrower/thread`, renders no control that names a submission, lists every pending card as a task, and its one CTA resolves the number cards (`refi.value.confirm`, `refi.loan_amount.confirm`, `refi.product.choice`, or `preapproval.target`); the screen's text contains none of \"DU\", \"Desktop Underwriter\", \"Fannie\", \"Approve\", \"Eligible\", \"Ineligible\", \"Refer\"."
+   },
+   {
+    "n": 12,
+    "text": "The DU moment from the screens \u2014 Given Buy with an address or a refinance driven end to end through the Apply screens at 390 px with the FAKE vendors finishing on the tap, when the number cards are confirmed, then `application.trid_received`, `credit.report.received`, `du.document.emitted{required_missing = 0}`, `du.preflight.passed`, `du.submitted` and `du.findings.received` follow without any command posted by the page, the badge reads Verifying, Result renders the copy library's `du.running` line and the ChecklistCard when it comes, and a re-sent gap card (32.18 rule 7) renders as a task in the copy library's words."
+   },
+   {
+    "n": 13,
+    "text": "Errors stay on the step \u2014 Given a required field empty, then the step stays with `.sm-error` and nothing is posted; given a `409 CARD_FIELD_REQUIRED` or a refusal `{code, copy_key}` from the API, then the step stays and `.sm-error` renders `copy(copy_key)`, never the code."
+   },
+   {
+    "n": 14,
+    "text": "Tasks \u2014 Given the seven tasks, then each row's done state is derived from the card statuses (never remembered), a tap jumps to the step, a pending card with no step of its own (a gap card, `credit.liabilities.confirm`, `refi.current_loan.confirm`, a 33.3 refi_trigger card) renders in Tasks through the card component and resolves there, and the nothing-needed state renders when nothing is pending (32.13-T15)."
+   },
+   {
+    "n": 15,
+    "text": "My Loan, Chat, Account \u2014 Given a fresh account, then My Loan renders `apply.loan.empty`; given a partner-book party (33.1), then My Loan renders the badge Monitored, the partner as servicer, the loan's last four and the numbers, and Apply shows no organic step; Chat posts `POST /v1/borrower/messages` only and never resolves a card or posts a command; Account shows the first name and the partner and Sign out posts `auth/sign-out` and the next load is the door; a second fresh context sees nothing of the first person."
+   },
+   {
+    "n": 16,
+    "text": "Deep links, returns, `?card=` \u2014 Given `/app/d/{token}` without a session, then `Account` renders with the token retained and after the session `/app?card={id}` lands on the step that owns the card's copy key (`STEP_OF_COPY_KEY`) or on Tasks with the card expanded; `/app/return/{vendor}/{card}` and `/app/auth/google/callback` land the same way; an unknown or another party's card lands on Apply with no card and no data revealed."
+   },
+   {
+    "n": 17,
+    "text": "The chrome at 390 \u2014 Given every Apply screen at 390 px, then the five tabs and the primary CTA are in the viewport, `document.documentElement.scrollWidth \u2264 390`, `footer.disclosure` is present, the mark and the paper tokens are `apply.css`'s, and axe reports no serious violation at 390 and at 1280."
+   },
+   {
+    "n": 18,
+    "text": "Every string is a copy key \u2014 Given every string the Apply screens render, then it is a key of copy-library.md (the `apply.*` family) rendered through `lib/copy`, no `.tsx` under `components/apply` contains a sentence literal, and 32.13-T13/T14 pass over the new keys."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "borrower-app",
+  "tools": []
  },
  {
   "process": "33.1",
@@ -17739,5 +17823,210 @@
    "go_live.attest",
    "writeDecision"
   ]
+ },
+ {
+  "process": "36.1",
+  "title": "Partner identity, doors, roles, action log, tenant scope",
+  "path": "sections/36-servicing-partner-portal/36-1-partner-identity-doors-roles-action-log-tenant-scope.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a seeded partner_admin bound to the demo partner, when they request an email code and verify it plus password, then a `partner_sessions` row exists with that `partner_party_id` and role `partner_admin`, and no `staff_sessions` row is written."
+   },
+   {
+    "n": 2,
+    "text": "Given a partner_ops session, when they `POST /v1/partner/book/imports`, then the command is refused `403 ROLE_REQUIRED`."
+   },
+   {
+    "n": 3,
+    "text": "Given partner A\u2019s session, when they `GET /v1/partner/book/loans/:id` for a loan whose `partner_party_id` is partner B, then the response is `404 NOT_FOUND` and a `partner_actions` row is written with `result=refused` and no homeowner PII."
+   },
+   {
+    "n": 4,
+    "text": "Given a partner_admin, when they invite a partner_ops user, then that user can sign in and cannot upload."
+   },
+   {
+    "n": 5,
+    "text": "Given a disabled partner_user, when they present a valid code and password, then sign-in is refused and the session is not created."
+   },
+   {
+    "n": 6,
+    "text": "Given any successful partner GET, when the action log is read, then `partner_actions` contains `partner_portal.viewed` with `view`, `partner_user_id`, `partner_party_id`, and no email/phone/name of a homeowner."
+   },
+   {
+    "n": 7,
+    "text": "Given a staff session cookie, when it is sent to `/v1/partner/*` or `/partners`, then the request is unauthenticated (no staff fallback)."
+   },
+   {
+    "n": 8,
+    "text": "Given a partner session, when it is sent to `/ops` or `/ops/api/*`, then the request is unauthenticated (no partner fallback)."
+   }
+  ],
+  "tables": [
+   "partner_actions",
+   "partner_credentials",
+   "partner_sessions",
+   "partner_users"
+  ],
+  "timers": [],
+  "notices": [
+   "NTC_SM_PARTNER_USER_INVITE"
+  ],
+  "agent": "security-records",
+  "tools": [
+   "partner.user.invite"
+  ]
+ },
+ {
+  "process": "36.2",
+  "title": "Partner tape drop on book.import: the upload with its report, the import history, the status line and the holds",
+  "path": "sections/36-servicing-partner-portal/36-2-partner-tape-drop-on-book-import.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the demo fixture tape + supplement and a partner_admin session for that partner, when they POST the files, then `importPartnerBook` writes the same 12 `monitored` loans 33.1-T1 already asserts, and the actor on `book.import` is the partner_user, not `ops_analyst`."
+   },
+   {
+    "n": 2,
+    "text": "Given the same files posted a second time, then the response is `already_loaded` and no new `partner_book_facts` rows are written."
+   },
+   {
+    "n": 3,
+    "text": "Given a later `as_of_date` tape that drops one loan, then that loan is `not_on_latest_tape` / on hold, it is absent from the next 33.2 review, and the partner GET holds lists it. `POST .../resolve` as the partner is `403`."
+   },
+   {
+    "n": 4,
+    "text": "Given a partner_admin for partner A, when the multipart names partner B in a field, then that field is ignored and the import attaches to partner A."
+   },
+   {
+    "n": 5,
+    "text": "Given a header that does not match `m3-v1`, then no rows are written and the partner sees the same header-refusal 33.1 already emits."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": []
+ },
+ {
+  "process": "36.3",
+  "title": "The eligibility board: three buckets projected from the daily review",
+  "path": "sections/36-servicing-partner-portal/36-3-eligibility-board-three-buckets.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the demo book after a 33.2 daily run, when eligibility is fetched as the partner, then every monitored loan appears in exactly one of the three buckets or Holds, and the sum of counts equals monitored-not-held + held."
+   },
+   {
+    "n": 2,
+    "text": "Given a loan whose review verdict is `watching` with `watch_rate_pct` set, then the partner row shows bucket `likely_soon` and that watch rate, and does not show investor, DTI, or score fields."
+   },
+   {
+    "n": 3,
+    "text": "Given a loan `excluded` for bankruptcy, then it is `not_near` with the engine reason code, not a free-text diagnosis."
+   },
+   {
+    "n": 4,
+    "text": "Given a query `?bucket=eligible_now&state=CA`, then only `candidate` loans in CA return. Adding `?fico=` or `?dti=` is ignored (unknown query keys dropped, not applied)."
+   },
+   {
+    "n": 5,
+    "text": "Given partner A, when they request eligibility, then partner B\u2019s loans are absent (not empty-with-403)."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": []
+ },
+ {
+  "process": "36.4",
+  "title": "The refinance pipeline feed: members in motion, projected from the rows that already exist",
+  "path": "sections/36-servicing-partner-portal/36-4-refinance-pipeline-feed.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a monitored loan with `refi_opportunities.status=offered`, then it appears on the pipeline as `offered` and also remains on Eligible now."
+   },
+   {
+    "n": 2,
+    "text": "Given that homeowner\u2019s Yes (`engaged`) and a 33.3 readiness row with missing items, then the pipeline stage is `readiness` and `missing` is the 33.3 item list."
+   },
+   {
+    "n": 3,
+    "text": "Given offer expiry via `expireOffers`, then the item\u2019s current stage is `expired` and a subsequent 33.2 run is free to write `not_now` with cooldown."
+   },
+   {
+    "n": 4,
+    "text": "Given a boarded new loan linked from the old monitored loan (35.10 / `prior_loan_id`), then the pipeline item is `boarded`, the old loan banner is paid off / refinanced, and the new loan banner is `Active \u2014 Supermortgage subservicing`."
+   },
+   {
+    "n": 5,
+    "text": "Partner B cannot see partner A\u2019s pipeline items (404 / absent)."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": []
+ },
+ {
+  "process": "36.5",
+  "title": "Home, the daily report and the two-mode loan page",
+  "path": "sections/36-servicing-partner-portal/36-5-partner-home-reports-two-mode-loan-page.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Home counts equal 36.3 counts + 36.4 in-flight for the same `as_of`."
+   },
+   {
+    "n": 2,
+    "text": "Daily report for the partner matches 34.3 `bookDailyReport` for that `partner_party_id` (same ids, same counts). No other partner\u2019s report is listed."
+   },
+   {
+    "n": 3,
+    "text": "Loan page for a monitored loan shows banner `Monitored \u2014 {partner} remains servicer`, no Pay control, and `serviced.available === false`."
+   },
+   {
+    "n": 4,
+    "text": "Loan page for a boarded refinance shows banner `Active \u2014 Supermortgage subservicing` and `serviced.code === \"SERVICED_PANE_NOT_BUILT\"` in V1."
+   },
+   {
+    "n": 5,
+    "text": "A `partner_auditor` can GET home, eligibility, pipeline, reports, and loan pages, and cannot POST imports."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": []
+ },
+ {
+  "process": "36.6",
+  "title": "The post-refinance serviced pane contract: dark in V1, one refusal everywhere",
+  "path": "sections/36-servicing-partner-portal/36-6-post-refinance-serviced-pane-contract.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a monitored loan, `GET /v1/partner/loans/:id/serviced` is `409 SERVICED_PANE_NOT_BUILT`."
+   },
+   {
+    "n": 2,
+    "text": "Given an `active` boarded loan for this partner, the same endpoint is still `409 SERVICED_PANE_NOT_BUILT` in V1, and the loan page banner is already `Active`."
+   },
+   {
+    "n": 3,
+    "text": "36.6 introduces **no** new money field, timer, or notice."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": []
  }
 ]

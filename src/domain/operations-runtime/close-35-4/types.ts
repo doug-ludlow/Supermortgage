@@ -13,7 +13,7 @@ export const CLOSE_RULE_SET_VERSION = "close.v1";
 export const CLOSE_PROMPT_VERSION = "35.4-v1";
 export const CLOSE_MODEL_VERSION = "deterministic";
 export const ET = "America/New_York";
-/** The planner's actor when the sweep (35.3's planner, or this process's pass until 35.3 lands) opens and plans a period. */
+/** The planner's actor when the sweep's close pass (behind 35.3's planner, whose `month_end` unit emits the trigger) opens and plans a period. */
 export const PLANNER_ACTOR: Actor = { kind: "system", id: "close-planner" };
 /** Rule 3: the preparer's confidence floor. */
 export const CONFIDENCE_FLOOR = 0.95;

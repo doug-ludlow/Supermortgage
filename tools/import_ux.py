@@ -14,6 +14,8 @@ Process map (one process per UX file; every UX heading's content is kept, restru
   32.10 ← 08c                       32.11 ← 09                          32.12 ← 10
   32.13 ← 13 + 12 (rules only) + 11 (T-X-01…16 → 32.13-T1…T16); the copy strings go to copy-library.md (referenced, not units)
   README ← 00-MASTER-INDEX + 14-claude-code-build-plan (T-id mapping, vocabulary map, DELTA table, vendor fakes)
+  32.14 ← 15 (T-15-…)               32.16 ← 17 (T-17-…)                32.19 ← 18-the-apply-product (T-18-01…18 → 32.19-T1…T18)
+  32.17 and 32.18 are hand-written under the section (HANDWRITTEN below): never rewritten here, listed in the README's process table
 
 Unit rules honoured (the UX layer projects; it owns nothing the build specs own):
   T-ids     verbatim UX Given/When/Then rows, renumbered, as `| 32.k-Tn | … |` rows (only the leading id changes; O-refs
@@ -49,16 +51,16 @@ VENDOR_FAKES = ('Stripe Identity, Plaid, Truv, IRS IVES, carrier connection, the
 UI_TABLES = ['conversations', 'messages', 'card_instances', 'card_instance_events', 'deep_links', 'ui_events', 'sessions']
 
 # ---------------------------------------------------------------- id and cross-reference rewriting
-TID_MAP = {'03': '32.3', '04': '32.4', '05': '32.5', '06': '32.6', '07': '32.7', '08a': '32.8', '08b': '32.9', '08c': '32.10', '09': '32.11', '10': '32.12', 'X': '32.13', '15': '32.14', '17': '32.16'}
+TID_MAP = {'03': '32.3', '04': '32.4', '05': '32.5', '06': '32.6', '07': '32.7', '08a': '32.8', '08b': '32.9', '08c': '32.10', '09': '32.11', '10': '32.12', 'X': '32.13', '15': '32.14', '17': '32.16', '18': '32.19'}
 FILE_MAP = {'00': 'README', '01': '32.1', '02': '32.2', '03': '32.3', '04': '32.4', '05': '32.5', '06': '32.6', '07': '32.7', '08a': '32.8', '08b': '32.9',
-            '08c': '32.10', '09': '32.11', '10': '32.12', '11': '32.13', '12': 'copy-library.md', '13': '32.13', '14': 'README', '15': '32.14', '17': '32.16'}
+            '08c': '32.10', '09': '32.11', '10': '32.12', '11': '32.13', '12': 'copy-library.md', '13': '32.13', '14': 'README', '15': '32.14', '17': '32.16', '18': '32.19'}
 BASENAMES = {'00-MASTER-INDEX': 'README', '01-foundations': '32.1', '02-data-contracts': '32.2', '03-entry-and-qualification': '32.3',
              '04-disclosures-intent-lock': '32.4', '05-verification-conditions-coborrowers': '32.5', '06-decision-property-title-insurance-mi': '32.6',
              '07-cd-closing-rescission-funding-boarding': '32.7', '08a-servicing-payments-statements-escrow': '32.8',
              '08b-servicing-insurance-pmi-arm-life-events-requests': '32.9', '08c-servicing-hardship-delinquency': '32.10',
              '09-rate-watch-and-re-refinance': '32.11', '10-exits': '32.12', '11-side-quests-catalogue': '32.13',
              '12-message-copy-library': 'copy-library.md', '13-acceptance-tests': '32.13', '14-claude-code-build-plan': 'README',
-             '15-entry-sign-up-and-sign-in': '32.14', '17-the-conversational-product': '32.16'}
+             '15-entry-sign-up-and-sign-in': '32.14', '17-the-conversational-product': '32.16', '18-the-apply-product': '32.19'}
 
 def read(p): return open(p, encoding='utf-8').read()
 
@@ -97,11 +99,11 @@ def tx(text, pid=None):
     """Renumber and re-point: O-refs (O2.3 → 21.3), UX test ids (T-03-01 → 32.3-T1), UX file references (01 §3 → 32.1 §3),
     and un-backtick notice codes no earlier section owns."""
     text = renumber(text)
-    text = re.sub(r'\bT-(03|04|05|06|07|08a|08b|08c|09|10|X|15|17)-(\d{2})\b', lambda m: f'{TID_MAP[m.group(1)]}-T{int(m.group(2))}', text)
+    text = re.sub(r'\bT-(03|04|05|06|07|08a|08b|08c|09|10|X|15|17|18)-(\d{2})\b', lambda m: f'{TID_MAP[m.group(1)]}-T{int(m.group(2))}', text)
     text = re.sub(r'\b(' + '|'.join(sorted(BASENAMES, key=len, reverse=True)) + r')(\.md)?\b', lambda m: BASENAMES[m.group(1)], text)
-    text = re.sub(r'(?<![\d.])\b(00|0[1-9]|10|08a|08b|08c|11|12|13|14|15|17)( §)', lambda m: FILE_MAP[m.group(1)] + m.group(2), text)
-    text = re.sub(r'\((0[1-9]|10|08a|08b|08c|11|13|15|17)\)', lambda m: f'({FILE_MAP[m.group(1)]})', text)
-    text = re.sub(r'\b(0[1-9]|10|08a|08b|08c|15|17)\s+(?=32\.\d+-T\d)', '', text)
+    text = re.sub(r'(?<![\d.])\b(00|0[1-9]|10|08a|08b|08c|11|12|13|14|15|17|18)( §)', lambda m: FILE_MAP[m.group(1)] + m.group(2), text)
+    text = re.sub(r'\((0[1-9]|10|08a|08b|08c|11|13|15|17|18)\)', lambda m: f'({FILE_MAP[m.group(1)]})', text)
+    text = re.sub(r'\b(0[1-9]|10|08a|08b|08c|15|17|18)\s+(?=32\.\d+-T\d)', '', text)
     def notice(m):
         code = m.group(1)
         if code in OWNED: return m.group(0)
@@ -132,7 +134,7 @@ def as_h5(title, body):
     return f'##### {title}\n\n{demote(body).strip()}\n'
 
 TEST_TITLE = re.compile(r'^(\d+\.\s+)?(Acceptance tests.*|Tests|Cross-cutting tests)$')
-TEST_BULLET = re.compile(r'^- \*\*T-(03|04|05|06|07|08a|08b|08c|09|10|X|15|17)-(\d{2})((?:\s[^*]+?)?)\*\*\s*(?:—\s*)?(.*)$')
+TEST_BULLET = re.compile(r'^- \*\*T-(03|04|05|06|07|08a|08b|08c|09|10|X|15|17|18)-(\d{2})((?:\s[^*]+?)?)\*\*\s*(?:—\s*)?(.*)$')
 
 def parse_tests(body, pid):
     rows = []
@@ -278,6 +280,14 @@ META = {
              discrepancies='(1) DELTA-23…29 (docs/ux/BACKEND-DELTAS.md) declare the agent turn, the tool contract, the utterance guard and turn log, the rail, voice attestation, the evaluation harness and e-mail + password accounts (`party_credentials`). (2) docs/ux/15 §0.4 is superseded in part: the anonymous minute (S0–S2, DELTA-11) is not the front door; the account is. Nothing else is new: every gate, timer, notice, command, table and role is 1–31 and 32.x\'s.',
              roles='`mlo_of_record`, `human_agent`',
              overrides=[(re.compile(r'^0\. Ground truth'), 'rules'), (re.compile(r'^5\. Data model'), 'data'), (re.compile(r'^8\. Phases|^10\. Definition of done'), 'audit'), (re.compile(r'^9\. Acceptance tests'), 'tests'), (re.compile(r'^3\. The agent turn'), 'rules'), (re.compile(r'^6\. The evaluation harness'), 'audit'), (re.compile(r'^7\. Backend deltas'), 'integrations')]),
+    19: dict(title='The Apply product', files=['18-the-apply-product.md'], agent='borrower-app',
+             owners='21.1 (application intake: the six items, confirmField, the declarations and demographics), 20.3 (the preapproval request of the still-looking purchase), 22.2–22.4 (credit, income, assets — the connections and the report), 23.1 (DU: the moment the screens lead to), 32.2 (cards, commands, sessions, read models), 32.3 (the qualification cards the screens resolve), 32.14 (deep links, return pages, Google, the partner from configuration), 32.16 (the account, the footer, the turn behind Chat), 32.18 (the DU moment, the badge, the gap cards)',
+             auto='c — the borrower states and confirms on the screens; every value is written by resolving the pending card (once, on the addressed purchase, by `application.confirmField`); the page decides nothing, posts no command from Chat and never names the underwriting run; the DU moment runs itself (32.18); `mlo_of_record` reviews terms under `origination.ai_mlo_intake=assisted`',
+             trigger='On `/app` for a browser with no session (the door), then on every session of the party: the nine steps of the organic application in order, My Loan for a loan subject, Tasks for every pending card; per party',
+             deadlines='none owned — the screens render `record.status.badge` and the pending cards and never a date; the DU moment\'s clocks are 23.x\'s (32.18)',
+             discrepancies='(1) DELTA-31…35 (docs/ux/BACKEND-DELTAS.md) declare the prototype fields with no backend home — a market for a still-looking purchase, the down payment on an addressed purchase, a cash-out amount, the income type, a typed-income fallback — none built for v1. (2) The frontend brief of 2026-09-16 is corrected in §0: there is no submit command (the DU moment runs itself), `verification.connect` is never posted by the page, every resolve is `{evidence, option_id?}`, the goal card\'s option ids are `buy` / `lower_rate` / `cash_out`. (3) The Thread + Record + action bar shell of 32.1 §1 is no longer mounted on `/app`; 32.1 §2 records the amendment. Nothing else is new: every command, card, event, table and role is 20.3\'s, 21.1\'s, 22.x\'s, 23.1\'s or 32.x\'s.',
+             roles='`mlo_of_record`, `human_agent`',
+             overrides=[(re.compile(r'^0\. Ground truth'), 'rules'), (re.compile(r'^4\. Backend deltas'), 'integrations'), (re.compile(r'^5\. Phases'), 'audit'), (re.compile(r'^6\. Acceptance tests'), 'tests')]),
 }
 
 # ---------------------------------------------------------------- generated blocks
@@ -520,7 +530,7 @@ def build_process(k):
     out += ['### Operational prerequisites',
             f'- Vendor fakes: {VENDOR_FAKES} (README, "Vendor fakes"). No live vendor credential is a prerequisite of any build stage.',
             '- The partner\'s legal name and NMLSR ID (`partner.legal_name`, `partner.nmlsr_id`) and the `mlo_of_record` roster (31.1) — rendered wherever a disclosure or the SAFE Act requires them.',
-            '- Feature flags consumed (32.2 §8): `origination.ai_mlo_intake` (default `assisted`), `origination.preapproval_program` (default on), `closing.enote_default`, `case.ai_path`, `theme` (dark default), `voice.in_app`, connector vendor toggles, `jurisdiction_rules`.', '']
+            '- Feature flags consumed (32.2 §8): `origination.ai_mlo_intake` (default `assisted`), `origination.preapproval_program` (default on), `closing.enote_default`, `case.ai_path`, `theme` (light default with the designed skin), `voice.in_app`, connector vendor toggles, `jurisdiction_rules`.', '']
     out += ['### Build spec', '#### Inputs and triggers',
             f'- {meta["trigger"]}. Events that move this process\'s screens are the ones its screens name (Business rules) and 32.2 §3 subscribes to; every borrower command is one of 32.2 §2, started from a card; every card is started by the owning agent (32.1 §3). A human may start nothing on the borrower\'s behalf except sending a card (`human_agent`) — 32.5 §8.']
     out += slots['inputs'] + ['']
@@ -560,6 +570,22 @@ def build_process(k):
     return pid, text
 
 # ---------------------------------------------------------------- README and copy library
+# processes written by hand under the section (spec/TEMPLATE-process.md; never rewritten by this importer — main() leaves every
+# file outside META alone): the README's process table lists them beside the imported ones, title and automation class read from
+# the file so a retitle never goes stale here. An explicit list, so a stray file is never silently promoted.
+HANDWRITTEN = (17, 18)
+def handwritten_rows():
+    rows = []
+    for k in HANDWRITTEN:
+        paths = glob.glob(os.path.join(SECTION_DIR, f'{SECTION_N}-{k}-*.md'))
+        assert len(paths) == 1, f'hand-written process {SECTION_N}.{k}: expected one file, found {paths}'
+        text = re.sub(r'<!--.*?-->', '', read(paths[0]), flags=re.S)
+        h1 = re.search(rf'^# {SECTION_N}\.{k} — (.+?)\s*$', text, re.M)
+        auto = re.search(r'^\|\s*Automation class\s*\|\s*(\S+)', text, re.M)
+        assert h1 and auto, f'hand-written process {SECTION_N}.{k}: no "# {SECTION_N}.{k} — Title" H1 or Automation class row'
+        rows.append((k, h1.group(1), auto.group(1)))
+    return rows
+
 def build_readme():
     _, pre0, s0 = parse('00-MASTER-INDEX.md')
     _, pre14, s14 = parse('14-claude-code-build-plan.md')
@@ -574,9 +600,9 @@ def build_readme():
            '| UX file | Process | UX tests | T-ids here |', '|---|---|---|---|',
            '| 00-MASTER-INDEX.md, 14-claude-code-build-plan.md | this README | — | — |',
            '| 01-foundations.md | 32.1 | — | — |', '| 02-data-contracts.md | 32.2 | — | — |',
-           '| 03-entry-and-qualification.md | 32.3 | T-03-01 … T-03-30 | 32.3-T1 … 32.3-T30 |',
+           '| 03-entry-and-qualification.md | 32.3 | T-03-01 … T-03-30 | 32.3-T1 … 32.3-T30 (+ 32.3-T31, 32.3-T32: the Homestead DU handoff Phase 7 amendments) |',
            '| 04-disclosures-intent-lock.md | 32.4 | T-04-01 … T-04-10 | 32.4-T1 … 32.4-T10 |',
-           '| 05-verification-conditions-coborrowers.md | 32.5 | T-05-01 … T-05-11 | 32.5-T1 … 32.5-T11 |',
+           '| 05-verification-conditions-coborrowers.md | 32.5 | T-05-01 … T-05-11 | 32.5-T1 … 32.5-T11 (+ 32.5-T12, 32.5-T13: the Homestead DU handoff Phase 7 amendments) |',
            '| 06-decision-property-title-insurance-mi.md | 32.6 | T-06-01 … T-06-12 | 32.6-T1 … 32.6-T12 |',
            '| 07-cd-closing-rescission-funding-boarding.md | 32.7 | T-07-01 … T-07-13 | 32.7-T1 … 32.7-T13 |',
            '| 08a-servicing-payments-statements-escrow.md | 32.8 | T-08a-01 … T-08a-11 | 32.8-T1 … 32.8-T11 |',
@@ -585,6 +611,7 @@ def build_readme():
            '| 09-rate-watch-and-re-refinance.md | 32.11 | T-09-01 … T-09-10 | 32.11-T1 … 32.11-T10 |',
            '| 10-exits.md | 32.12 | T-10-01 … T-10-08 | 32.12-T1 … 32.12-T8 |',
            '| 15-entry-sign-up-and-sign-in.md | 32.14 | T-15-01 … T-15-20 | 32.14-T1 … 32.14-T20 |',
+           '| 18-the-apply-product.md | 32.19 | T-18-01 … T-18-18 | 32.19-T1 … 32.19-T18 |',
            '| 13-acceptance-tests.md, 12-message-copy-library.md (rules), 11-side-quests-catalogue.md | 32.13 | T-X-01 … T-X-16 | 32.13-T1 … 32.13-T16 |',
            '| 12-message-copy-library.md (the strings) | copy-library.md (referenced; not units) | — | — |', '',
            'The mapping rule: T-NN-kk → 32.k-Tkk with the leading zero dropped (T-03-01 = 32.3-T1, T-08c-11 = 32.10-T11, T-X-16 = 32.13-T16); the Given/When/Then text is the UX text verbatim apart from the renumbered cross-references.', '',
@@ -597,8 +624,8 @@ def build_readme():
            '### Backend deltas the UX requires (DELTA-01…10)', '', tx(get(s14, '3. Backend deltas')), '',
            'The reconciliation this import found (event spellings, consent kinds, the `esign_portal` channel, non-registry timer names, an unregistered notice code, the `prequalifications` columns) is kept in docs/ux/BACKEND-DELTAS.md.', '',
            '## Processes', '', '| Process | Title | Automation class |', '|---|---|---|']
-    for k in sorted(META):
-        out.append(f'| 32.{k} | {META[k]["title"]} | {META[k]["auto"].split(" ")[0]} |')
+    for k, title, auto in sorted([(k, META[k]['title'], META[k]['auto'].split(' ')[0]) for k in META] + handwritten_rows()):
+        out.append(f'| 32.{k} | {title} | {auto} |')
     out += ['', '## Closing', '',
             '### Where things live', '', renumber(get(s14, '1. Where things live')), '',
             'In this repository the borrower app is `apps/borrower` and the API seam is `src/runtime/borrower` (db/migrations/0111 onward); the per-process build files are `src/domain/borrower/<n>-<m>.spec.test.ts`, `timers-32-k.ts`, `evaluators-32-k.ts`, `src/app/tools/section32-k.ts` and `src/notices/authored/section32-k.ts`. Tests are API-level `node:test` cases plus Playwright driven from `node:test`, titled exactly as the T-id rows.', '',
@@ -629,7 +656,7 @@ def main():
     files[os.path.join(SECTION_DIR, 'README.md')] = build_readme()
     files[os.path.join(SECTION_DIR, 'copy-library.md')] = build_copy_library()
     # stale process files from an earlier title are removed so one process has one file — only for the processes this importer
-    # owns (META); a markdown-first process written by hand under the section (32.17, spec/TEMPLATE-process.md) is never touched
+    # owns (META); a markdown-first process written by hand under the section (HANDWRITTEN: 32.17, 32.18; spec/TEMPLATE-process.md) is never touched
     owned = {f'{SECTION_N}-{k}-' for k in META}
     for old in glob.glob(os.path.join(SECTION_DIR, f'{SECTION_N}-[0-9]*-*.md')):
         if old not in files and any(os.path.basename(old).startswith(pre) for pre in owned):

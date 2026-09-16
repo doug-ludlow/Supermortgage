@@ -13,11 +13,23 @@
  * `<servicer_number>:<period>:<step>` for `close.step.started`, so one step's completion satisfies its own clock only —
  * the spec's open question 7, decided 2026-09-16, since the engine satisfies every armed instance of a code on a subject).
  *
- * Emitters (src/domain/operations-runtime/close-35-4/): sweep.ts `ledger.month.ended{period_key, period_end}` (the fallback
- * until 35.3's planner emits it), open.ts `close.period.opened` / `close.tax_year.planned{tax_year, tax_year_end}`, plan.ts
+ * Emitters: 35.3's planner — its `month_end` cycle's unit (src/domain/operations-runtime/runners.ts monthEndRunner) — appends
+ * `ledger.month.ended{period_key, period_end}` (35.3 rule 4); close-35-4/sweep.ts is the fallback emitter on a runtime where
+ * 35.3's cycles pass does not run (no `databaseUrl`). This process's own (src/domain/operations-runtime/close-35-4/): open.ts `close.period.opened` / `close.tax_year.planned{tax_year, tax_year_end}`, plan.ts
  * `close.step.started{started_at}` / `close.step.completed`, attest.ts `close.period.attested`, taxyear.ts `close.tax_year.closed`.
  */
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
+
+/**
+ * A month the platform never lived through has no close: 35.3's planner plans `month_end` for the prior month on its first
+ * pass ever (cycles.ts `period_of: prior_month`, rule 3's idempotency — a fresh install's first pass in late September emits
+ * `ledger.month.ended{2026-08}`), and the trigger arms `SM_CLOSE_PERIOD_OPEN_BD1`; the close pass (close-35-4/sweep.ts) opens
+ * no period for a `period_end` before the platform's first sweep (`min(sweep_runs.as_of_date)` — no cut-off ran, no
+ * receipt can ever arrive, and the predecessor gate — rule 1 / T15 — would otherwise hold every later month behind it) and
+ * cancels this process's own clock for it with this citation (the timers-35-3.ts CANCEL_STALL_ON precedent: this process's
+ * clock, never another section's — NO_CLOCK_EDIT).
+ */
+export const CANCEL_OPEN_ON_UNLIVED_MONTH = { code: "SM_CLOSE_PERIOD_OPEN_BD1", why: "35.4 rule 11 / 35.3 rule 4: the month ended before the platform's first sweep — no cut-off ran and no receipt can arrive, so no close period opens; the clock's breach ('the month ended and no close period exists: the planner did not run or close.open failed') would name a month the platform never lived through" } as const;
 
 export function applySatisfiedOverrides_35_4(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);

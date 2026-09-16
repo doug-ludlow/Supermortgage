@@ -40,6 +40,9 @@ import { StatementCycleService } from "../domain/notices/ops-7-1.ts";
 import { DISCLOSURES_AGENT as STATEMENT_AGENT } from "../notices/service.ts";   // the `disclosures` agent constant lives in src/notices/service.ts (ops-7-1.ts exports none) — import path corrected by the 32.5 build to unblock the shared journey fixture
 import { requestForm1098Furnish, recordBounceSuspect } from "../domain/notices/ops-7-4.ts";
 import type { Runtime } from "./app.ts";
+import type { EventStore, Clock } from "../kernel/events/index.ts";
+import { PgNoticeRepository } from "../infra/db/notices.ts";
+import type { Notice } from "../notices/service.ts";
 
 export const CASHIERING_AGENT: Actor = { kind: "agent", id: "cashiering" };
 /** FAKE servicer contact block every servicing notice carries (the authored samples' values; no real address). */
@@ -64,12 +67,13 @@ export function escrowPortionOn(terms: LoanTerms, due: PlainDate): Cents {
   return terms.escrow_payment_cents;
 }
 /** The 2.x LoanCashState of a boarded loan as of a date — every installment from the first payment date through the month after `asOf`, satisfied where a posted payment applied it. */
-export async function loanCashState(rt: Runtime, loanId: string, asOf: PlainDate): Promise<LoanFacts> {
+export async function loanCashState(rt: Runtime, loanId: string, asOf: PlainDate, seeded?: EntityStore): Promise<LoanFacts> {
   const loanRow = (await rt.db.query<Row>(`SELECT id, instrument_date::text AS instrument_date, original_upb_cents::text AS original_upb_cents, first_payment_date::text AS first_payment_date, boarded_at, servicer_loan_number, partner_party_id, property_id, status::text AS status, origination_application_id FROM loans WHERE id = $1`, [loanId]))[0];
   if (!loanRow) throw new RangeError(`no loan ${loanId}`);
   const termsRow = (await rt.db.query<Row>(`SELECT pi_cents::text AS pi_cents, escrow_payment_cents::text AS escrow_payment_cents, note_rate_bps, late_charge_pct_bps, late_charge_grace_days, late_charge_max_cents::text AS late_charge_max_cents, escrowed FROM loan_terms WHERE loan_id = $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [loanId]))[0];
   if (!termsRow) throw new RangeError(`no loan_terms for ${loanId}`);
-  const store = new EntityStore(); store.seed(await rt.entities.load({ loanId }));
+  // a 35.3 unit passes the command's own EntityStore (the scope's bounded records plus the versions this command wrote) so a second read inside one unit sees the first step's writes
+  const store = seeded ?? new EntityStore(); if (!seeded) store.seed(await rt.entities.load({ loanId }));
   const lt = store.get("loan_terms", loanId)?.data;
   const escrowVersion = lt && lt.escrow_payment_cents !== undefined && typeof lt.escrow_payment_effective_from === "string" ? { escrow_payment_cents: c(lt.escrow_payment_cents), effective_from: D(lt.escrow_payment_effective_from), step_down_on: typeof lt.escrow_step_down_on === "string" ? D(lt.escrow_step_down_on) : null, step_down_to_cents: lt.escrow_step_down_to_cents !== undefined ? c(lt.escrow_step_down_to_cents) : null } : null;
   const loan: LoanRow = { id: loanId, instrument_date: D(String(loanRow.instrument_date)), original_upb_cents: c(loanRow.original_upb_cents), first_payment_date: D(String(loanRow.first_payment_date)), boarded_at: (loanRow.boarded_at as string | null) ?? null, servicer_loan_number: String(loanRow.servicer_loan_number ?? ""), partner_party_id: String(loanRow.partner_party_id), property_id: String(loanRow.property_id), status: String(loanRow.status), origination_application_id: (loanRow.origination_application_id as string | null) ?? null };
@@ -171,7 +175,18 @@ export async function servicingDailySweep(rt: Runtime, nowIso: string = rt.clock
 
 // ---------------------------------------------------------------- 7.1: the periodic statement run
 export interface StatementRunInput { readonly cycle_due_date: PlainDate; readonly statement_date?: PlainDate; readonly cycle?: number; readonly now?: string; }
-export interface StatementRunResult { readonly notice_id: string; readonly availability_notice_id: string | null; readonly channel: "electronic" | "mail"; readonly bounced_party_ids: string[]; readonly mailed_at: string | null; readonly statement_date: PlainDate; readonly events: readonly { type: string; payload: Record<string, unknown> }[]; }
+export interface StatementRunResult { readonly notice_id: string; readonly availability_notice_id: string | null; readonly channel: "electronic" | "mail"; readonly bounced_party_ids: string[]; readonly mailed_at: string | null; readonly statement_date: PlainDate; readonly events: readonly { type: string; payload: Record<string, unknown> }[]; /** The rendered statement (and the availability e-mail) as Notice objects, for the `notices` rows (persistStatementNotices). */ readonly notices?: readonly Notice[]; }
+/** The statement's rows: notice_templates / notice_template_versions (the registry's, upserted so the FK holds), notices, notice_checklist_results, notice_deliveries — on the cycle's own transaction (src/runtime/partner-book.ts persistNotices precedent). */
+export async function persistStatementNotices(rt: Runtime, q: Queryable, notices: readonly Notice[], asOf: PlainDate): Promise<void> {
+  const repo = new PgNoticeRepository(rt.db);
+  for (const n of notices) {
+    const t = rt.noticeRegistry.template(n.templateCode);
+    await repo.upsertTemplate(t, q);
+    const v = rt.noticeRegistry.activeVersion(t.code, asOf) ?? rt.noticeRegistry.activeVersion(t.code, D(rt.clock.now().slice(0, 10)));
+    if (v) await repo.saveVersion(v, q);
+    await repo.saveNotice(n, q);
+  }
+}
 function statementPayload(f: LoanFacts, borrowerName: string, statementDate: PlainDate, due: PlainDate): Record<string, unknown> {
   const st = f.state; const inst = st.installments.find((x) => x.due_date === due) ?? st.installments[st.installments.length - 1]!;
   const interest = divRound(st.upb_cents * BigInt(f.terms.note_rate_bps), 12_000_000n, "HALF_UP"); const principal = inst.pi_cents - interest; const escrow = inst.escrow_cents;
@@ -201,70 +216,93 @@ const usd = (v: Cents): string => USD.format(Number(v) / 100);
 /** The FAKE print/mail vendor's production run (a real vendor manifests overnight; the fake mails on request) — the paper piece leaves the same day. */
 const runProduction = (rt: Runtime, nowIso: string): void => { const pm = rt.ports.printMail as { runProduction?: (now: string) => void } | undefined; pm?.runProduction?.(nowIso); };
 
-/** 7.1's cycle run for one statement — see the header. Returns the facts the flow and the tests read back. */
-export async function sendPeriodicStatement(rt: Runtime, loanId: string, input: StatementRunInput): Promise<StatementRunResult> {
+/** What one statement cycle needs before its unit of work (facts derived server-side, never hand-fed): the loan's cash state as of the statement date and the parties. */
+export interface StatementCycleDeps { readonly facts: LoanFacts; readonly parties: readonly ServicingParty[]; readonly nowIso: string; readonly statementDate: PlainDate; }
+export async function prepareStatementCycle(rt: Runtime, loanId: string, input: StatementRunInput): Promise<StatementCycleDeps> {
   const nowIso = input.now ?? rt.clock.now(); const statementDate = input.statement_date ?? D(nowIso.slice(0, 10));
   if (!rt.ports.printMail || !rt.ports.edelivery) throw new RangeError("print/mail and e-delivery ports are not wired");
-  const facts = await loanCashState(rt, loanId, statementDate); const parties = await servicingParties(rt, loanId);
+  return { facts: await loanCashState(rt, loanId, statementDate), parties: await servicingParties(rt, loanId), nowIso, statementDate };
+}
+/** 7.4 rule 8: a hard bounce flips the party's E-SIGN consent to suspect — the typed row, written with the cycle's transaction. */
+export async function markSuspectConsents(q: Queryable, suspect: readonly { party_id: string }[]): Promise<void> {
+  for (const x of suspect) await q.query(`UPDATE consents SET status = 'suspect' WHERE party_id = $1 AND kind = 'esign' AND status = 'active'`, [x.party_id]);
+}
+/**
+ * The cycle's body on a unit of work the caller owns (`sendPeriodicStatement` opens the loan's own; a 35.3 `statements` unit
+ * runs it on the unit's command, so `statement.sent` and `job.unit.done` share one transaction — 35.3 T9). Bounced parties
+ * are pushed onto `suspect` for the caller's commit hook (`markSuspectConsents`).
+ */
+export async function statementCycleIn(rt: Runtime, ctx: { readonly events: EventStore; readonly clock: Clock }, loanId: string, input: StatementRunInput, d: StatementCycleDeps, suspect: { party_id: string; consent_id: string | null }[]): Promise<StatementRunResult> {
+  const { facts, parties, nowIso, statementDate } = d;
+  const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery! });
+  const cycles = new StatementCycleService({ events: ctx.events, clock: ctx.clock, notices });
+  const recipients = recipientsOf(parties);
+  // comment 41(c)-3: the availability e-mail goes to every party whose active consent covers periodic statements; a hard bounce flips that party's consent to suspect (7.4 rule 8) before the statement's own channel decision
+  const electronic = recipients.filter((x) => x.consent?.status === "active" && x.consent.classes.includes("periodic_statements") && x.email);
+  let availabilityId: string | null = null; const bounced: string[] = [];
+  if (electronic.length) {
+    const avail = notices.render({ templateCode: "NTC_REGZ_41_STMT_AVAIL_EMAIL", loanId, recipients: electronic, payload: { statement_date: statementDate, account_last4: facts.loan.servicer_loan_number.slice(-4), portal_url: SERVICER_CONTACT.portal_url, consent_status: "active", servicer_phone: SERVICER_CONTACT.servicer_phone }, asOf: statementDate });
+    const sent = await notices.send(avail.id); availabilityId = sent.id;
+    for (const del of sent.deliveries) if (del.emailStatus === "bounced") {
+      const party = parties.find((p) => p.party_id === del.partyId); bounced.push(del.partyId);
+      recordBounceSuspect({ events: ctx.events }, { loan_id: loanId, party_id: del.partyId, consent_id: party?.consent_ids.esign ?? null, notice_id: sent.id, template: sent.templateCode, bounced_at: del.submittedAt, fallback_mailed_at: nowIso });
+      suspect.push({ party_id: del.partyId, consent_id: party?.consent_ids.esign ?? null });
+    }
+  }
+  const rendered = cycles.renderStatement(loanId, { cycle_due_date: input.cycle_due_date, statement_date: statementDate, template: "NTC_REGZ_41_STMT_STD", variant: "standard", payload: statementPayload(facts, parties[0]?.legal_name ?? "Borrower", statementDate, input.cycle_due_date), recipients, reminder_panel: false, ...(input.cycle !== undefined ? { cycle: input.cycle } : {}) });
+  if (rendered.status === "held") throw new RangeError(`statement held: ${rendered.held_reason}`);
+  const out = await cycles.sendStatement(rendered.notice.id);
+  let mailedAt: string | null = null; let channel: "electronic" | "mail" = "electronic";
+  if (out.awaiting === "vendor_manifest") {
+    // the paper statement: the FAKE print/mail vendor's production run is the same day (7.4 rule 8: "same-day mail of the affected notice"); the manifest closes the cycle with `statement.sent{mailed_at}`
+    runProduction(rt, nowIso); mailedAt = nowIso; channel = "mail";
+    const attempt = out.notice.deliveries.find((del) => del.channel.startsWith("mail"))!.attemptNo;
+    cycles.recordStatementMailed(rendered.notice.id, { attempt_no: attempt, mailed_at: nowIso, proof_of_mailing_id: `POM-${rendered.notice.id}:${attempt}` });
+  }
+  for (const partyId of bounced) {
+    ctx.events.append({ type: "statement.bounced", loanId, actor: STATEMENT_AGENT, payload: { cycle_due_date: input.cycle_due_date, statement_date: statementDate, party_id: partyId, availability_notice_id: availabilityId, notice_id: rendered.notice.id, reason: "hard bounce" } });
+    ctx.events.append({ type: "statement.fallback_mailed", loanId, actor: STATEMENT_AGENT, payload: { cycle_due_date: input.cycle_due_date, statement_date: statementDate, party_id: partyId, notice_id: rendered.notice.id, mailed_at: mailedAt, same_day: mailedAt !== null && mailedAt.slice(0, 10) === nowIso.slice(0, 10), consent_status: "suspect" } });
+  }
+  return { notice_id: rendered.notice.id, availability_notice_id: availabilityId, channel, bounced_party_ids: bounced, mailed_at: mailedAt, statement_date: statementDate, events: [], notices: [notices.get(rendered.notice.id), ...(availabilityId ? [notices.get(availabilityId)] : [])] };
+}
+
+/** 7.1's cycle run for one statement — see the header. Returns the facts the flow and the tests read back. */
+export async function sendPeriodicStatement(rt: Runtime, loanId: string, input: StatementRunInput): Promise<StatementRunResult> {
+  const d = await prepareStatementCycle(rt, loanId, input);
   const suspect: { party_id: string; consent_id: string | null }[] = [];
   let result: StatementRunResult | null = null;
-  const r = await rt.uow.run({ loanId, ...(facts.loan.origination_application_id ? { applicationId: facts.loan.origination_application_id } : {}) }, async (ctx) => {
-    const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery! });
-    const cycles = new StatementCycleService({ events: ctx.events, clock: ctx.clock, notices });
-    const recipients = recipientsOf(parties);
-    // comment 41(c)-3: the availability e-mail goes to every party whose active consent covers periodic statements; a hard bounce flips that party's consent to suspect (7.4 rule 8) before the statement's own channel decision
-    const electronic = recipients.filter((x) => x.consent?.status === "active" && x.consent.classes.includes("periodic_statements") && x.email);
-    let availabilityId: string | null = null; const bounced: string[] = [];
-    if (electronic.length) {
-      const avail = notices.render({ templateCode: "NTC_REGZ_41_STMT_AVAIL_EMAIL", loanId, recipients: electronic, payload: { statement_date: statementDate, account_last4: facts.loan.servicer_loan_number.slice(-4), portal_url: SERVICER_CONTACT.portal_url, consent_status: "active", servicer_phone: SERVICER_CONTACT.servicer_phone }, asOf: statementDate });
-      const sent = await notices.send(avail.id); availabilityId = sent.id;
-      for (const d of sent.deliveries) if (d.emailStatus === "bounced") {
-        const party = parties.find((p) => p.party_id === d.partyId); bounced.push(d.partyId);
-        recordBounceSuspect({ events: ctx.events }, { loan_id: loanId, party_id: d.partyId, consent_id: party?.consent_ids.esign ?? null, notice_id: sent.id, template: sent.templateCode, bounced_at: d.submittedAt, fallback_mailed_at: nowIso });
-        suspect.push({ party_id: d.partyId, consent_id: party?.consent_ids.esign ?? null });
-      }
-    }
-    const rendered = cycles.renderStatement(loanId, { cycle_due_date: input.cycle_due_date, statement_date: statementDate, template: "NTC_REGZ_41_STMT_STD", variant: "standard", payload: statementPayload(facts, parties[0]?.legal_name ?? "Borrower", statementDate, input.cycle_due_date), recipients, reminder_panel: false, ...(input.cycle !== undefined ? { cycle: input.cycle } : {}) });
-    if (rendered.status === "held") throw new RangeError(`statement held: ${rendered.held_reason}`);
-    const out = await cycles.sendStatement(rendered.notice.id);
-    let mailedAt: string | null = null; let channel: "electronic" | "mail" = "electronic";
-    if (out.awaiting === "vendor_manifest") {
-      // the paper statement: the FAKE print/mail vendor's production run is the same day (7.4 rule 8: "same-day mail of the affected notice"); the manifest closes the cycle with `statement.sent{mailed_at}`
-      runProduction(rt, nowIso); mailedAt = nowIso; channel = "mail";
-      const attempt = out.notice.deliveries.find((d) => d.channel.startsWith("mail"))!.attemptNo;
-      cycles.recordStatementMailed(rendered.notice.id, { attempt_no: attempt, mailed_at: nowIso, proof_of_mailing_id: `POM-${rendered.notice.id}:${attempt}` });
-    }
-    for (const partyId of bounced) {
-      ctx.events.append({ type: "statement.bounced", loanId, actor: STATEMENT_AGENT, payload: { cycle_due_date: input.cycle_due_date, statement_date: statementDate, party_id: partyId, availability_notice_id: availabilityId, notice_id: rendered.notice.id, reason: "hard bounce" } });
-      ctx.events.append({ type: "statement.fallback_mailed", loanId, actor: STATEMENT_AGENT, payload: { cycle_due_date: input.cycle_due_date, statement_date: statementDate, party_id: partyId, notice_id: rendered.notice.id, mailed_at: mailedAt, same_day: mailedAt !== null && mailedAt.slice(0, 10) === nowIso.slice(0, 10), consent_status: "suspect" } });
-    }
-    result = { notice_id: rendered.notice.id, availability_notice_id: availabilityId, channel, bounced_party_ids: bounced, mailed_at: mailedAt, statement_date: statementDate, events: [] };
-    return result;
-  }, { clock: rt.clock, commit: async (q) => { for (const x of suspect) await q.query(`UPDATE consents SET status = 'suspect' WHERE party_id = $1 AND kind = 'esign' AND status = 'active'`, [x.party_id]); } });
+  const r = await rt.uow.run({ loanId, ...(d.facts.loan.origination_application_id ? { applicationId: d.facts.loan.origination_application_id } : {}) }, async (ctx) => { result = await statementCycleIn(rt, ctx, loanId, input, d, suspect); return result; },
+    { clock: rt.clock, commit: async (q) => { await markSuspectConsents(q, suspect); await persistStatementNotices(rt, q, (result as unknown as StatementRunResult | null)?.notices ?? [], d.statementDate); } });
   return { ...(result as unknown as StatementRunResult), events: r.events.map((e) => ({ type: e.type, payload: e.payload as Record<string, unknown> })) };
 }
 
 // ---------------------------------------------------------------- 7.1-A / 7.4 rule 11: Form 1098
 export interface Form1098Result { readonly notice_id: string; readonly channel: "electronic" | "paper"; readonly gate_open: boolean; readonly box1_cents: string; readonly box2_cents: string; readonly furnished_on: PlainDate; }
-export async function furnishForm1098(rt: Runtime, loanId: string, input: { tax_year: number; furnished_on?: PlainDate; now?: string }): Promise<Form1098Result> {
+export interface Form1098Deps { readonly facts: LoanFacts; readonly parties: readonly ServicingParty[]; readonly payer: ServicingParty; readonly interest: string; readonly upbJan1: string; readonly propertyAddress: string; readonly on: PlainDate; readonly nowIso: string; readonly taxYear: number; }
+/** The 1098's facts before its unit of work: box 1 from the ledger (interest credited by the year's allocation sets), box 2 the principal balance at the year's start. */
+export async function prepareForm1098(rt: Runtime, loanId: string, input: { tax_year: number; furnished_on?: PlainDate; now?: string }): Promise<Form1098Deps> {
   const nowIso = input.now ?? rt.clock.now(); const on = input.furnished_on ?? D(nowIso.slice(0, 10)); const y = input.tax_year;
   if (!rt.ports.printMail || !rt.ports.edelivery) throw new RangeError("print/mail and e-delivery ports are not wired");
   const facts = await loanCashState(rt, loanId, on); const parties = await servicingParties(rt, loanId); const payer = parties[0];
   if (!payer) throw new RangeError("no borrower party on the loan");
-  // box 1 from the ledger: interest credited to interest_due by the year's allocation sets; box 2: the principal balance at the year's start
   const interest = (await rt.db.query<{ s: string }>(`SELECT coalesce(-sum(l.amount_cents), 0)::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id WHERE l.scope = 'loan' AND l.loan_id = $1 AND l.account = 'interest_due' AND l.amount_cents < 0 AND e.effective_date >= $2::date AND e.effective_date < $3::date`, [loanId, `${y}-01-01`, `${y + 1}-01-01`]))[0]!.s;
   const upbJan1 = (await rt.db.query<{ s: string }>(`SELECT coalesce(sum(l.amount_cents), 0)::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id WHERE l.scope = 'loan' AND l.loan_id = $1 AND l.account = 'principal' AND e.effective_date < $2::date`, [loanId, `${y}-01-01`]))[0]!.s;
   const prop = (await rt.db.query<Row>(`SELECT pr.address_line1, pr.city, pr.state, pr.postal_code FROM loans l JOIN properties pr ON pr.id = l.property_id WHERE l.id = $1`, [loanId]))[0];
+  return { facts, parties, payer, interest, upbJan1, propertyAddress: prop ? `${String(prop.address_line1)}, ${String(prop.city)}, ${String(prop.state)} ${String(prop.postal_code)}` : payer.mailing_address ?? "", on, nowIso, taxYear: y };
+}
+/** The 1098's body on a unit of work the caller owns (a 35.3 `form_1098` unit runs it on the unit's command). */
+export async function form1098In(rt: Runtime, ctx: { readonly events: EventStore; readonly clock: Clock }, loanId: string, d: Form1098Deps): Promise<Form1098Result> {
+  const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery! });
+  const cycles = new StatementCycleService({ events: ctx.events, clock: ctx.clock, notices });
+  const gate = requestForm1098Furnish({ events: ctx.events }, { loan_id: loanId, tax_year: d.taxYear, party_id: d.payer.party_id, channel: "electronic", consents: d.parties.flatMap((p) => (p.irs_estatement ? [p.irs_estatement] : [])) });
+  const out = await cycles.furnish1098(loanId, { tax_year: d.taxYear, interest_received_cents: c(d.interest), upb_jan1_cents: c(d.upbJan1), furnished_on: d.on, recipients: recipientsOf(d.parties, "irs_estatement"),
+    payload: { servicer_name: SERVICER_CONTACT.servicer_name, servicer_tin: SERVICER_CONTACT.servicer_tin, payer_name: d.payer.legal_name, account_number: d.facts.loan.servicer_loan_number, property_address: d.propertyAddress, box3_origination_date: d.facts.loan.instrument_date, box4_cents: 0n, box5_cents: 0n, box6_cents: 0n, box10_cents: 0n, box11_acquisition_date: null, servicer_phone: SERVICER_CONTACT.servicer_phone, servicer_address: SERVICER_CONTACT.servicer_address, exclusive_address: SERVICER_CONTACT.exclusive_address } });
+  if (out.channel === "paper") runProduction(rt, d.nowIso);
+  return { notice_id: out.notice.id, channel: out.channel, gate_open: gate.gate_open, box1_cents: s(out.box1_cents), box2_cents: s(out.box2_cents), furnished_on: d.on };
+}
+export async function furnishForm1098(rt: Runtime, loanId: string, input: { tax_year: number; furnished_on?: PlainDate; now?: string }): Promise<Form1098Result> {
+  const d = await prepareForm1098(rt, loanId, input);
   let result: Form1098Result | null = null;
-  await rt.uow.run({ loanId, ...(facts.loan.origination_application_id ? { applicationId: facts.loan.origination_application_id } : {}) }, async (ctx) => {
-    const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery! });
-    const cycles = new StatementCycleService({ events: ctx.events, clock: ctx.clock, notices });
-    const gate = requestForm1098Furnish({ events: ctx.events }, { loan_id: loanId, tax_year: y, party_id: payer.party_id, channel: "electronic", consents: parties.flatMap((p) => (p.irs_estatement ? [p.irs_estatement] : [])) });
-    const out = await cycles.furnish1098(loanId, { tax_year: y, interest_received_cents: c(interest), upb_jan1_cents: c(upbJan1), furnished_on: on, recipients: recipientsOf(parties, "irs_estatement"),
-      payload: { servicer_name: SERVICER_CONTACT.servicer_name, servicer_tin: SERVICER_CONTACT.servicer_tin, payer_name: payer.legal_name, account_number: facts.loan.servicer_loan_number, property_address: prop ? `${String(prop.address_line1)}, ${String(prop.city)}, ${String(prop.state)} ${String(prop.postal_code)}` : payer.mailing_address ?? "", box3_origination_date: facts.loan.instrument_date, box4_cents: 0n, box5_cents: 0n, box6_cents: 0n, box10_cents: 0n, box11_acquisition_date: null, servicer_phone: SERVICER_CONTACT.servicer_phone, servicer_address: SERVICER_CONTACT.servicer_address, exclusive_address: SERVICER_CONTACT.exclusive_address } });
-    if (out.channel === "paper") runProduction(rt, nowIso);
-    result = { notice_id: out.notice.id, channel: out.channel, gate_open: gate.gate_open, box1_cents: s(out.box1_cents), box2_cents: s(out.box2_cents), furnished_on: on };
-    return result;
-  }, { clock: rt.clock });
+  await rt.uow.run({ loanId, ...(d.facts.loan.origination_application_id ? { applicationId: d.facts.loan.origination_application_id } : {}) }, async (ctx) => { result = await form1098In(rt, ctx, loanId, d); return result; }, { clock: rt.clock });
   return result as unknown as Form1098Result;
 }

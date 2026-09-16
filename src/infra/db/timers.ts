@@ -53,8 +53,9 @@ export class PgTimerRepository {
     return (await this.db.query<TimerRow>(`SELECT * FROM timers WHERE status = 'armed' AND due_at <= $1 ORDER BY due_at`, [nowIso])).map(rowToInstance);
   }
   /** 35.1 rule 12: the breach pass claims its due timers `FOR UPDATE SKIP LOCKED` (on the pass's own transaction) so a breach is evaluated once even if a lease ever failed. */
-  async dueForUpdate(nowIso: string, q: Queryable = this.db): Promise<TimerInstance[]> {
-    return (await q.query<TimerRow>(`SELECT * FROM timers WHERE status = 'armed' AND due_at <= $1 ORDER BY due_at FOR UPDATE SKIP LOCKED`, [nowIso])).map(rowToInstance);
+  async dueForUpdate(nowIso: string, q: Queryable = this.db, limit?: number): Promise<TimerInstance[]> {
+    // 35.3 rule 9: the breach pass reads in pages (`LIMIT 500`), one transaction per page, so two passes take disjoint pages
+    return (limit ? await q.query<TimerRow>(`SELECT * FROM timers WHERE status = 'armed' AND due_at <= $1 ORDER BY due_at LIMIT $2 FOR UPDATE SKIP LOCKED`, [nowIso, limit]) : await q.query<TimerRow>(`SELECT * FROM timers WHERE status = 'armed' AND due_at <= $1 ORDER BY due_at FOR UPDATE SKIP LOCKED`, [nowIso])).map(rowToInstance);
   }
   async forApplication(applicationId: string): Promise<TimerInstance[]> {
     return (await this.db.query<TimerRow>(`SELECT * FROM timers WHERE application_id = $1 ORDER BY armed_at`, [applicationId])).map(rowToInstance);

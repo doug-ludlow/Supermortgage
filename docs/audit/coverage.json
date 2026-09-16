@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8104/8756 (92.6%): tids 2259/2458, tables 774/848, timers 2045/2097, notices 308/308, tools 1441/1578, figures 1277/1467; processes at 100%: 193/205",
+ "brief": "spec units built 8146/8756 (93.0%): tids 2275/2458, tables 779/848, timers 2056/2097, notices 308/308, tools 1450/1578, figures 1278/1467; processes at 100%: 194/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2259
+   "built": 2275
   },
   "tables": {
    "spec": 848,
-   "built": 774
+   "built": 779
   },
   "timers": {
    "spec": 2097,
-   "built": 2045
+   "built": 2056
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1441
+   "built": 1450
   },
   "figures": {
    "spec": 1467,
-   "built": 1277
+   "built": 1278
   },
   "units": {
    "spec": 8756,
-   "built": 8104
+   "built": 8146
   }
  },
  "sections": {
@@ -237,9 +237,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 80,
+   "built": 122,
    "processes": 12,
-   "done": 1
+   "done": 2
   }
  },
  "done": [
@@ -435,7 +435,8 @@
   "34.2",
   "34.3",
   "34.4",
-  "35.1"
+  "35.1",
+  "35.3"
  ],
  "processes": [
   {
@@ -8457,10 +8458,9 @@
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 1,
     "armable": 4,
     "missing": [
-     "SM_DOC_INTEGRITY_DAILY",
      "SM_DOC_WORM_DRAIN_1D",
      "SM_ESIGN_ENVELOPE_EXPIRY_30",
      "SM_MAIL_MANIFEST_2BD"
@@ -8509,56 +8509,29 @@
    },
    "units": {
     "spec": 58,
-    "built": 2
+    "built": 3
    },
-   "pct": 3.4
+   "pct": 5.2
   },
   {
    "process": "35.3",
    "title": "Cycles, jobs and receipts: the planner, the jobs table, `cycles.run_unit` on the bus and the registry of every scheduled cycle",
    "tids": {
     "spec": 16,
-    "built": 0,
-    "todo": 16,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "cycle_receipts",
-     "cycle_registry",
-     "cycle_runs",
-     "job_events",
-     "jobs"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 3,
-    "built": 0,
+    "built": 3,
     "armable": 3,
-    "missing": [
-     "SM_CYCLE_PLANNER_DAILY",
-     "SM_CYCLE_RUN_STALLED_1D",
-     "SM_JOB_DEAD_2H"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8567,31 +8540,19 @@
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "cycles.registry",
-     "cycles.plan",
-     "cycles.run_unit",
-     "cycles.receipt",
-     "cycles.retry",
-     "cycles.escalate",
-     "jobs.list",
-     "jobs.requeue",
-     "writeDecision"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 6,
-    "missing": [
-     "$2,125.74"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 40,
-    "built": 6
+    "built": 40
    },
-   "pct": 15.0
+   "pct": 100.0
   },
   {
    "process": "35.4",
@@ -8734,12 +8695,11 @@
    },
    "timers": {
     "spec": 8,
-    "built": 1,
+    "built": 2,
     "armable": 8,
     "missing": [
      "SM_ACH_FILE_BUILD_1BD",
      "SM_ACH_RETURN_ACTIONED_1BD",
-     "SM_CASHIERING_DAILY_RECEIPT_1D",
      "SM_INSTALLMENT_REPROJECT_1BD",
      "SM_INSTALLMENT_SCHEDULE_AT_BOARD_0",
      "SM_LOAN_SERVICING_CONFIG_AT_BOARD_0",
@@ -8826,9 +8786,9 @@
    },
    "units": {
     "spec": 97,
-    "built": 6
+    "built": 7
    },
-   "pct": 6.2
+   "pct": 7.2
   },
   {
    "process": "35.6",
@@ -8872,10 +8832,9 @@
    },
    "timers": {
     "spec": 5,
-    "built": 2,
+    "built": 3,
     "armable": 5,
     "missing": [
-     "SM_ORCH_OPEN_BOOK_DAILY",
      "SM_ORCH_PURCHASE_RECON_1BD",
      "SM_ORCH_STEP_STALLED_2BD"
     ]
@@ -8944,9 +8903,9 @@
    },
    "units": {
     "spec": 80,
-    "built": 8
+    "built": 9
    },
-   "pct": 10.0
+   "pct": 11.2
   },
   {
    "process": "35.7",
@@ -8988,10 +8947,9 @@
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 1,
     "armable": 4,
     "missing": [
-     "SM_HANDOVER_BOARD_DAILY",
      "SM_ROLE_BREAKGLASS_REVIEW_1BD",
      "SM_ROLE_GRANT_DORMANT_30D",
      "SM_ROLE_QUEUE_UNSTAFFED_1BD"
@@ -9031,9 +8989,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 3
+    "built": 4
    },
-   "pct": 6.8
+   "pct": 9.1
   },
   {
    "process": "35.8",
@@ -9076,14 +9034,13 @@
    },
    "timers": {
     "spec": 5,
-    "built": 0,
+    "built": 1,
     "armable": 5,
     "missing": [
      "SM_WORK_APPROVAL_1BD",
      "SM_WORK_ITEM_AGE_2BD",
      "SM_WORK_ITEM_AGE_5BD",
-     "SM_WORK_ITEM_CLAIM_4H",
-     "SM_WORK_LOG_RECON_DAILY"
+     "SM_WORK_ITEM_CLAIM_4H"
     ]
    },
    "notices": {
@@ -9135,9 +9092,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 5
+    "built": 6
    },
-   "pct": 7.9
+   "pct": 9.5
   },
   {
    "process": "35.9",
@@ -9182,14 +9139,13 @@
    },
    "timers": {
     "spec": 6,
-    "built": 0,
+    "built": 1,
     "armable": 6,
     "missing": [
      "SM_BREACH_ACTION_RECON_DAILY",
      "SM_CASE_MILESTONE_OVERDUE_5BD",
      "SM_CASE_REFERRAL_DECISION_2BD",
      "SM_CLAIM_PACKAGE_5BD",
-     "SM_DEFAULT_CASE_DAILY",
      "SM_DOCKET_REACTION_1BD"
     ]
    },
@@ -9252,9 +9208,9 @@
    },
    "units": {
     "spec": 72,
-    "built": 1
+    "built": 2
    },
-   "pct": 1.4
+   "pct": 2.8
   },
   {
    "process": "35.10",
@@ -9498,13 +9454,11 @@
    },
    "timers": {
     "spec": 6,
-    "built": 0,
+    "built": 2,
     "armable": 6,
     "missing": [
      "SM_NONPROD_REAL_DATA_PURGE_1BD",
      "SM_PROD_GO_LIVE_ATTEST_GATE",
-     "SM_PROD_PARALLEL_RUN_DAILY",
-     "SM_PROD_POSTURE_DAILY",
      "SM_PROD_POSTURE_DRIFT_1BD",
      "SM_PROD_RESTORE_DRILL_90D"
     ]
@@ -9547,9 +9501,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 4
+    "built": 6
    },
-   "pct": 6.9
+   "pct": 10.3
   }
  ]
 }

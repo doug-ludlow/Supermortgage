@@ -44,7 +44,10 @@ export function owningCompletion(e: { owner_role: string; kind: string; applicat
     fallback: { process: "23.3", name: "openEscalation", dispositions: DECIDE_DISPOSITIONS, input: (row) => ({ op: "complete", escalation_id: row.id }) } };
   return null;
 }
-export const dispositionsOf = (e: { owner_role: string; kind: string; application_id: string | null; payload: Row }): readonly string[] => owningCompletion(e)?.dispositions ?? ROW_DISPOSITIONS;
+/** 35.3 T12: a breach of one of the cycle engine's clocks (SM_CYCLE_RUN_STALLED_1D, SM_JOB_DEAD_2H) is completed on the row with `completed_late` once the run or the unit completed after the clock — beside the row set. */
+export const CYCLE_CLOCK_DISPOSITIONS: readonly string[] = ["completed_late", ...ROW_DISPOSITIONS];
+const isCycleClock = (e: { payload: Row }): boolean => e.payload["timer_code"] === "SM_CYCLE_RUN_STALLED_1D" || e.payload["timer_code"] === "SM_JOB_DEAD_2H";
+export const dispositionsOf = (e: { owner_role: string; kind: string; application_id: string | null; payload: Row }): readonly string[] => owningCompletion(e)?.dispositions ?? (isCycleClock(e) ? CYCLE_CLOCK_DISPOSITIONS : ROW_DISPOSITIONS);
 
 const toRow = (r: Row): EscalationRow => {
   const base = { id: s(r["id"]), kind: s(r["kind"]), owner_role: s(r["owner_role"]), severity: r["severity"] ? s(r["severity"]) : null, status: (r["completed_at"] ? "completed" : "open") as "open" | "completed",
@@ -53,7 +56,7 @@ const toRow = (r: Row): EscalationRow => {
   const done = (r["completion"] as Row | null) ?? null;
   const owning = owningCompletion(base);
   return { ...base, completed_by: done ? s(done["completed_by"]) || null : null, completed_by_role: done ? s(done["completed_by_role"]) || null : null, disposition: done ? s(done["disposition"]) || null : null, reason: done ? s(done["reason"]) || null : null,
-    completion: owning ? { process: owning.process, name: owning.name } : "row", dispositions: owning?.dispositions ?? ROW_DISPOSITIONS };
+    completion: owning ? { process: owning.process, name: owning.name } : "row", dispositions: owning?.dispositions ?? (isCycleClock(base) ? CYCLE_CLOCK_DISPOSITIONS : ROW_DISPOSITIONS) };
 };
 const SELECT = `SELECT e.id::text AS id, e.kind, e.owner_role, e.severity, e.loan_id::text AS loan_id, e.application_id::text AS application_id, e.case_id::text AS case_id, e.batch_id::text AS batch_id, e.sla_timer_id::text AS sla_timer_id,
     e.opened_at::text AS opened_at, e.opened_by, e.completed_at::text AS completed_at, e.completed_evidence_document_id::text AS completed_evidence_document_id, e.payload,

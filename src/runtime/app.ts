@@ -54,8 +54,7 @@ import { publishSection02 } from "../notices/authored/section02.ts";
 import { registerPreapprovalLetter } from "../notices/authored/section20-3.ts";
 import type { NoticeRegistry } from "../notices/registry.ts";
 import type { TimerRegistry } from "../kernel/timers/registry.ts";
-import { TimerEngine, type TimerInstance } from "../kernel/timers/engine.ts";
-import { PgTimerRepository } from "../infra/db/timers.ts";
+import type { TimerInstance } from "../kernel/timers/engine.ts";
 import type { Actor, Clock, DomainEvent } from "../kernel/events/index.ts";
 import { MemoryEventStore, systemClock } from "../kernel/events/index.ts";
 import { FakeLockbox, FakeCustodialBank, FakeOdfi } from "../infra/integrations/banking.ts";
@@ -76,6 +75,12 @@ import { verifyRun, verifiedToday, recordFailedRun, type VerifyReport } from "..
 import type { OutboundAdapter } from "../infra/integrations/outbox.ts";
 import { wallClock } from "../kernel/calendar/zoned.ts";
 import { refiDailyRun, type RefiDailyReport } from "./refi-daily.ts";
+import { planCycles, type PlanReport } from "../domain/operations-runtime/cycles/planner.ts";
+import { drainQueue, type ExecutorReport } from "../domain/operations-runtime/cycles/executor.ts";
+import { breachPass } from "../domain/operations-runtime/cycles/breach.ts";
+import { EXECUTOR_BUDGET_MS } from "../domain/operations-runtime/cycles/jobs.ts";
+import { defaultCyclesConfig, type CyclesConfig } from "../domain/operations-runtime/cycles/runners.ts";
+import type { CommandContext } from "../app/commands.ts";
 import { partnerBookReviewRun, type ReviewRunReport } from "./partner-book-review.ts";
 import { readinessRun, type ReadinessRunReport } from "./partner-book-readiness.ts";
 import type { AnalystLlm } from "./partner-book-analyst.ts";
@@ -106,6 +111,8 @@ export interface RuntimeDeps {
   readonly outboxCompletions?: ReadonlyMap<string, OutboxCompletion>;
   /** The database's connection string (main.ts passes config.databaseUrl): a job that needs a dedicated client (35.3's planner lock) opens it here; the sweep lease uses the pool's own. */
   readonly databaseUrl?: string;
+  /** 35.3 rule 2: the cycle registry, its selectors and runners (default: cycles.ts CYCLES / runners.ts RUNNERS; a test registers extra defs and runners). */
+  readonly cycles?: Partial<CyclesConfig>;
 }
 /** A command is scoped to a loan (`loanId`), to an application before funding (`applicationId`), or to both during the 30.2 hand-off. */
 export interface ExecuteRequest { readonly process: string; readonly name: string; readonly loanId: string; readonly applicationId?: string; readonly actor: Actor; readonly input: ToolInput; readonly run?: AgentRunInfo; readonly approvedBy?: Actor; }
@@ -150,11 +157,17 @@ export interface SweepReport {
   readonly outbox_dispatch: DrainReport | null;
   /** 35.1 rule 13: the daily verify run when this sweep ran it (once per calendar day at/after 06:00 ET). */
   readonly verify: VerifyReport | null;
+  /** 35.3: the planner pass (after the outbox drain) and the executor (after the section passes, within 240 s of the sweep's start); null when `opts.cycles === false` (the demo step ran them inline). */
+  readonly cycles: { readonly plan: PlanReport | null; readonly execute: ExecutorReport | null };
+  /** 35.3 rule 9: the breach pass's pages of 500. */
+  readonly breach_pages: number;
 }
 export interface SweepOptions {
   /** `false`: skip the daily verify pass (a test that lets SM_PROJECTION_LAG_DAILY breach). */
   readonly verify?: boolean;
   readonly holder?: string;
+  /** `false`: skip the 35.3 planner and executor (the demo step runs them inline before the breach pass — rule 10). */
+  readonly cycles?: boolean;
 }
 /** The spec's schedule for the verify run: 06:00 America/New_York (35.1 "Trigger & frequency"). */
 export const VERIFY_AT_ET = "06:00";
@@ -190,6 +203,8 @@ export class Runtime {
   readonly instanceId: string;
   readonly outboxCompletions: ReadonlyMap<string, OutboxCompletion> | undefined;
   readonly databaseUrl: string | null;
+  /** 35.3: the cycle registry in code with its selectors and runners (rule 2). */
+  readonly cycles: CyclesConfig;
   /** The running sweep's `sweep_runs` id while `sweep` holds the lease (35.3's `cycle_runs.planned_by` reads `sweep:<id>`); null outside a run. */
   sweepRunId: string | null = null;
   readonly uow: PgUnitOfWork;
@@ -209,6 +224,7 @@ export class Runtime {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
     this.rateFeed = deps.rateFeed ?? null; this.reviewers = deps.reviewers ?? null; this.analystLlm = deps.analystLlm ?? null; this.logger = deps.logger;
     this.outboxAdapters = deps.outboxAdapters; this.instanceId = deps.instanceId ?? defaultHolder(); this.outboxCompletions = deps.outboxCompletions; this.databaseUrl = deps.databaseUrl ?? null;
+    this.cycles = { ...defaultCyclesConfig(), ...(deps.cycles ?? {}) };
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
     this.root = this;
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
@@ -308,6 +324,18 @@ export class Runtime {
   }
 
   /**
+   * 35.3 rule 8: a unit's owner tools on the unit's own unit of work — the same bus (allowlists, roles, money fields,
+   * guardrails, decision record, `command.executed`) on the calling command's context, never a second transaction. A
+   * cashiering unit runs 2.1's post, 2.7's daily run and 2.3's check this way, so a loan's day is one transaction.
+   */
+  async runOnBus(ctx: CommandContext, rt: ToolRuntime, req: { process: string; name: string; actor: Actor; input: ToolInput; approvedBy?: Actor }): Promise<ExecuteResult<unknown>> {
+    const def = this.tool(req.process, req.name);
+    if (!def) throw new ToolNotFound(req.process, req.name);
+    const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;
+    return this.bus.execute(cmd, req.actor, req.input, ctx, { now: ctx.now, ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
+  }
+
+  /**
    * Open an application (21.1's aggregate) — the origination side's first write. The row and its borrowers/property are
    * inserted and `application.started` is appended keyed by the application id, in one transaction; every origination
    * timer that triggers on `application.started` arms in the same pass.
@@ -361,7 +389,7 @@ export class Runtime {
       await this.db.query(`INSERT INTO sweep_runs (id, holder, started_at, heartbeat_at, finished_at, as_of_date, outcome, skipped_reason) VALUES ($1, $2, $3, $3, $3, $4, $5, $6)`, [leased.runId, holder, nowIso, asOfDate, outcome, leased.reason]);
       if (outcome === "skipped") await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_skipped", aggregate: { kind: "sweep_run", id: leased.runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: leased.runId, holder, as_of_date: asOfDate, reason: leased.reason, lease_key: 35_001 } }), { clock: this.clock });
       this.logger?.[outcome === "skipped" ? "info" : "error"](`sweep ${outcome}`, { run_id: leased.runId, holder, reason: leased.reason, error: leased.error ?? null });
-      return { at: nowIso, due: 0, breaches: [], outbox: [], ...notRun(leased.reason), run_id: leased.runId, holder, outcome, skipped_reason: leased.reason, passes: [], outbox_dispatch: null, verify: null };
+      return { at: nowIso, due: 0, breaches: [], outbox: [], ...notRun(leased.reason), run_id: leased.runId, holder, outcome, skipped_reason: leased.reason, passes: [], outbox_dispatch: null, verify: null, cycles: { plan: null, execute: null }, breach_pages: 0 };
     }
     const lease = leased.lease; const runId = lease.runId; this.sweepRunId = runId;
     await this.db.query(`INSERT INTO sweep_runs (id, holder, started_at, heartbeat_at, as_of_date, outcome) VALUES ($1, $2, $3, $3, $4, 'running')`, [runId, holder, nowIso, asOfDate]);
@@ -377,6 +405,8 @@ export class Runtime {
     try {
       // rule 11: the outbox, drained by every sweep — after the lease, before the passes (the drain's failure is the run's)
       const outboxDispatch = await pass("outbox.dispatch", () => drainOutbox({ db: this.db, registry: this.registry, clock: this.clock, ports: this.ports, ...(this.outboxAdapters ? { adapters: this.outboxAdapters } : {}), ...(this.outboxCompletions ? { completions: this.outboxCompletions } : {}), notify: (ev) => this.uow.notifyCommitted(ev) }, nowIso, { runId }), (d) => ({ claimed: d.claimed, sent: d.sent, retried: d.retried, dead: d.dead, rejected: d.rejected, fallback: d.fallback }));
+      // 35.3 rule 3 / rule 10: the planner after the lease and the drain, before the section passes — its own lock (35_003), never blocking the sweep; a refused lock is `cycles.plan.skipped`
+      const plan = opts.cycles !== false ? await logged("cycles.plan", () => planCycles(this, { as_of: nowIso, planned_by: `sweep:${runId}` }), () => null as PlanReport | null, (p) => (p ? { skipped: p.skipped, runs_opened: p.runs_opened, jobs_planned: p.jobs_planned, reclaimed: p.leases_reclaimed, reconciled: p.receipts_reconciled, overdue: p.overdue.length } : { failed: true })) : null;
       const refi = this.rateFeed ? await logged("refi.daily", () => refiDailyRun(this, nowIso, { feed: this.rateFeed!, logger: this.logger }), (msg) => ({ at: nowIso, as_of_date: asOfDate as RefiDailyReport["as_of_date"], ran: false, reason: `failed: ${msg}`, rate_sheet: null, universe: { view_rows: 0, loaded: 0, unchanged: 0, skipped: [], monitored: { rows: 0, skipped: 0, open_offer: 0 } }, programs: [], line: `refi daily: failed (${msg})` } as RefiDailyReport), (r) => ({ ran: r.ran, programs: r.programs.length })) : null;
       // 33.2: the daily review of the partner book after the refinance check (it reads the day's run) — errors logged, never thrown
       const partnerBookReview = await logged("partner_book.review", () => partnerBookReviewRun(this, nowIso, { logger: this.logger, llm: this.analystLlm }), (msg) => ({ at: nowIso, as_of_date: asOfDate as ReviewRunReport["as_of_date"], ran: false, reason: `failed: ${msg}`, monitored_loans: 0, programs: [], line: `partner book review: failed (${msg})` } as ReviewRunReport), (r) => ({ ran: r.ran, monitored_loans: r.monitored_loans }));
@@ -400,30 +430,11 @@ export class Runtime {
           } catch (e) { this.logger?.error("verify run failed", { at: nowIso, error: e }); await recordFailedRun(this.db, { as_of_date: asOfDate, started_at: nowIso, now: this.clock.now(), actor: { kind: "agent", id: "security-records" }, error: e instanceof Error ? e.message : String(e) }).catch(() => undefined); return null; }
         }, (v) => (v ? { run_id: v.run_id, gaps: v.gaps, mismatches: v.mismatches, rows_verified: v.rows_verified } : { failed: true }));
       }
-      // the breach pass: the due instances (any loan, or global) claimed FOR UPDATE SKIP LOCKED and restored into a fresh engine; evaluate breaches them and appends timer.breached under each timer's own loan — one transaction
-      const breaches: SweepReport["breaches"][number][] = [];
-      const due = await pass("timers.breach", () => this.db.tx(async (q) => {
-        const timerRepo = new PgTimerRepository(q);
-        // SM_SWEEP_HEARTBEAT_DAILY breaches only inside a sweep (35.1 edge case 7): a run in progress on the clock's due day is the day's sweep and satisfies it minutes later; the clock breaches when its due day passed with no run at all (a demo advance that sweeps once a day at noon is not an outage)
-        const claimed = (await timerRepo.dueForUpdate(nowIso)).filter((t) => t.code !== "SM_SWEEP_HEARTBEAT_DAILY" || (t.dueDate ?? wallClock(t.dueAt ?? Date.parse(nowIso), "America/New_York").date) < asOfDate);
-        if (!claimed.length) return claimed;
-        const events = new MemoryEventStore(this.clock);
-        const engine = new TimerEngine(this.registry, events);
-        engine.restore(claimed);
-        const escalations = new EscalationService(events, this.clock);
-        for (const b of engine.evaluate(nowIso)) {
-          const sev = b.severity ?? 4;
-          const owner = b.escalateTo[0] ?? "ops_analyst";
-          escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), severity: String(sev), slaTimerId: b.instance.id,
-            payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText } }, { kind: "system", id: "sweep" });
-          breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });
-        }
-        const persisted = await this.uow.events.append(events.since(0), q);
-        await timerRepo.save(engine.all().filter((t) => t.status === "breached"), q);
-        for (const e of escalations.list()) await this.escalationRepo.save(e, q);
-        this.uow.notifyCommitted(persisted);
-        return claimed;
-      }), (d) => ({ due: d.length, breaches: breaches.length }));
+      // 35.3 rule 6: the executor — claims `FOR UPDATE SKIP LOCKED LIMIT 20`, runs every claimed unit as its owner's command, heartbeats, and stops claiming 240 s after the sweep started (the section passes above ran first, so a wrapped pass finds its day already done)
+      const execute = opts.cycles !== false ? await logged("cycles.execute", () => drainQueue(this, { holder, deadlineMs: startedMs + EXECUTOR_BUDGET_MS, exclude: opts.verify === false ? ["projection_verify"] : [] }), () => null as ExecutorReport | null, (r) => (r ? { claimed: r.claimed, done: r.done, failed: r.failed, dead: r.dead, receipts: r.receipts, stopped: r.stopped } : { failed: true })) : null;
+      // 35.3 rule 9: the breach pass in pages of 500 — the due instances (any loan, or global) claimed FOR UPDATE SKIP LOCKED and restored into a fresh engine per page; evaluate breaches them and appends timer.breached under each timer's own loan — one transaction per page
+      const breached = await pass("timers.breach", () => breachPass(this, nowIso), (d) => ({ due: d.due, breaches: d.breaches.length, pages: d.pages }));
+      const breaches = breached.breaches; const due = { length: breached.due };
       // 33.1 T10: the breach action of SM_PARTNER_BOOK_INVITATION_REMINDER_14 — one reminder on the same channel while the party has no session, then nothing more; never fails the sweep
       const partnerBookReminders = await logged("partner_book.reminders", async () => (await sendPartnerBookReminders(this, nowIso)).sent, () => 0, (n) => ({ sent: n }));
       // 33.1 T12 / rule 8: the breach action of SM_PARTNER_BOOK_TAPE_EXPECTED_7 — once per breached clock `partner_book.tape.late` beside the ops_analyst escalation the breach pass opened; a second sweep adds nothing
@@ -435,7 +446,7 @@ export class Runtime {
       await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_completed", aggregate: { kind: "sweep_run", id: runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: runId, as_of_date: asOfDate, holder, duration_ms: durationMs, passes: passes.map((p) => p.name), due: due.length, breaches: breaches.length, outbox: outboxCounts } }),
         { clock: this.clock, commit: async (q) => { await q.query(`UPDATE sweep_runs SET outcome = 'completed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, outbox = $4::jsonb WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), JSON.stringify(outboxCounts)]); } });
       return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls,
-        run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify };
+        run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify, cycles: { plan, execute }, breach_pages: breached.pages };
     } catch (e) {
       await this.db.query(`UPDATE sweep_runs SET outcome = 'failed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, skipped_reason = $4 WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), (e instanceof Error ? e.message : String(e)).slice(0, 500)]).catch(() => undefined);
       throw e;

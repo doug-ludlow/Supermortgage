@@ -48,6 +48,8 @@ import type { Runtime, SweepReport } from "./app.ts";
 import { servicingDailySweep } from "./servicing.ts";
 import { originationDailySweep } from "./origination.ts";
 import { delinquencyDailySweep } from "./delinquency.ts";
+import { planCycles } from "../domain/operations-runtime/cycles/planner.ts";
+import { drainQueue } from "../domain/operations-runtime/cycles/executor.ts";
 import type { Logger } from "./log.ts";
 
 /** The zone whose calendar days an advance crosses (the engine's own: src/kernel/timers/engine.ts). */
@@ -196,6 +198,8 @@ export interface StepReport {
   readonly servicing_sweep: { loans: number; posted: number; late_charge_runs: number; errors: number } | null;
   readonly origination_sweep: { deemed: number; warned: number; expired: number } | null;
   readonly delinquency_sweep: { loans: number; windows_opened: number } | null;
+  /** 35.3 rule 10: the day's planner pass and the inline drain of its jobs (no 240 s budget — the advance has its own and stops between steps), before the breach pass. */
+  readonly cycles: { planned: boolean; runs_opened: number; jobs_planned: number; claimed: number; done: number; failed: number; dead: number; receipts: number } | { error: string };
   readonly sweep: { due: number; breaches: number } | { error: string };
   readonly ms: number;
 }
@@ -243,7 +247,7 @@ export function refiDailyOutcome(sweep: SweepReport): HookOutcome {
  * daily run and the FAKE reviewers when wired, then the breach pass), then settle again so the reactions the breaches
  * queued post-commit have run before the step is reported.
  */
-async function runSweepMinute(deps: DemoAdvanceDeps, step: PlannedStep): Promise<StepReport> {
+async function runSweepMinute(deps: DemoAdvanceDeps, step: PlannedStep, advanceId: string): Promise<StepReport> {
   const started = Date.now(); const { runtime, logger } = deps;
   let flows: StepReport["flows"] = "absent"; let servicing: StepReport["servicing_sweep"] = null; let origination: StepReport["origination_sweep"] = null; let delinquency: StepReport["delinquency_sweep"] = null;
   const failed = (what: string, e: unknown): "failed" => { logger?.error(`demo clock: flows ${what} failed`, { at: step.at, error: e instanceof Error ? e.message : String(e) }); return "failed"; };
@@ -255,11 +259,18 @@ async function runSweepMinute(deps: DemoAdvanceDeps, step: PlannedStep): Promise
     for (const err of s.errors) logger?.warn("demo clock: servicing sweep error", { at: step.at, ...err });
     const d = await delinquencyDailySweep(runtime, step.at); delinquency = { loans: d.loans.length, windows_opened: d.loans.reduce((a, l) => a + l.windows_opened.length, 0) };
   }
+  // 35.3 rule 10: `cycles.plan{as_of: step.at}` from the persisted offset (the row above), then the day's queued jobs drained to completion inline, then the sweep minute's breach pass (its own planner and executor skipped: the day's pass is this one)
+  let cycles: StepReport["cycles"];
+  try {
+    const p = await planCycles(runtime, { as_of: step.at, planned_by: `demo:${advanceId}` });
+    const d = await drainQueue(runtime, { holder: `demo:${advanceId}`, deadlineMs: null });
+    cycles = { planned: !p.skipped, runs_opened: p.runs_opened, jobs_planned: p.jobs_planned, claimed: d.claimed, done: d.done, failed: d.failed, dead: d.dead, receipts: d.receipts };
+  } catch (e) { cycles = { error: e instanceof Error ? e.message : String(e) }; logger?.error("demo clock: cycles failed", { at: step.at, error: cycles.error }); }
   let sweep: StepReport["sweep"]; let refi: HookOutcome = "absent";
-  try { const r: SweepReport = await runtime.sweep(step.at); sweep = { due: r.due, breaches: r.breaches.length }; refi = refiDailyOutcome(r); }
+  try { const r: SweepReport = await runtime.sweep(step.at, { cycles: false }); sweep = { due: r.due, breaches: r.breaches.length }; refi = refiDailyOutcome(r); }
   catch (e) { sweep = { error: e instanceof Error ? e.message : String(e) }; logger?.error("demo clock: sweep failed", { at: step.at, error: sweep.error }); }
   if (deps.flows?.settle && flows !== "failed") { try { await deps.flows.settle(); } catch (e) { flows = failed("settle", e); } }
-  return { at: step.at, date: step.date, kind: step.kind, refi_daily: refi, flows, servicing_sweep: servicing, origination_sweep: origination, delinquency_sweep: delinquency, sweep, ms: Date.now() - started };
+  return { at: step.at, date: step.date, kind: step.kind, refi_daily: refi, flows, servicing_sweep: servicing, origination_sweep: origination, delinquency_sweep: delinquency, cycles, sweep, ms: Date.now() - started };
 }
 
 /** POST /v1/demo/advance — see the header. Throws RangeError on a bad body or an advance past the cap; a target at or before now returns `advanced: false`. */
@@ -284,7 +295,7 @@ export async function advanceDemoClock(deps: DemoAdvanceDeps, input: { readonly 
       // the base clock kept moving while the earlier passes ran: never step backwards
       const at = Date.parse(planned.at) > Date.parse(clock.now()) ? planned.at : clock.now();
       await clock.step(runtime.db, at, { advance_id: advanceId, step: i + 1, steps: plan.length, kind: planned.kind, actor });
-      const report = await runSweepMinute(deps, { ...planned, at });
+      const report = await runSweepMinute(deps, { ...planned, at }, advanceId);
       steps.push(report);
       if ("due" in report.sweep) { due += report.sweep.due; breaches += report.sweep.breaches; }
       logger?.info("demo clock: step", { advance_id: advanceId, step: i + 1, of: plan.length, at, kind: planned.kind, refi_daily: report.refi_daily, flows: report.flows, sweep: report.sweep, ms: report.ms });

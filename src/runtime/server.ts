@@ -83,9 +83,10 @@ import { encodeTransferBatch, type TransferBatchFiles } from "../domain/boarding
 import { isUuid } from "../infra/db/client.ts";
 import { plainDate } from "../kernel/calendar/date.ts";
 import type { Logger } from "./log.ts";
-import { createBorrowerRouter, parseMultipart, type BorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
+import { createBorrowerRouter, type BorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
+import { partnerBookInput } from "./partner-book-input.ts";
 import { handleVerifyRoute } from "./documents/verify-route.ts";
-import { holdsOf, importPartnerBook, listPartnerBookImports, partnerBookReport, partnerBookStatus, resolvePartnerBookLoan, seedPartnerBookDemo, type PartnerBookImportInput } from "./partner-book.ts";
+import { holdsOf, importPartnerBook, listPartnerBookImports, partnerBookReport, partnerBookStatus, resolvePartnerBookLoan, seedPartnerBookDemo } from "./partner-book.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 // 36.1: the partner portal's own prefix — resolves only a partner_sessions bearer (rule 7), dispatched before the /v1 door
 import { createPartnerRouter } from "./partner-portal/routes.ts";
@@ -114,41 +115,7 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new RangeError("request body must be a JSON object");
   return v as Record<string, unknown>;
 }
-/** The raw body (a multipart upload) under the same size cap as JSON. */
-async function readRaw(req: IncomingMessage): Promise<Buffer> {
-  const chunks: Buffer[] = []; let size = 0;
-  for await (const c of req) { size += (c as Buffer).length; if (size > MAX_BODY) throw new RangeError(`request body over ${MAX_BODY} bytes`); chunks.push(c as Buffer); }
-  return Buffer.concat(chunks);
-}
-/** 33.1 inputs: JSON `{partner, as_of_date, profile, tape: {filename, content_base64}, supplement?}` or multipart fields `partner` (JSON), `as_of_date`, `profile` and files `tape`, `supplement`. */
-async function partnerBookInput(req: IncomingMessage): Promise<PartnerBookImportInput> {
-  const ctype = String(req.headers["content-type"] ?? "");
-  let fields: Record<string, unknown>; let files: Record<string, { filename: string; content: Uint8Array } | undefined> = {};
-  if (/^multipart\/form-data/i.test(ctype)) {
-    const mp = parseMultipart(await readRaw(req), ctype);
-    fields = { ...mp.fields, ...(typeof mp.fields["partner"] === "string" && mp.fields["partner"].trim().startsWith("{") ? { partner: JSON.parse(mp.fields["partner"]) as unknown } : {}) };
-    for (const f of mp.files) files[f.field] = { filename: f.filename ?? `${f.field}.csv`, content: new Uint8Array(f.bytes) };
-  } else {
-    fields = await readJson(req);
-    const file = (v: unknown, what: string): { filename: string; content: Uint8Array } | undefined => {
-      if (!v || typeof v !== "object") return undefined;
-      const o = v as Record<string, unknown>;
-      const filename = typeof o["filename"] === "string" && o["filename"] ? o["filename"] : `${what}.csv`;
-      if (typeof o["content_base64"] === "string") return { filename, content: new Uint8Array(Buffer.from(o["content_base64"], "base64")) };
-      if (typeof o["content"] === "string") return { filename, content: new Uint8Array(Buffer.from(o["content"], "utf8")) };
-      throw new RangeError(`${what} needs { filename, content_base64 }`);
-    };
-    files = { tape: file(fields["tape"], "tape"), supplement: file(fields["supplement"], "supplement") };
-  }
-  const partner = fields["partner"] as Record<string, unknown> | undefined;
-  if (!partner || typeof partner !== "object" || typeof partner["legal_name"] !== "string" || !partner["legal_name"]) throw new RangeError("partner is required: { legal_name, nmlsr_id, servicer_number?, mers_org_id? }");
-  if (typeof partner["nmlsr_id"] !== "string" || !partner["nmlsr_id"]) throw new RangeError("partner.nmlsr_id is required");
-  if (typeof fields["as_of_date"] !== "string" || !fields["as_of_date"]) throw new RangeError("as_of_date is required (YYYY-MM-DD)");
-  const profile = String(fields["profile"] ?? "m3-v1"); if (profile !== "m3-v1") throw new RangeError(`profile must be m3-v1 (got ${profile})`);
-  if (!files["tape"]) throw new RangeError("tape is required (.xlsx or .csv)");
-  return { partner: { legal_name: partner["legal_name"], nmlsr_id: partner["nmlsr_id"], ...(typeof partner["servicer_number"] === "string" && partner["servicer_number"] ? { servicer_number: partner["servicer_number"] } : {}), ...(typeof partner["mers_org_id"] === "string" && partner["mers_org_id"] ? { mers_org_id: partner["mers_org_id"] } : {}) },
-    as_of_date: fields["as_of_date"], profile: "m3-v1", tape: files["tape"], ...(files["supplement"] ? { supplement: files["supplement"] } : {}) };
-}
+// 33.1 inputs: the upload body reader (multipart or JSON) lives in ./partner-book-input.ts, shared with 36.2's partner route
 /**
  * Section 34 (review findings): none of the operator portal's tools (34.1 staff acts, 34.2 directory looks / unmask / export,
  * 34.3 book operations, 34.4 controls — the two-person kill switch, the evidence pack) runs on the generic tool routes — there

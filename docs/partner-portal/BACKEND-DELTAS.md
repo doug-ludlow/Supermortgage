@@ -93,11 +93,12 @@ Worked figures are already asserted by 33.2-T2. Do not recompute them:
 
 ## Deltas
 
-None yet. Append below; do not edit rows in place. A rejection is a new row with `Status = rejected` and the reason.
+Append below; do not edit rows in place. A rejection is a new row with `Status = rejected` and the reason.
 
 | Delta | Needed | Have | Decision | Owner | Status |
 |---|---|---|---|---|---|
-| — | — | — | — | — | — |
+| DELTA-01 | A `partner_admin` of the tenant, or Super staff, disables a partner user (36.1 roles table "invite/disable"; the 36.1 state machine `active → disabled` and 36.1-T5): the brief names no command for it. | `partner_users.status` and `disabled_at` (36.1's migration 0243); the row is set by hand in 36.1-T5's harness; `partner_sessions` revoked in the same transaction as rule 6 requires. | net-new command `partner.user.disable{partner_user_id}` under `partner_admin` (own tenant) / staff `ops_analyst` · `admin`; a role change in V1 is a disable and a new invitation (36.1 Open question 4). | 36.1 | proposed |
+| DELTA-02 | 36.2-T3's sentence "it is absent from the next 33.2 review" for a loan on hold (`not_on_latest_tape`): the brief reads as if the held loan had no review row. | 33.1 rule 8 / 33.1-T11 / `src/runtime/partner-book-review.ts` `verdictOf({held})`: the daily review WRITES a row for the held loan — verdict `not_now`, reason `not_on_latest_tape`, the hold flag on `facts.flags` — so it is held out of candidacy (never `candidate` or `watching`, no offer delivered) and stays off the three buckets (36.3). No row of the day is skipped. | map this name: "absent from the review" on the partner surface means "held out of candidacy by the review": 36.2 rule 9 reads the row as 33.1 writes it, 36.2-T3 asserts `not_now` / `not_on_latest_tape`, no `candidate` / `watching` row and no `offered` / `engaged` opportunity for the held loan. No new verdict, reason, flag or column. | 33.1 (the hold), 33.2 (the row), 36.2 (the wording) | accepted (2026-09-16, 36.2 build: the wording of rule 9; nothing minted) |
 
 ---
 

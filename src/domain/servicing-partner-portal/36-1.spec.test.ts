@@ -257,9 +257,11 @@ test("36.1-T4: Given a partner_admin, when they invite a partner_ops user, then 
   const users = await api("GET", "/v1/partner/users", undefined, bearer(nora.token));
   assert.equal(users.status, 200); assert.deepEqual((users.body["users"] as Json[]).map((u) => u["partner_user_id"]).sort(), [noraId, oliId, patId].sort());
   assert.equal((await api("GET", "/v1/partner/users", undefined, bearer(pat.token))).status, 403);
-  // the partner_admin's upload act passes the role gate (the tape drop itself is 36.2's: 501 until then)
+  // the partner_admin's upload act passes the role gate; the tape drop itself is 36.2's (src/domain/servicing-partner-portal/36-2.spec.test.ts) — an empty body is 400 BAD_REQUEST (no tape), nothing written
+  const importsBefore = await count(`partner_book_imports`);
   const adminUpload = await api("POST", "/v1/partner/book/imports", {}, bearer(nora.token));
-  assert.equal(adminUpload.status, 501, JSON.stringify(adminUpload.body)); assert.equal(adminUpload.body["code"], "NOT_WIRED");
+  assert.equal(adminUpload.status, 400, JSON.stringify(adminUpload.body)); assert.equal(adminUpload.body["code"], "BAD_REQUEST"); assert.match(String(adminUpload.body["reason"]), /tape is required|as_of_date is required/);
+  assert.equal(await count(`partner_book_imports`), importsBefore);
 });
 
 test("36.1-T5: Given a disabled partner_user, when they present a valid code and password, then sign-in is refused and the session is not created.", { skip }, async () => {

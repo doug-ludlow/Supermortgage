@@ -17,7 +17,13 @@
  *   POST /v1/partner/auth/passkey/register-options · POST /v1/partner/auth/passkey/register {challenge_id, credential, label?}
  *   GET  /v1/partner/users                          partner_admin         the tenant's users with roles and status
  *   POST /v1/partner/users/invite                   partner_admin         {email, name, roles} → partner.user.invite on the bus (the tenant from the session)
- *   POST /v1/partner/book/imports                   partner_admin (act)   the role gate before any write (36.1-T2); the tape drop itself is 36.2's — 501 NOT_WIRED until then
+ *   POST /v1/partner/book/imports                   partner_admin (act)   36.2: the role gate before any read of the body (36.1-T2), then 33.1's book.import with the partner
+ *                                                                         from the session and the partner user as actor (./book.ts); the report partnerBookReport returns
+ *   GET  /v1/partner/book/imports                   every partner role    36.2: the tenant's import history (listPartnerBookImports) with who uploaded
+ *   GET  /v1/partner/book/imports/{id}              every partner role    36.2: one import's report (partnerBookReport + 34.3's lines); another tenant's → 404 NOT_FOUND
+ *   GET  /v1/partner/book/status                    every partner role    36.2: partnerBookStatus for the tenant — as of, next expected (33.1's clock), late, holds
+ *   GET  /v1/partner/book/holds                     every partner role    36.2: holdsOf for the tenant, partner-grade, no resolve control
+ *   POST /v1/partner/book/loans/{id}/resolve        no partner role       36.2 rule 9: 403 ROLE_REQUIRED{role: ops_analyst, act_as: []} before any read (also any POST under …/book/holds)
  *   GET  /v1/partner/book/loans/{id}                every partner role    the tenant's loan (34.3's bookLoan scoped by ./scope.ts); another tenant's → 404 NOT_FOUND (36.1-T3)
  *
  * Rule 3 on every session route: the request may name a held role (body `role` or `?role=`); a read falls back to the
@@ -37,6 +43,9 @@ import { PartnerAuth, type PartnerContext, type PartnerAuthOptions } from "./aut
 import { PgPartnerRepository, type PartnerActionInput } from "./repo.ts";
 import { PartnerError, chooseRole, defaultRole, ADMIN_ROLES, READ_ROLES, type PartnerRole, type RoleMode } from "./roles.ts";
 import { tenantLoan } from "./scope.ts";
+import { firstNameLastInitial } from "./mask.ts";
+import { BOOK_COPY, maskReportNumbers as maskFor, partnerHolds, partnerImport, partnerImportInputOf, partnerImportReport, partnerImports, partnerStatus } from "./book.ts";
+export { firstNameLastInitial };
 
 export const PARTNER_PREFIX = "/v1/partner/";
 const PROCESS_36_1 = "36.1";
@@ -59,8 +68,6 @@ const bearerOf = (req: IncomingMessage): string => { const h = String(req.header
 const ipOf = (req: IncomingMessage): string | null => { const f = req.headers["x-forwarded-for"]; const s = Array.isArray(f) ? f[0] : f; return (s ? s.split(",")[0]!.trim() : req.socket?.remoteAddress) ?? null; };
 const uaOf = (req: IncomingMessage): string | null => { const ua = req.headers["user-agent"]; return typeof ua === "string" ? ua.slice(0, 512) : null; };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** The partner-grade name (brief §4.6): first name + last initial; never the full name on a partner surface. */
-export const firstNameLastInitial = (name: string | null | undefined): string | null => { const parts = (name ?? "").trim().split(/\s+/).filter(Boolean); if (!parts.length) return null; return parts.length === 1 ? parts[0]! : `${parts[0]} ${parts[parts.length - 1]![0]}.`; };
 
 export interface PartnerRouterOptions extends Omit<PartnerAuthOptions, "runtime"> { readonly runtime: Runtime; readonly logger: Logger }
 export interface PartnerRouter { handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean>; readonly auth: PartnerAuth }
@@ -154,11 +161,47 @@ export function createPartnerRouter(opts: PartnerRouterOptions): PartnerRouter {
       const out = r.output as { partner_user_id: string };
       return { status: 200, acted_as: role, command: "partner.user.invite", subject: { kind: "partner_user", id: out.partner_user_id }, body: { ...(r.output as Json), acted_as: role, decision_id: r.decisionId ?? null } };
     }
-    // ───────── the one partner write (36.2's tape drop): the role gate here, before any read of the body or any write (36.1-T2)
+    // ───────── 36.2: the one partner write — the tape drop. The role gate first, before any read of the body or any write (36.1-T2); then
+    // 33.1's book.import through importPartnerBook with the partner from the session and the partner user as actor (36.2 rules 1–3); the answer
+    // is the report partnerBookReport returns (rule 5), `already_loaded` on the same files (rule 4), `rejected` with the missing headers (rule 6)
     if (method === "POST" && rest === "book/imports") {
       note({ command: "book.import", subject: { kind: "import", id: null } });
       const role = actAs(ctx, ADMIN_ROLES, preferred, "act");   // a partner_ops or partner_auditor session: 403 ROLE_REQUIRED{role: partner_admin, act_as: []}
-      return { status: 501, acted_as: role, command: "book.import", subject: { kind: "import", id: null }, body: { error: "not_wired", code: "NOT_WIRED", reason: "the partner tape drop (POST /v1/partner/book/imports → 33.1's book.import with the partner from the session) is process 36.2; the role gate is 36.1's" } };
+      const { input, dropped } = await partnerImportInputOf(req);   // rule 2: `as_of_date`, `tape`, `supplement` — a `partner`, `partner_party_id`, `nmlsr_id` or `profile` field is dropped, not honoured
+      if (dropped.length) logger.info("partner.book.import.fields_dropped", { partner_party_id: ctx.session.partner_party_id, fields: dropped });
+      const r = await partnerImport(runtime, ctx.session, actorOf(ctx, role), input);
+      const subject = { kind: "import", id: r.import_id || null }; note({ subject, acted_as: role });
+      return { status: 200, acted_as: role, command: "book.import", subject, body: { ...maskFor(r, role), acted_as: role, copy: BOOK_COPY.upload } };
+    }
+    // ───────── 36.2 rule 9: no resolve under /v1/partner/* — 403 ROLE_REQUIRED{role: ops_analyst, act_as: []} before any read, whatever the loan id (the same answer for
+    // the tenant's own loan and another tenant's, so the refusal reveals nothing); `book.resolve` stays an ops_analyst act on /ops (34.3). No POST under …/book/holds either.
+    if (method === "POST" && (m = /^book\/(?:loans\/([^/]+)\/resolve|holds(?:\/.*)?)$/.exec(rest))) {
+      const loanId = m[1] ? decodeURIComponent(m[1]) : null;
+      note({ command: "book.resolve", subject: { kind: "loan", id: loanId && UUID.test(loanId) ? loanId : null } });
+      throw new PartnerError(403, "ROLE_REQUIRED", "book.resolve is an ops_analyst act on /ops (33.1 rule 8, 34.3); no partner role resolves a hold", { role: "ops_analyst", held: [...ctx.user.roles], act_as: [] });
+    }
+    // ───────── 36.2 rules 7–9: the history, a report, the status line and the holds — every partner role reads them (Trigger & frequency)
+    if (method === "GET" && rest === "book/imports") {
+      const role = actAs(ctx, READ_ROLES, preferred, "read");
+      const subject = { kind: "imports", id: ctx.session.partner_party_id }; note({ subject, acted_as: role });
+      return { status: 200, acted_as: role, subject, body: { ...(await partnerImports(runtime, ctx.session)), acted_as: role } };
+    }
+    if (method === "GET" && (m = /^book\/imports\/([^/]+)$/.exec(rest))) {
+      const role = actAs(ctx, READ_ROLES, preferred, "read");
+      const importId = decodeURIComponent(m[1]!);
+      const subject = { kind: "import", id: UUID.test(importId) ? importId : null }; note({ subject, acted_as: role });
+      const r = await partnerImportReport(runtime, ctx.session, importId, role);   // another tenant's import → 404 NOT_FOUND, logged refused (rule 2)
+      return { status: 200, acted_as: role, subject, body: { ...r, acted_as: role } };
+    }
+    if (method === "GET" && rest === "book/status") {
+      const role = actAs(ctx, READ_ROLES, preferred, "read");
+      const subject = { kind: "status", id: ctx.session.partner_party_id }; note({ subject, acted_as: role });
+      return { status: 200, acted_as: role, subject, body: { ...(await partnerStatus(runtime, ctx.session, now)), acted_as: role } };
+    }
+    if (method === "GET" && rest === "book/holds") {
+      const role = actAs(ctx, READ_ROLES, preferred, "read");
+      const subject = { kind: "holds", id: ctx.session.partner_party_id }; note({ subject, acted_as: role });
+      return { status: 200, acted_as: role, subject, body: { ...(await partnerHolds(runtime, ctx.session, now)), acted_as: role } };
     }
     // ───────── the loan page (rule 4: the tenant's loan or 404; 36.1-T3) — every partner role reads it (rule 2)
     if (method === "GET" && (m = /^book\/loans\/([^/]+)$/.exec(rest))) {

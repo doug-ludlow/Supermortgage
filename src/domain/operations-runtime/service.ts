@@ -112,10 +112,27 @@ export interface CyclesHooks {
 }
 export interface InstallOptions { readonly defs?: readonly CycleDef[]; readonly hooks?: CyclesHooks; readonly lock?: SessionLock; }
 const installed = new WeakMap<Runtime, CyclesService>();
-/** Register the cycle defs a runtime plans and runs (a test's own subset, or the production `CYCLES`). */
-export function installCycles(rt: Runtime, opts: InstallOptions = {}): CyclesService { const s = new CyclesService(rt, opts); installed.set(rt, s); return s; }
-/** The runtime's cycle service — the production registry unless `installCycles` chose otherwise. */
-export function cyclesOf(rt: Runtime): CyclesService { let s = installed.get(rt); if (!s) { s = new CyclesService(rt, {}); installed.set(rt, s); } return s; }
+/** The runtime a service is installed on: `Runtime.root` — the runtime itself, or the real runtime behind a command view (35.1 open question 8: `Runtime.commandView` hands every tool an `Object.create(this)` view whose `db`, `uow`, `entities` and `escalationRepo` run on the command's own connection); a runtime without the field is its own root. */
+const rootOf = (rt: Runtime): Runtime => (rt as { readonly root?: Runtime }).root ?? rt;
+/** Register the cycle defs a runtime plans and runs (a test's own subset, or the production `CYCLES`) — on the root, so the same defs answer through every command view of it. */
+export function installCycles(rt: Runtime, opts: InstallOptions = {}): CyclesService { const root = rootOf(rt); const s = new CyclesService(root, opts); installed.set(root, s); return s; }
+/**
+ * The runtime's cycle service — the production registry unless `installCycles` chose otherwise. Asked for a command view
+ * (`services.runtime` inside a tool: `cycles.plan`, `cycles.run_unit`, `cycles.registry`, `jobs.*`), it answers the root's
+ * defs, hooks and lock bound to that view: every read and every `db.tx` the body opens (the planner's one per (cycle, period),
+ * rule 3) is a savepoint on the command's own connection and commits with the command or not at all — never a second pool
+ * connection, never a nested unit of work (35.1 rule 7 / open question 8; D4, D10). The executor, the receipt election and
+ * the by-hand dispatcher run on the root (D9), where the service opens transactions of its own.
+ */
+export function cyclesOf(rt: Runtime): CyclesService {
+  const root = rootOf(rt);
+  let s = installed.get(root);
+  if (!s) { s = new CyclesService(root, {}); installed.set(root, s); }
+  if (rt === root) return s;
+  let v = installed.get(rt);
+  if (!v || v.defs !== s.defs || v.hooks !== s.hooks) { v = s.onView(rt); installed.set(rt, v); }
+  return v;
+}
 /** `cycle_runs.planned_by`: the caller's, else 35.1's `sweep_runs` id when the runtime carries one (`Runtime.sweepRunId`, duck-typed — A3), else a uuid per pass. */
 export function plannedByOf(rt: Runtime, opts: { readonly planned_by?: string | undefined }): string {
   if (opts.planned_by) return opts.planned_by;
@@ -138,6 +155,8 @@ export class CyclesService {
   readonly hooks: CyclesHooks;
   private readonly lock: SessionLock | null;
   constructor(rt: Runtime, opts: InstallOptions) { this.rt = rt; this.defs = opts.defs ?? CYCLES; this.hooks = opts.hooks ?? {}; this.lock = opts.lock ?? null; }
+  /** This service's defs, hooks and lock on a command view of its runtime (cyclesOf): the body's reads and `db.tx` savepoints ride the command's connection. */
+  onView(view: Runtime): CyclesService { return new CyclesService(view, { defs: this.defs, hooks: this.hooks, ...(this.lock ? { lock: this.lock } : {}) }); }
   def(code: string): CycleDef | undefined { return cycleByCode(this.defs, code); }
   private get log(): Logger | undefined { return this.rt.logger; }
   private wall(): string { return wallClockOf(this.rt).now(); }

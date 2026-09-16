@@ -14,10 +14,17 @@
  * its subject (timers-35-3.ts enrichBreach_35_3: the run's `cycle_code, period_key, units_done, units_total`; the job's
  * `cycle_code, period_key, unit_id, error_class`) so the escalation names what stalled (T12); every other clock's payload is
  * what it always was: `timer_code, timer_id, due_at, breach`.
+ *
+ * 35.1 edge case 7: `SM_SWEEP_HEARTBEAT_DAILY` can only breach inside a sweep, so a run in progress on the clock's due day is
+ * the day's sweep and satisfies it minutes later (`sweep.run_completed`, app.ts); the clock breaches when its due day passed
+ * with no run at all (a demo advance that sweeps once a day at noon is not an outage). A page leaves that instance armed
+ * (`deferred`) and it is not counted as due.
  */
 import type { DomainEvent } from "../../kernel/events/index.ts";
 import { MemoryEventStore } from "../../kernel/events/index.ts";
-import { TimerEngine } from "../../kernel/timers/engine.ts";
+import { TimerEngine, type TimerInstance } from "../../kernel/timers/engine.ts";
+import { wallClock } from "../../kernel/calendar/zoned.ts";
+import type { PlainDate } from "../../kernel/calendar/date.ts";
 import { EscalationService } from "../../app/escalations.ts";
 import type { Runtime } from "../../runtime/app.ts";
 import { breachRoleFor_35_3, enrichBreach_35_3 } from "./timers-35-3.ts";
@@ -34,10 +41,17 @@ export interface PagedBreachReport {
   readonly pages: number;
   /** The empty probe after a full last page (a read-only transaction that found nothing left). */
   readonly probes: number;
-  /** Due timers evaluated over every page. */
+  /** Due timers evaluated over every page (the deferred heartbeat instance excluded). */
   readonly due: number;
   readonly by_page: readonly number[];
+  /** 35.1 edge case 7: SM_SWEEP_HEARTBEAT_DAILY instances due on the run's own day, left armed for this run's receipt. */
+  readonly deferred: number;
   readonly breaches: readonly BreachSummary[];
+}
+
+/** 35.1 edge case 7: the heartbeat clock on its own due day is this run's to satisfy, never to breach — true when the page must leave it armed. */
+export function deferredToThisRun(t: TimerInstance, asOfDate: PlainDate, nowIso: string): boolean {
+  return t.code === "SM_SWEEP_HEARTBEAT_DAILY" && !((t.dueDate ?? wallClock(t.dueAt ?? Date.parse(nowIso), "America/New_York").date) < asOfDate);
 }
 
 /**
@@ -51,11 +65,13 @@ export function resolveBreachRole(b: { readonly escalateTo: readonly string[] })
   return first === undefined || first === "escalation_role" ? undefined : first;
 }
 
-/** One page: the due rows locked for this transaction, breached, persisted, escalated — `rows: 0` when nothing was left. */
-async function breachPage(rt: Runtime, nowIso: string, pageSize: number): Promise<{ rows: number; breaches: BreachSummary[]; persisted: DomainEvent[] }> {
+/** One page: the due rows locked for this transaction, breached, persisted, escalated — `rows: 0` when nothing was left; `deferred` counts the heartbeat instance a page leaves armed (35.1 edge case 7). */
+async function breachPage(rt: Runtime, nowIso: string, pageSize: number, asOfDate: PlainDate): Promise<{ rows: number; deferred: number; breaches: BreachSummary[]; persisted: DomainEvent[] }> {
   return rt.db.tx(async (q) => {
-    const due = await rt.uow.timers.duePage(nowIso, pageSize, q);
-    if (!due.length) return { rows: 0, breaches: [], persisted: [] };
+    const claimed = await rt.uow.timers.duePage(nowIso, pageSize, q);
+    const due = claimed.filter((t) => !deferredToThisRun(t, asOfDate, nowIso));
+    const deferred = claimed.length - due.length;
+    if (!due.length) return { rows: 0, deferred, breaches: [], persisted: [] };
     // the due instances (any loan, or global) restored into a fresh engine: evaluate breaches them and appends timer.breached under each timer's own loan
     const events = new MemoryEventStore(rt.clock);
     const engine = new TimerEngine(rt.registry, events);
@@ -75,22 +91,24 @@ async function breachPage(rt: Runtime, nowIso: string, pageSize: number): Promis
     const persisted = await rt.uow.events.append(events.since(0), q);
     await rt.uow.timers.save(engine.all().filter((t) => t.status === "breached"), q);
     for (const e of escalations.list()) await rt.escalationRepo.save(e, q);
-    return { rows: due.length, breaches, persisted };
+    return { rows: due.length, deferred, breaches, persisted };
   });
 }
 
 /** Rule 9: the breach pass in pages of `pageSize` (500), one transaction per page, until a page comes back short; the post-commit listeners hear each page as it lands. */
 export async function pagedBreachPass(rt: Runtime, nowIso: string = rt.clock.now(), opts: { readonly pageSize?: number } = {}): Promise<PagedBreachReport> {
   const pageSize = Math.max(1, Math.floor(opts.pageSize ?? BREACH_PAGE_SIZE));
-  const byPage: number[] = []; const breaches: BreachSummary[] = []; let probes = 0;
+  const asOfDate = wallClock(Date.parse(nowIso), "America/New_York").date;
+  const byPage: number[] = []; const breaches: BreachSummary[] = []; let probes = 0; let deferred = 0;
   for (;;) {
-    const page = await breachPage(rt, nowIso, pageSize);
+    const page = await breachPage(rt, nowIso, pageSize, asOfDate);
     if (page.persisted.length) rt.uow.notifyCommitted(page.persisted);
+    deferred = Math.max(deferred, page.deferred);   // the same armed instance comes back on every page; count it once
     if (page.rows === 0) { probes += 1; break; }
     byPage.push(page.rows); breaches.push(...page.breaches);
     // the page's rows and the engine's breaches select on the same predicate (`status = 'armed' AND due_at <= now`); a page that breached nothing would come back again forever, so it ends the pass loudly instead
     if (!page.breaches.length) { rt.logger?.error("breach pass: a page of due timers breached nothing — stopping", { at: nowIso, rows: page.rows, page: byPage.length }); break; }
-    if (page.rows < pageSize) break;
+    if (page.rows + page.deferred < pageSize) break;
   }
-  return { at: nowIso, page_size: pageSize, pages: byPage.length, probes, due: byPage.reduce((a, n) => a + n, 0), by_page: byPage, breaches };
+  return { at: nowIso, page_size: pageSize, pages: byPage.length, probes, due: byPage.reduce((a, n) => a + n, 0), by_page: byPage, deferred, breaches };
 }

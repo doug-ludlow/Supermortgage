@@ -1,0 +1,108 @@
+/* Designed borrower surface (prototype at supermortgage-agentic-mobile).
+   Overrides the 32.1 “black mono until it works” tokens. Same components, new skin. */
+
+:root,
+[data-theme="dark"],
+[data-theme="light"] {
+  --sm-bg: #f4f4f4;
+  --sm-surface: #fcfcfc;
+  --sm-surface-2: #ffffff;
+  --sm-surface-3: #f4f4f4;
+  --sm-border: #e5e5e5;
+  --sm-border-strong: #dedede;
+  --sm-text: #080808;
+  --sm-text-2: #68686a;
+  --sm-text-3: #a2a2a4;
+  --sm-accent: #bf242b;
+  --sm-accent-hover: #aa1d24;
+  --sm-accent-press: #842128;
+  --sm-on-accent: #ffffff;
+  --sm-positive: #1f7a45;
+  --sm-caution: #b76a00;
+  --sm-info: #bf242b;
+  --sm-focus: #080808;
+  --sm-radius: 12px;
+  --sm-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+
+html,
+body {
+  font-family: var(--sm-font);
+  background: var(--sm-bg);
+  color: var(--sm-text);
+}
+
+.sm-header {
+  background: #ffffff;
+  border-bottom: 1px solid var(--sm-border);
+}
+
+.sm-brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.sm-brand::before {
+  content: "S";
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 26px;
+  color: #bf242b;
+  line-height: 1;
+}
+
+.sm-fake-banner {
+  background: transparent;
+  color: var(--sm-text-3);
+  font-weight: 500;
+  padding: 0;
+  letter-spacing: 0;
+}
+
+.sm-btn {
+  border-radius: 999px;
+  background: #fff;
+  border-color: var(--sm-border);
+}
+
+.sm-btn-primary {
+  background: var(--sm-accent);
+  border-color: var(--sm-accent);
+  color: #fff;
+  border-radius: 999px;
+}
+
+.sm-btn-primary:hover {
+  background: var(--sm-accent-hover);
+  border-color: var(--sm-accent-hover);
+}
+
+.sm-input,
+.sm-select,
+.sm-textarea {
+  border-radius: 10px;
+  background: #fff;
+  border-color: var(--sm-border);
+}
+
+.sm-card,
+.sm-record-section,
+.sm-msg-body {
+  border-radius: 16px;
+  border-color: var(--sm-border);
+  box-shadow: 0 1px 2px #0000000d, 0 8px 24px #0000000a;
+}
+
+.sm-tab-nav {
+  background: #ffffff;
+}
+
+.sm-footer {
+  color: var(--sm-text-3);
+  background: var(--sm-bg);
+}

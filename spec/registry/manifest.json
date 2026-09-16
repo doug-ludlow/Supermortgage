@@ -15547,7 +15547,7 @@
    },
    {
     "n": 8,
-    "text": "Talk to a person \u2014 Given any screen, then a control emitting `human.request` is visible without scrolling; after `human.transfer.completed`, a `PersonCard{human_agent}` exists."
+    "text": "Talk to a person \u2014 Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists."
    },
    {
     "n": 9,
@@ -15555,7 +15555,7 @@
    },
    {
     "n": 10,
-    "text": "Mobile parity \u2014 Given every card kind at 390 px, then it is operable and the status strip shows badge, next event and the needed-from-you count."
+    "text": "Mobile parity \u2014 Given every card kind at 390 px, then it is operable on the record sheet, and the phone shell shows the badge and next event (My Loan) and the needed-from-you count (the Tasks tab badge)."
    },
    {
     "n": 11,
@@ -15755,7 +15755,7 @@
    },
    {
     "n": 16,
-    "text": "Given a phone width, then the status strip shows the badge, next event and needed count, and the sheet shows the same rail sections."
+    "text": "Given a phone width, then the tab shell shows the badge and next event (My Loan) and the needed count (the Tasks tab badge), and the record sheet shows the same rail sections."
    },
    {
     "n": 17,
@@ -16490,7 +16490,7 @@
    },
    {
     "n": 5,
-    "text": "Given two `Runtime` instances A and B over one database and a third `Runtime` acting as the sweep job, when A runs 25.2 `prepareCd` for an application, B runs 25.2 `deliverCd` for the same disclosure id, and the sweep runtime deems an LE received on its mailbox-rule day, then B never answers `no CD`, the CD B delivered is the CD A prepared (same `disclosure_id`, `data_hash` and `cd_version`), the sweep's deeming was performed by `LoanEstimateService.deemReceived` on a hydrated instance (no hand-appended `disclosure.le.deemed_received` exists in src/runtime/origination.ts: contract test greps the file for the literal), and every stateful key in `originationServices` (`cd-25-2`, `delivery-29-3`, `delivery-29-4`, `secondary`, `tolerance`, `companion`, `orig-boarding`) yields a fresh instance per command whose state after `hydrate` equals the state the instance that wrote the events held."
+    "text": "Given two `Runtime` instances A and B over one database and a third `Runtime` acting as the sweep job, when A runs 25.2 `renderCd` for an application, B runs 25.2 `deliverDisclosure` for the same disclosure id, and the sweep runtime deems an LE received on its mailbox-rule day, then B never answers `no CD`, the CD B delivered is the CD A prepared (same `disclosure_id`, `data_hash` and `cd_version`), the sweep's deeming was performed by `LoanEstimateService.deemReceived` on a hydrated instance (no hand-appended `disclosure.le.deemed_received` exists in src/runtime/origination.ts: contract test greps the file for the literal), and every stateful key in `originationServices` (`cd-25-2`, `delivery-29-3`, `delivery-29-4`, `secondary`, `tolerance`, `companion`, `orig-boarding`) yields a fresh instance per command whose state after `hydrate` equals the state the instance that wrote the events held."
    },
    {
     "n": 6,
@@ -17096,7 +17096,7 @@
   "tids": [
    {
     "n": 1,
-    "text": "Given a fresh database, when every file under db/migrations is applied, then five new base tables exist (`to_regclass` non-null for `role_grants`, `role_queue_snapshots`, `role_handovers`, `breakglass_uses`, `api_principals`) and the base-table count (public + restricted_fl, the query of db.test.ts:40-46) equals the count taken just before this process's migration file plus 5 (776 at HEAD through 0137; the absolute number depends on which \u00a735 migrations precede it and is never asserted), `staff_users.reviewer_roles` exists with a CHECK whose literal list equals `HUMAN_ROLES` from src/app/roles.ts (twenty-two words, no `admin`), the three disjointness CHECKs exist, and every 34.1 T-id (`34.1-T1` \u2026 `34.1-T8`) passes unchanged."
+    "text": "Given a fresh database, when every file under db/migrations is applied, then five new base tables exist (`to_regclass` non-null for `role_grants`, `role_queue_snapshots`, `role_handovers`, `breakglass_uses`, `api_principals`) and the base-table count (public + restricted_fl, the query of db.test.ts:40-46) equals the count taken just before this process's migration file plus 5 (776 at HEAD through 0141 \u2014 0138 to 0141 create no table; the absolute number depends on which \u00a735 migrations precede it and is never asserted), `staff_users.reviewer_roles` exists with a CHECK whose literal list equals `HUMAN_ROLES` from src/app/roles.ts (twenty-two words, no `admin`), the three disjointness CHECKs exist, and every 34.1 T-id (`34.1-T1` \u2026 `34.1-T9`) passes unchanged."
    },
    {
     "n": 2,
@@ -17664,7 +17664,7 @@
    },
    {
     "n": 11,
-    "text": "Given worked example A's incumbent file for 2026-11-16 (loan 1 all fields equal with UPB **$248,310.55**; loan 2 late charges 0.00 against our 5.000% \u00d7 **$1,250.00** = **$62.50**; loan 3 escrow **$3,412.92** against our **$3,417.92**), when `parallel_run.reconcile` runs, then the day row has `comparisons = 24`, `matched = 22`, `mismatched = 2`, `mismatch_cents = 6750n` (**$67.50**), two `parallel_run_diffs{opened}` rows exist (`late_charges_accrued_cents` delta `6250n`; `escrow_balance_cents` delta `500n` = **$5.00**), `parallel_run.day.reconciled` carries the same figures, the daily report document is hashed, and the loans' ledger and money columns are byte-identical before and after."
+    "text": "Given worked example A's incumbent file for 2026-11-17 (loan 1 all fields equal with UPB **$248,310.55**; loan 2 late charges 0.00 against our 5.000% \u00d7 **$1,250.00** = **$62.50**; loan 3 escrow **$3,412.92** against our **$3,417.92**), when `parallel_run.reconcile` runs, then the day row has `comparisons = 24`, `matched = 22`, `mismatched = 2`, `mismatch_cents = 6750n` (**$67.50**), two `parallel_run_diffs{opened}` rows exist (`late_charges_accrued_cents` delta `6250n`; `escrow_balance_cents` delta `500n` = **$5.00**), `parallel_run.day.reconciled` carries the same figures, the daily report document is hashed, and the loans' ledger and money columns are byte-identical before and after."
    },
    {
     "n": 12,

@@ -25,6 +25,7 @@ import { MemoryLedger } from "../../kernel/ledger/ledger.ts";
 import { plainDate as D, addMonths } from "../../kernel/calendar/date.ts";
 import { loadOverriddenRegistry } from "../../domain/timer-overrides.ts";
 import { CashieringService } from "../../domain/cashiering/service.ts";
+import { HUMAN_ROLES } from "../../app/roles.ts";
 import type { LoanCashState } from "../../domain/cashiering/types.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
@@ -37,13 +38,21 @@ async function fixture(db: Db): Promise<Fixture> {
   return new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: 26_000_000n, originalTermMonths: 360, firstPaymentDate: D("2021-09-01"), maturityDate: D("2051-08-01") });
 }
 
-test("migrations: every file under db/migrations is applied to the test database (781 tables: public + restricted_fl)", { skip }, async () => {
+test("migrations: every file under db/migrations is applied to the test database (794 tables: public + restricted_fl)", { skip }, async () => {
   execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const [m] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM schema_migrations`);
   assert.equal(m!.c, BigInt(readdirSync(fileURLToPath(new URL("../../../db/migrations", import.meta.url))).filter((f) => f.endsWith(".sql")).length));
   const [t] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE'`);
-  assert.equal(t!.c, 781n);   // the count a fresh `db/migrate.sh` run produces through 0146 (public + restricted_fl base tables; 0116 oidc_identities, 0117 lead_tokens, 0118 party_credentials, 0119 agent_turns, 0120 demo_clock, 0121 video_sessions; 0122 and 0123 add columns only; 0124 widens a check; 0125 partner_book_imports, partner_book_facts, partner_book_invitations, partner_book_reviews, readiness_checks; 0126 adds a column only; 0127 staff_users, staff_credentials, staff_sessions, staff_actions, staff_access_reviews; 0128 directory_unmasks, directory_exports; 0129 partner_book_daily_reports; 0130 evidence_packs; 0131 adds a column only) ; 0132 journey_progress is a view, not a base table; 0133 adds the twelve 23.5 tables: employers, du_assets, du_owned_properties, du_liabilities, du_expenses, du_asset_parties, du_liability_parties, du_expense_parties, du_joint_credit_report_links, du_declarations, du_bankruptcy_filings, du_residences; 0134 drops application_assets, application_liabilities and application_reo and recreates them as VIEWS over the du_* tables — a view is not a BASE TABLE, so three fewer; 0135 adds du_documents, 23.6's one table; 0136 adds du_preflight_results, 23.7's one table; 0137–0141 add no table; 0146 adds 35.3's five: cycle_registry, cycle_runs, jobs, job_events, cycle_receipts)
+  assert.equal(t!.c, 794n);   // the count a fresh `db/migrate.sh` run produces through 0171: 776 through 0137 (public + restricted_fl base tables; 0132 journey_progress is a view; 0134 recreates three tables as views) plus 0146's five (35.3: cycle_registry, cycle_runs, jobs, job_events, cycle_receipts), 0150's eight (35.1's seam tables; its entity_latest_scoped is a view) and 0170's five (35.7: role_grants, role_queue_snapshots, role_handovers, breakglass_uses, api_principals); 0138–0141, 0151 and 0171 create no table; the absolute number moves with every §35 migration that adds a table
+});
+
+test("staff_users.reviewer_roles CHECK equals HUMAN_ROLES (ROLE_LIST_DRIFT: a migration that adds a role the kernel lacks fails here — 35.7 rule 1)", { skip }, async () => {
+  const [c] = await db.query<{ def: string }>(`SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'staff_users'::regclass AND conname = 'staff_users_reviewer_roles_check'`);
+  assert.ok(c, "the CHECK staff_users_reviewer_roles_check exists (migration 0170)");
+  const literals = [...c!.def.matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1]!);
+  assert.deepEqual(literals, [...HUMAN_ROLES], "ROLE_LIST_DRIFT: the CHECK's literal list and src/app/roles.ts HUMAN_ROLES differ");
+  assert.ok(!(literals as string[]).includes("admin"), "admin is a console role, never a reviewer role");
 });
 
 test("loan_events is append-only: rows persist with database sequences and refuse UPDATE/DELETE", { skip }, async () => {

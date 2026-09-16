@@ -1,10 +1,9 @@
 "use client";
 
 /**
- * The one shell (32.16 §2.1–2.2): the thread (left) is the conversation; the rail (right) is where the cards live; the input
- * bar under the thread; the disclosure footer under everything (§1 principle 8). Breakpoints per 01 §1.2 — at 768–1023 the
- * rail is a drawer, below 768 the status strip opens it as the bottom sheet. Data comes from the 02 §7 API through lib/api,
- * or — with NEXT_PUBLIC_FIXTURES=1 — from apps/borrower/fixtures/*.json (FAKE: recorded, no agent, no vendors).
+ * The one shell (32.16 §2.1–2.2) plus P0 mobile tabs (Doug 2026-09-15):
+ * <768 Apply / Chat / My Loan / Tasks / Account — these tabs ARE the rails,
+ * including when signed out. ≥768 Thread + Record two-pane.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
@@ -18,17 +17,22 @@ import { ActionBar } from "./ActionBar";
 import { StatusStrip } from "./StatusStrip";
 import { Header } from "./Header";
 import { FooterDisclosure } from "./FooterDisclosure";
-import { Account } from "@/components/account/Account";   // 32.16 §2.0 (DELTA-29): the account form on any 401 — Shell decides, Account renders
+import { Account } from "@/components/account/Account";
 import { AddMobilePrompt, isAddMobileDone } from "./AddMobile";
 import { PARTNER_LEGAL_NAME } from "@/lib/env";
 import { Record } from "@/components/record/Record";
 import { nowIso } from "@/components/cards/CardFrame";
+import { BottomNav, type TabId } from "./BottomNav";
+import { ApplyTab } from "./tabs/ApplyTab";
+import { MyLoanTab } from "./tabs/MyLoanTab";
+import { TasksTab } from "./tabs/TasksTab";
+import { AccountSettingsTab } from "./tabs/AccountSettingsTab";
+import { SignedOutGate } from "./tabs/SignedOutGate";
 
 export type ShellProps = {
   fixturesMode: boolean;
   fixtureName?: string;
   initialSubject?: string;
-  /** 32.14 S5: `?card=` — that card is focused and expanded on the rail (a deep link or a vendor return lands here). */
   initialCard?: string;
 };
 
@@ -47,7 +51,6 @@ function useMedia(query: string): boolean {
 let seq = 0;
 const localId = (p: string) => `${p}-${Date.now().toString(36)}-${(seq += 1)}`;
 
-/** Timestamp for a locally appended message: now, but never earlier than the thread's last message (fixtures are recorded in the future). */
 function stampAfter(messages: ThreadMessage[]): string {
   const last = messages.reduce((m, x) => (x.at > m ? x.at : m), "");
   const t = Math.max(Date.now(), last ? new Date(last).getTime() + 1000 : 0);
@@ -67,29 +70,39 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | undefined>();
   const [stream, setStream] = useState<StreamStatus>("closed");
-  // 32.16 §2.0 (DELTA-29): a 401 from me, or the header's Sign in, renders the sign-in form under auth.welcome_back in place of the thread (the anonymous minute of docs/ux/15 is not built — docs/ux/17 §0.4)
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
-  /** the API's pinned card: the card the model placed last (32.16-T32) — the current ask on the rail */
   const [pinnedId, setPinnedId] = useState<string | undefined>(undefined);
   const [addMobileDone, setAddMobileDone] = useState(true);
-  useEffect(() => setAddMobileDone(isAddMobileDone()), []); // after hydration: the dismissal lives in this browser only
-  const beside = useMedia("(min-width: 1024px)");   // the rail sits beside the thread; below that it is the drawer / bottom sheet
+  const [tab, setTab] = useState<TabId>("account");
+  useEffect(() => setAddMobileDone(isAddMobileDone()), []);
+  const desktop = useMedia("(min-width: 768px)");
   const streamRef = useRef<ReturnType<typeof openStream> | null>(null);
+  const signedOutLanded = useRef(false);
+  const signedInLanded = useRef(false);
 
   const timezone = record?.timezone ?? "America/Phoenix";
-  const partner = me?.partner.legal_name || PARTNER_LEGAL_NAME;   // the API names the record's partner; "" (none on file yet) → the build's configured partner, never Supermortgage
+  const partner = me?.partner.legal_name || PARTNER_LEGAL_NAME;
 
-  /** Focus a card on the rail: expanded, scrolled into view; below 1024 the rail opens as the drawer / sheet (32.16 §2.1: the chip opens it). */
   const focusCard = useCallback(
     (card_instance_id: string) => {
       setFocus({ card_instance_id, seq: (seq += 1) });
-      if (!beside) setRecordOpen(true);
+      if (!desktop) {
+        setTab("chat");
+        setRecordOpen(true);
+      }
     },
-    [beside],
+    [desktop],
   );
 
-  // ---- load ---------------------------------------------------------------
+  const openTask = useCallback(
+    (card_instance_id: string) => {
+      setTab("chat");
+      focusCard(card_instance_id);
+    },
+    [focusCard],
+  );
+
   const loadFromApi = useCallback(async () => {
     try {
       const m = await api.me();
@@ -107,8 +120,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       setLoadError(undefined);
     } catch (e) {
       if (e instanceof ApiRequestError && e.status === 401) {
-        // no session (or it expired and the proxy dropped the cookie): the sign-in form — never the auth.sign_in notice
-        streamRef.current?.close(); streamRef.current = null; setStream("closed");   // no session: nothing to stream (the label would read "reconnecting…" forever)
+        streamRef.current?.close(); streamRef.current = null; setStream("closed");
         setNeedsSignIn(true);
         setLoadError(undefined);
         return;
@@ -118,7 +130,6 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   }, [subject]);
 
   useEffect(() => {
-    // `?fixture=api` in a fixtures build takes the live path (the e2e drives the root of the host with routed API answers)
     if (fixturesMode && fixtureName !== "api") {
       const f = loadFixture(fixtureName);
       setMe(f.me);
@@ -133,7 +144,6 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fixturesMode, fixtureName]);
 
-  // `?card=` (a deep link, a vendor return): focus that card once the thread has it
   const initialFocused = useRef(false);
   useEffect(() => {
     if (!initialCard || initialFocused.current || !cards[initialCard]) return;
@@ -141,20 +151,18 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
     focusCard(initialCard);
   }, [initialCard, cards, focusCard]);
 
-  // ---- actions ------------------------------------------------------------
   const resolveCard = useCallback(
     async (card: AnyCardInstance, req: ResolveRequest) => {
       setBusyCardId(card.card_instance_id);
       setCardErrors((e) => ({ ...e, [card.card_instance_id]: "" }));
       try {
         if (fixturesMode) {
-          // FAKE resolution: the API would run the mapped command (02 §2); here the fixture mutates in memory.
           const resolved: AnyCardInstance = { ...card, status: card.kind === "ConnectCard" && req.option_id === "connect" ? "pending" : "resolved", resolved_at: nowIso(), evidence: req.evidence } as AnyCardInstance;
           if (card.kind === "ConnectCard" && req.option_id === "connect") {
             (resolved as AnyCardInstance & { props: { state: string } }).props = { ...card.props, state: "in_progress" } as never;
           }
           if (resolved.status === "resolved" && "proposal" in resolved.props) {
-            const { proposal: _proposal, ...rest } = resolved.props as Record<string, unknown>;   // the confirm chip is the pending card; resolved, its read-back is the receipt
+            const { proposal: _proposal, ...rest } = resolved.props as Record<string, unknown>;
             (resolved as { props: unknown }).props = rest;
           }
           setCards((c) => ({ ...c, [card.card_instance_id]: resolved }));
@@ -187,7 +195,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       }
       try {
         await api.sendMessage(text, record?.subject);
-        await loadFromApi();   // the reply rides back in the POST (the turn is awaited); the stream is a second signal, never the only one
+        await loadFromApi();
       } catch {
         appendLocal({ sender: "system", sender_label: "Supermortgage", channel: "app", body_text: "Your message didn't send — it's marked unsent. We'll retry when the connection is back." });
       }
@@ -195,8 +203,6 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
     [appendLocal, fixturesMode, record?.subject, loadFromApi],
   );
 
-  // The stream is not the only way news arrives (a load balancer or proxy may buffer or drop it): while it is not open the thread is
-  // re-read every 5 s, and after sign-up the first turn is awaited by polling every 3 s until the model's first line is in (up to 3 min).
   const firstReplyPolls = useRef(0);
   useEffect(() => {
     if (fixturesMode) return;
@@ -225,8 +231,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
 
   const launchVendor = useCallback(
     async (vendor: string, card_instance_id: string) => {
-      if (fixturesMode) return { vendor_session_id: `FAKE-${vendor}-${card_instance_id}` }; // FAKE vendor session
-      // 32.17 rule 19: every build stage's vendor is the FAKE — it finishes on the tap; a real vendor ignores the flag
+      if (fixturesMode) return { vendor_session_id: `FAKE-${vendor}-${card_instance_id}` };
       if (vendor === "stripe_identity") return api.identitySession({ fake_complete: true });
       return api.connectSession(vendor, card_instance_id, { fake_complete: true });
     },
@@ -241,7 +246,6 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
     [fixturesMode],
   );
 
-  /** A rail or card link: a card → focus it on the rail; a document → the viewer; a message → scroll the thread to it. */
   const link = useCallback(
     (target: { message_id?: string; card_instance_id?: string; document_id?: string }) => {
       if (target.card_instance_id) {
@@ -254,6 +258,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       }
       if (target.message_id) {
         setRecordOpen(false);
+        setTab("chat");
         setScrollTo(target.message_id);
       }
     },
@@ -265,55 +270,107 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
 
   const subjects = me?.subjects ?? [];
   const showSignIn = needsSignIn || signInOpen;
+  const mobileTabs = !desktop;
+  const goAccount = useCallback(() => setTab("account"), []);
+
+  useEffect(() => {
+    if (mobileTabs && needsSignIn && !signedOutLanded.current) {
+      signedOutLanded.current = true;
+      setTab("account");
+    }
+  }, [mobileTabs, needsSignIn]);
+  // 32.16 §2.0: a session lands in its thread — on the phone that is the Chat tab (no session keeps landing on Account, P0b)
+  useEffect(() => {
+    if (mobileTabs && me && !signedInLanded.current) {
+      signedInLanded.current = true;
+      setTab("chat");
+    }
+  }, [mobileTabs, me]);
+
+  const thread = showSignIn && desktop ? (
+    <>
+      <div className="sm-thread-top" />
+      <div className="sm-thread-scroll">
+        <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
+      </div>
+    </>
+  ) : (
+    <Thread
+      notice={loadError}
+      banner={me?.auth_method === "oidc_google" && !addMobileDone ? <AddMobilePrompt onDone={() => setAddMobileDone(true)} /> : null}
+      messages={messages}
+      cards={cards}
+      timezone={timezone}
+      partnerLegalName={partner}
+      showSubjectLabels={subjects.length > 1}
+      scrollTo={scrollTo}
+      currentAskId={ask?.card_instance_id}
+      onOpenCard={focusCard}
+      resolve={resolveCard}
+      busyCardId={busyCardId}
+      cardErrors={cardErrors}
+    />
+  );
+
+  let mobileBody;
+  if (tab === "apply") mobileBody = showSignIn ? <SignedOutGate title="Apply" onSignIn={goAccount} /> : <ApplyTab record={record} onOpenTask={openTask} />;
+  else if (tab === "loan") mobileBody = showSignIn ? <SignedOutGate title="My Loan" onSignIn={goAccount} /> : <MyLoanTab record={record} />;
+  else if (tab === "tasks") mobileBody = showSignIn ? <SignedOutGate title="Tasks" onSignIn={goAccount} /> : <TasksTab record={record} onOpenTask={openTask} />;
+  else if (tab === "account") {
+    mobileBody = showSignIn ? (
+      <div className="sm-tab-page" data-testid="tab-page-account">
+        <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} onSession={() => window.location.reload()} />
+      </div>
+    ) : (
+      <AccountSettingsTab me={me} />
+    );
+  } else {
+    mobileBody = showSignIn ? (
+      <SignedOutGate title="Chat" onSignIn={goAccount} />
+    ) : (
+      <main className="sm-thread" aria-label="Conversation">
+        {thread}
+        <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} />
+      </main>
+    );
+  }
 
   return (
-    <div className="sm-shell" data-testid="shell" data-fixtures={fixturesMode ? "1" : undefined}>
+    <div className="sm-shell" data-testid="shell" data-fixtures={fixturesMode ? "1" : undefined} data-mobile-shell={mobileTabs ? "1" : undefined} data-tab={tab}>
       <Header
         fixturesMode={fixturesMode}
         me={me}
         subject={subject}
         onSubjectChange={setSubject}
         streamLabel={!fixturesMode && stream !== "open" && stream !== "closed" ? (stream === "reconnecting" ? "reconnecting…" : "connecting…") : undefined}
-        onOpenRecord={() => setRecordOpen(true)}
+        onOpenRecord={showSignIn ? undefined : () => setRecordOpen(true)}
         showSignIn={!me || fixturesMode}
-        onSignIn={() => setSignInOpen(true)}
+        onSignIn={() => { if (mobileTabs) setTab("account"); else setSignInOpen(true); }}
         onSignOut={() => { void api.signOut().catch(() => undefined).then(() => window.location.assign("/app")); }}
       />
-      {showSignIn ? <div className="sm-strip-slot" /> : <StatusStrip record={record} onOpen={() => setRecordOpen(true)} />}
+      {mobileTabs || showSignIn ? <div className="sm-strip-slot" /> : <StatusStrip record={record} onOpen={() => (desktop ? setRecordOpen(true) : setTab("tasks"))} />}
       <div className="sm-body">
-        <main className="sm-thread" aria-label="Conversation">
-          {showSignIn ? (
-            <>
-              <div className="sm-thread-top" />
-              <div className="sm-thread-scroll">
-                <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
-              </div>
-            </>
-          ) : (
-            <Thread
-              notice={loadError}
-              banner={me?.auth_method === "oidc_google" && !addMobileDone ? <AddMobilePrompt onDone={() => setAddMobileDone(true)} /> : null}
-              messages={messages}
-              cards={cards}
-              timezone={timezone}
-              partnerLegalName={partner}
-              showSubjectLabels={subjects.length > 1}
-              scrollTo={scrollTo}
-              currentAskId={ask?.card_instance_id}
-              onOpenCard={focusCard}
-              resolve={resolveCard}
-              busyCardId={busyCardId}
-              cardErrors={cardErrors}
-            />
-          )}
-          {showSignIn ? null : (   // signed out there is no session to send to: no input bar until sign-in
-            <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} />
-          )}
-        </main>
-        {showSignIn ? null : (
-          <Record record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)} />
+        {mobileTabs ? (
+          <>
+            {mobileBody}
+            {/* the record sheet is the rail (32.16 §2.2): the same Record, hidden until "Your record", a Tasks row, a reference chip or ?card= opens it */}
+            {showSignIn ? null : (
+              <Record record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)} />
+            )}
+          </>
+        ) : (
+          <>
+            <main className="sm-thread" aria-label="Conversation">
+              {thread}
+              {showSignIn ? null : <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} />}
+            </main>
+            {showSignIn ? null : (
+              <Record record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)} />
+            )}
+          </>
         )}
       </div>
+      {mobileTabs ? <BottomNav tab={tab} onTab={setTab} taskCount={record?.needed_from_you.length ?? 0} /> : null}
       <FooterDisclosure partner={me?.partner} />
     </div>
   );

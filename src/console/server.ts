@@ -288,6 +288,11 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
       if (out.status >= 400) { action.result = out.status >= 500 ? "error" : "refused"; action.refusal_code = codeOf(out.body, out.status); }
       json(res, out.status, out.body);
     };
+    // rule 4, ordering: the row is in staff_actions before the answer is on the wire — `res.end` is held from here and released after the
+    // insert below (every console answer ends through res.end: sendJson here, the directory routes' own sendJson), so a client that reads the
+    // log the moment its answer arrives finds its own row (section34.test.ts's catch-up wait was losing that race under a loaded suite)
+    const endNow = res.end; let endArgs: unknown[] | null = null;
+    res.end = ((...a: unknown[]) => { endArgs = a; return res; }) as typeof res.end;
     try {
       setSubject(subjectOf(path, null));
       // ───────── the door (no session; rule 1): the code, the enrol/step token, the password, the passkey assertion, the sign-in, the sign-out
@@ -532,6 +537,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
     } finally {
       // rule 4: one staff_actions row per request, ids only (the `email` query parameter is dropped from the route, a directory search's `q` is its hash; no name, phone, code, token or figure is ever set on `action`) — with the role that acted, or on a refusal the role that was asked for (`action.role`, migration 0139)
       if (repo) { try { await repo.logAction({ ...action, at: now, route: logRoute, method, surface: "ops", source: action.session_id ? "session" : held.length ? "header" : null }); } catch (err) { opts.logger?.error("staff_actions.write.failed", { path, error: err }); } }
+      res.end = endNow; if (endArgs) (endNow as (...a: unknown[]) => ServerResponse).apply(res, endArgs);
     }
   });
 }

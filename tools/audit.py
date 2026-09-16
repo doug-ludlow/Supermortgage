@@ -9,10 +9,21 @@
   tools     agent tools registered on the bus for the process (src/app/tools/*, spec tool string verbatim).
   figures   worked-example money figures from "Business rules" that a test of the section reproduces.
 
+  retired   spec/registry/retired.json (hand-written, append-only): a unit the owner has retired for now, one row
+            {unit_id, decision, date, reason} each, the decision a dated record under docs/decisions/. unit_id forms:
+            <pid>-T<n>, <pid>:table:<name>, <pid>:timer:<CODE>, <pid>:notice:<CODE>, <pid>:tool:<name>,
+            <pid>:figure:$1,234.56. The manifest keeps counting the row (the spec text stays the record); the audit
+            subtracts it before the process row is built, so it is neither spec nor built. Nothing retired keeps
+            counting: a non-todo node:test still titled with a retired T-id fails --check.
+
   python3 tools/audit.py              write docs/audit/coverage.json + COVERAGE.md, print the summary
-  python3 tools/audit.py --check      exit 1 if any total fell below docs/audit/baseline.json or a process
-                                      listed there as done is below 100%  (npm test runs this)
-  python3 tools/audit.py --baseline   rewrite baseline.json to the current totals (keeps its done list)
+  python3 tools/audit.py --check      exit 1 if any total fell below docs/audit/baseline.json, a process listed there
+                                      as done is below 100%, or a retired.json row is malformed, names a unit the
+                                      manifest lacks, or still titles a non-todo test  (npm test runs this)
+  python3 tools/audit.py --baseline   rewrite baseline.json to the current totals (keeps its done list) and stamp
+                                      `as_of` (ISO date); prints the per-kind delta; refuses (writes nothing) if a
+                                      total would fall by more than the retired rows of that kind dated after the
+                                      previous baseline's as_of (no as_of: every retired row counts as after it)
   python3 tools/audit.py --strict     print the brief and the per-process gaps only; writes nothing.
   python3 tools/audit.py --lenient    the pre-closure (looser) units: a T-id counts on any live mention of its id; a timer when
                                       armable and satisfiable. The default is strict: a T-id counts only when a non-todo
@@ -21,7 +32,7 @@
   python3 tools/audit.py --brief      one line
   python3 tools/audit.py --hook EVENT emit Claude Code hook JSON (SessionStart | UserPromptSubmit | Stop)
 """
-import re, glob, json, os, sys, collections, subprocess
+import re, glob, json, os, sys, collections, subprocess, datetime
 root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 AUDIT = os.path.join(root, 'docs/audit')
 os.makedirs(AUDIT, exist_ok=True)
@@ -36,7 +47,8 @@ def live_lines(text):
     """Drop scaffold placeholders: a `todo: true` test or `test.todo(` names a T-id without implementing it."""
     return '\n'.join(l for l in text.splitlines() if 'todo: true' not in l and 'test.todo(' not in l and 'it.todo(' not in l)
 test_files = sorted(glob.glob(os.path.join(root, 'src/**/*.test.ts'), recursive=True))
-tests_all = '\n'.join(read(f) for f in test_files)
+test_texts = {f: read(f) for f in test_files}
+tests_all = '\n'.join(test_texts[f] for f in test_files)
 tests_live = live_lines(tests_all)
 section_tests = {sec: live_lines('\n'.join(read(f) for d in dirs for f in glob.glob(os.path.join(root, f'src/domain/{d}/*.test.ts')))) for sec, dirs in SECTION_DIR.items()}
 
@@ -47,6 +59,15 @@ def tids_in(text):
         for x in re.findall(r'T(\d+)', m.group(3)): out.add((m.group(1), int(x)))
     for m in re.finditer(r'\b(\d{1,2}\.\d{1,2})-T(\d+)\s*(?:[–-]|\.\.|…)\s*T(\d+)', text):
         for i in range(int(m.group(2)), int(m.group(3)) + 1): out.add((m.group(1), i))
+    return out
+def leading_tids(title):
+    """The T-ids a test is *titled* with: the id group the title begins with — `2.1-T3`, `2.1-T1 / T2`, `3.2-T2..T5`."""
+    m = re.match(r'\s*(\d{1,2}\.\d{1,2})-T(\d+)((?:\s*/\s*T\d+)*)(?:\s*(?:[–-]|\.\.|…)\s*T(\d+))?', title)
+    if not m: return set()
+    pid = m.group(1); out = {(pid, int(m.group(2)))}
+    for x in re.findall(r'T(\d+)', m.group(3)): out.add((pid, int(x)))
+    if m.group(4):
+        for i in range(int(m.group(2)), int(m.group(4)) + 1): out.add((pid, i))
     return out
 STRICT = '--lenient' not in sys.argv
 def verbatim_titles(text):
@@ -69,35 +90,91 @@ authored = set(re.findall(r'\bV\("([A-Z0-9_]+)"', '\n'.join(read(f) for f in glo
 bus_tools = {(t['process'], t['name']) for t in json.loads(subprocess.run(['node', '--experimental-strip-types', 'tools/list-tools.ts'], cwd=root, capture_output=True, text=True, check=True).stdout)}
 def cents(s): return int(round(float(s.replace('$', '').replace(',', '')) * 100))
 
+# Retired units: spec/registry/retired.json rows, validated here (guards (a) and (b) of check()); a row that fails
+# is reported and NOT subtracted, so a malformed row never makes a unit disappear.
+RETIRED = os.path.join(root, 'spec/registry/retired.json')
+UNIT_ID = re.compile(r'^(\d{1,2}\.\d{1,2})(?:-T(\d+)|:(table|timer|notice|tool|figure):(.+))$')
+KIND_OF = {'table': 'tables', 'timer': 'timers', 'notice': 'notices', 'tool': 'tools', 'figure': 'figures'}
+UNIT_ID_FORMS = '<pid>-T<n>, <pid>:table:<name>, <pid>:timer:<CODE>, <pid>:notice:<CODE>, <pid>:tool:<name>, <pid>:figure:$1,234.56'
+def parse_unit_id(s):
+    m = UNIT_ID.match(s) if isinstance(s, str) else None
+    if not m: return None
+    return (m.group(1), 'tids', int(m.group(2))) if m.group(2) else (m.group(1), KIND_OF[m.group(3)], m.group(4))
+retired_errs = []                 # guard (a) malformed rows, (b) units the manifest lacks
+retired = {}                      # pid -> kind -> {key}: what the row builder subtracts
+retired_ids = {}                  # pid -> [unit_id …] in file order
+retired_decision = {}             # pid -> [decision path …] in file order, unique
+retired_row = {}                  # unit_id -> its row, for every subtracted unit
+retired_rows = json.load(open(RETIRED, encoding='utf-8')) if os.path.exists(RETIRED) else []
+if not isinstance(retired_rows, list): retired_errs.append('spec/registry/retired.json must be a JSON list of rows {unit_id, decision, date, reason}'); retired_rows = []
+by_pid = {p['process']: p for p in manifest}
+seen_unit_ids = set()
+for i, row in enumerate(retired_rows, 1):
+    uid = row.get('unit_id') if isinstance(row, dict) else None
+    label = f"retired.json row {i} ({uid})"
+    if not isinstance(row, dict) or not isinstance(uid, str):
+        retired_errs.append(f"{label}: not a row {{unit_id, decision, date, reason}}"); continue
+    bad = False
+    missing = [k for k in ('decision', 'date', 'reason') if not (isinstance(row.get(k), str) and row[k].strip())]
+    if missing: retired_errs.append(f"{label}: missing {', '.join(missing)}"); bad = True
+    if 'date' not in missing and not re.fullmatch(r'\d{4}-\d{2}-\d{2}', row['date']): retired_errs.append(f"{label}: date {row['date']!r} is not ISO YYYY-MM-DD"); bad = True
+    if 'decision' not in missing and not os.path.isfile(os.path.join(root, row['decision'])): retired_errs.append(f"{label}: decision record {row['decision']} not found"); bad = True
+    parsed = parse_unit_id(uid)
+    if parsed is None: retired_errs.append(f"{label}: unit_id is none of {UNIT_ID_FORMS}"); continue
+    pid, kind, key = parsed
+    if uid in seen_unit_ids: retired_errs.append(f"{label}: listed twice"); continue
+    seen_unit_ids.add(uid)
+    p = by_pid.get(pid)
+    if p is None: retired_errs.append(f"{label}: process {pid} is not in the manifest"); continue
+    if kind == 'tids' and key not in {t['n'] for t in p['tids']}: retired_errs.append(f"{label}: {pid}-T{key} is not in the manifest"); continue
+    if kind in ('tables', 'timers', 'notices', 'tools') and key not in p[kind]: retired_errs.append(f"{label}: {kind[:-1]} {key} is not in the manifest for {pid}"); continue
+    if bad: continue
+    retired.setdefault(pid, {}).setdefault(kind, set()).add(key); retired_ids.setdefault(pid, []).append(uid)
+    if row['decision'] not in retired_decision.setdefault(pid, []): retired_decision[pid].append(row['decision'])
+    retired_row[uid] = row
+
 rows = []
 for p in manifest:
     pid = p['process']; sec = int(pid.split('.')[0])
-    spec_t = {t['n'] for t in p['tids']}
+    ret = retired.get(pid, {})
+    spec_t = {t['n'] for t in p['tids']} - ret.get('tids', set())
     impl_t = {n for (q, n) in impl_tids if q == pid} & spec_t
     todo_t = {n for (q, n) in todo_tids if q == pid} & spec_t
-    tables_ok = [n for n in p['tables'] if n in created or n + 's' in created]
-    timers_ok = [c for c in p['timers'] if c in timer_ok]
-    notices_ok = [c for c in p['notices'] if c in authored]
-    tools_ok = [t for t in p['tools'] if (pid, t) in bus_tools]
+    tables = [n for n in p['tables'] if n not in ret.get('tables', set())]
+    timers = [c for c in p['timers'] if c not in ret.get('timers', set())]
+    notices = [c for c in p['notices'] if c not in ret.get('notices', set())]
+    tools = [t for t in p['tools'] if t not in ret.get('tools', set())]
+    tables_ok = [n for n in tables if n in created or n + 's' in created]
+    timers_ok = [c for c in timers if c in timer_ok]
+    notices_ok = [c for c in notices if c in authored]
+    tools_ok = [t for t in tools if (pid, t) in bus_tools]
     body = read(os.path.join(root, 'spec', p['path']))
     m = re.search(r'#### Business rules(.*?)(?=\n#### )', body, re.S)
-    figs = sorted({f for f in re.findall(r'\$[\d,]{1,12}\.\d{2}', m.group(1) if m else '')})
+    figs_all = sorted({f for f in re.findall(r'\$[\d,]{1,12}\.\d{2}', m.group(1) if m else '')})
+    for f in sorted(ret.get('figures', set()) - set(figs_all)):  # guard (b) for figures: they live in the spec body, not the manifest
+        retired_errs.append(f"retired.json ({pid}:figure:{f}): not a worked figure under {pid}'s Business rules")
+        ret['figures'].discard(f); retired_ids[pid].remove(f"{pid}:figure:{f}"); del retired_row[f"{pid}:figure:{f}"]
+    figs = [f for f in figs_all if f not in ret.get('figures', set())]
     tt = section_tests.get(sec, ''); flat = tt.replace('_', '')
     figs_ok = [f for f in figs if (f'{cents(f)}n' in flat or f in tt)]
     r = {'process': pid, 'title': p['title'],
          'tids': {'spec': len(spec_t), 'built': len(impl_t), 'todo': len(todo_t), 'missing': sorted(spec_t - impl_t)},
-         'tables': {'spec': len(p['tables']), 'built': len(tables_ok), 'missing': [n for n in p['tables'] if n not in tables_ok]},
-         'timers': {'spec': len(p['timers']), 'built': len(timers_ok), 'armable': sum(1 for c in p['timers'] if c in timer_armable), 'missing': [c for c in p['timers'] if c not in timers_ok]},
-         'notices': {'spec': len(p['notices']), 'built': len(notices_ok), 'missing': [c for c in p['notices'] if c not in notices_ok]},
-         'tools': {'spec': len(p['tools']), 'built': len(tools_ok), 'missing': [t for t in p['tools'] if t not in tools_ok]},
+         'tables': {'spec': len(tables), 'built': len(tables_ok), 'missing': [n for n in tables if n not in tables_ok]},
+         'timers': {'spec': len(timers), 'built': len(timers_ok), 'armable': sum(1 for c in timers if c in timer_armable), 'missing': [c for c in timers if c not in timers_ok]},
+         'notices': {'spec': len(notices), 'built': len(notices_ok), 'missing': [c for c in notices if c not in notices_ok]},
+         'tools': {'spec': len(tools), 'built': len(tools_ok), 'missing': [t for t in tools if t not in tools_ok]},
          'figures': {'spec': len(figs), 'built': len(figs_ok), 'missing': [f for f in figs if f not in figs_ok]}}
     spec_n = sum(r[u]['spec'] for u in UNITS); built_n = sum(r[u]['built'] for u in UNITS)
     r['units'] = {'spec': spec_n, 'built': built_n}
     r['pct'] = round(100 * built_n / spec_n, 1) if spec_n else 100.0
+    r['retired'] = list(retired_ids.get(pid, []))
     rows.append(r)
 
 totals = {u: {'spec': sum(r[u]['spec'] for r in rows), 'built': sum(r[u]['built'] for r in rows)} for u in UNITS}
 totals['units'] = {'spec': sum(r['units']['spec'] for r in rows), 'built': sum(r['units']['built'] for r in rows)}
+retired_valid = [(parse_unit_id(uid)[1], row['date']) for uid, row in retired_row.items()]  # (kind, date) of every subtracted unit
+retired_n = {u: sum(1 for k, _ in retired_valid if k == u) for u in UNITS}
+retired_n['units'] = sum(retired_n[u] for u in UNITS)
 pct = lambda t: round(100 * t['built'] / t['spec'], 1) if t['spec'] else 100.0
 frac = lambda t: f"{t['built']}/{t['spec']}"
 done = [r['process'] for r in rows if r['units']['built'] == r['units']['spec']]
@@ -107,13 +184,26 @@ for r in rows:
     s['spec'] += r['units']['spec']; s['built'] += r['units']['built']; s['processes'] += 1; s['done'] += r['process'] in done
 brief = (f"spec units built {frac(totals['units'])} ({pct(totals['units'])}%): "
          + ', '.join(f"{u} {frac(totals[u])}" for u in UNITS)
-         + f"; processes at 100%: {len(done)}/{len(rows)}")
+         + f"; processes at 100%: {len(done)}/{len(rows)}"
+         + f"; retired {retired_n['units']}")
+
+# Guard (c): nothing retired keeps counting — a non-todo node:test (a `skip` test included; its title stands) whose
+# title begins with a retired T-id is an error naming the file. Retitle it (drop the "<pid>-T<n>:" prefix) if it stays
+# as a regression test, or remove it.
+retired_tids = {(pid, n) for pid in retired for n in retired[pid].get('tids', ())}
+retired_title_errs = []
+for f in test_files:
+    hits = {k for title in verbatim_titles(live_lines(test_texts[f])) for k in leading_tids(title) & retired_tids}
+    for (pid, n) in sorted(hits, key=lambda k: ([int(x) for x in k[0].split('.')], k[1])):
+        retired_title_errs.append(f'{pid}-T{n} is retired but still titles a non-todo test in {os.path.relpath(f, root)} — nothing retired keeps counting: remove it or drop the "{pid}-T{n}:" prefix')
 
 BASELINE = os.path.join(AUDIT, 'baseline.json')
 def check():
-    """Ratchet: no total may fall below the committed baseline; a process the baseline lists as done stays at 100%."""
-    if not os.path.exists(BASELINE): return ['no docs/audit/baseline.json (run: npm run audit:baseline)']
-    b = json.load(open(BASELINE)); errs = []
+    """Ratchet: no total may fall below the committed baseline; a process the baseline lists as done stays at 100%;
+    every retired.json row is well-formed, names a unit the manifest carries, and titles no non-todo test."""
+    errs = list(retired_errs)
+    if not os.path.exists(BASELINE): return errs + retired_title_errs + ['no docs/audit/baseline.json (run: npm run audit:baseline)']
+    b = json.load(open(BASELINE))
     for u, v in b['totals'].items():
         cur = totals.get(u, {}).get('built', 0)
         if cur < v['built']: errs.append(f"{u} fell to {cur}/{totals[u]['spec']} (baseline {v['built']}/{v['spec']})")
@@ -122,17 +212,32 @@ def check():
         if r is None: errs.append(f"process {pid} marked done is not in the manifest")
         elif r['units']['built'] != r['units']['spec']:
             errs.append(f"process {pid} is marked done but is at {frac(r['units'])} units: " + '; '.join(f"{u} {frac(r[u])}" for u in UNITS if r[u]['built'] != r[u]['spec']))
-    return errs
+    return errs + retired_title_errs
 
 args = sys.argv[1:]
 if '--baseline' in args:
     prev = json.load(open(BASELINE)) if os.path.exists(BASELINE) else {}
-    json.dump({'totals': totals, 'done': sorted(set(prev.get('done', [])) | set(done), key=lambda s: [int(x) for x in s.split('.')])}, open(BASELINE, 'w'), indent=1)
-    print('baseline written: ' + brief); sys.exit(0)
+    as_of = prev.get('as_of')  # a baseline without as_of predates the retired mechanism: every retired row counts as after it
+    allow = {u: sum(1 for k, d in retired_valid if k == u and (as_of is None or d > as_of)) for u in UNITS}  # ISO dates compare as strings
+    allow['units'] = sum(allow[u] for u in UNITS)
+    refused = list(retired_errs) + retired_title_errs
+    since = f"retired rows dated after its as_of {as_of} may explain a fall" if as_of else 'it has no as_of, so every retired row counts as after it and may explain a fall'
+    print(f"  previous baseline: {os.path.relpath(BASELINE, root)} ({since})" if prev else '  no previous baseline')
+    for u in list(UNITS) + ['units']:
+        was = prev.get('totals', {}).get(u, {}).get('built'); now = totals[u]['built']
+        if was is None: print(f"  {u}: {now}/{totals[u]['spec']}"); continue
+        print(f"  {u}: {was} -> {now} ({now - was:+d}; retired rows counted: {allow[u]})")
+        if now < was and was - now > allow[u]:
+            refused.append(f"{u} would fall {was} -> {now} ({now - was:+d}) but only {allow[u]} retired rows of that kind are dated after the previous baseline's as_of ({as_of or 'none'}): a live total never falls")
+    if refused:
+        print('BASELINE REFUSED (nothing written)\n  ' + '\n  '.join(refused)); sys.exit(1)
+    today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    json.dump({'as_of': today, 'totals': totals, 'done': sorted(set(prev.get('done', [])) | set(done), key=lambda s: [int(x) for x in s.split('.')])}, open(BASELINE, 'w'), indent=1)
+    print(f'baseline written (as_of {today}): ' + brief); sys.exit(0)
 if '--check' in args:
     errs = check()
     if errs:
-        print('AUDIT RATCHET FAILED\n  ' + '\n  '.join(errs)); sys.exit(1)
+        print('AUDIT RATCHET FAILED\n  ' + '\n  '.join(errs)); print(f"  retired units (not counted): {retired_n['units']}"); sys.exit(1)
     print('audit ratchet ok: ' + brief); sys.exit(0)
 if '--hook' in args:
     event = args[args.index('--hook') + 1] if args.index('--hook') + 1 < len(args) else 'SessionStart'
@@ -153,24 +258,29 @@ if '--brief' in args:
 if '--strict' in args:
     print('STRICT ' + brief)
     print('  by section: ' + '  '.join(f"§{k}:{s['built']}/{s['spec']}" for k, s in by_section.items()))
-    if '--json' in args: print(json.dumps({'brief': brief, 'totals': totals, 'processes': rows}))
+    if '--json' in args: print(json.dumps({'brief': brief, 'totals': totals, 'retired': retired_n, 'processes': rows}))
     else:
         for r in rows:
             if r['units']['built'] != r['units']['spec']:
                 print(f"  {r['process']:5} {frac(r['units'])}  " + '  '.join(f"{u} {frac(r[u])}" for u in UNITS if r[u]['built'] != r[u]['spec']))
     sys.exit(0)
 
-json.dump({'brief': brief, 'totals': totals, 'sections': {str(k): v for k, v in by_section.items()}, 'done': done, 'processes': rows}, open(os.path.join(AUDIT, 'coverage.json'), 'w'), indent=1)
+retired_cell = lambda r: f"{len(r['retired'])} ({', '.join(retired_decision.get(r['process'], []))})" if r['retired'] else ''
+retired_kinds = ', '.join(f"{u} {retired_n[u]}" for u in UNITS if retired_n[u])
+json.dump({'brief': brief, 'totals': totals, 'retired': {'count': retired_n['units'], 'by_kind': {u: retired_n[u] for u in UNITS}, 'rows': list(retired_row.values())},
+           'sections': {str(k): v for k, v in by_section.items()}, 'done': done, 'processes': rows}, open(os.path.join(AUDIT, 'coverage.json'), 'w'), indent=1)
 with open(os.path.join(AUDIT, 'COVERAGE.md'), 'w') as f:
-    f.write('# Spec coverage\n\nGenerated by `npm run audit` from `spec/registry/manifest.json`; do not edit. Each unit is one thing the spec names: a T-numbered test, a data-model table, a timer code (armable, satisfiable, and its trigger and satisfied events emitted by source), a notice template, an agent tool on the command bus, or a worked-example figure.\n\n')
+    f.write('# Spec coverage\n\nGenerated by `npm run audit` from `spec/registry/manifest.json`; do not edit. Each unit is one thing the spec names: a T-numbered test, a data-model table, a timer code (armable, satisfiable, and its trigger and satisfied events emitted by source), a notice template, an agent tool on the command bus, or a worked-example figure. A retired unit (`spec/registry/retired.json`, each row citing its decision record) is subtracted before the row is built — neither spec nor built — and counted in the `retired` column.\n\n')
     f.write(f'**{brief}**\n\n## Totals\n\n| Unit | Built / spec | % |\n|---|---|---|\n')
     for u in UNITS: f.write(f"| {u} | {frac(totals[u])} | {pct(totals[u])} |\n")
-    f.write(f"| **all units** | **{frac(totals['units'])}** | **{pct(totals['units'])}** |\n\n## Sections\n\n| § | Units built / spec | % | Processes at 100% |\n|---|---|---|---|\n")
+    f.write(f"| **all units** | **{frac(totals['units'])}** | **{pct(totals['units'])}** |\n")
+    f.write(f"| retired | {retired_n['units']}" + (f" ({retired_kinds})" if retired_kinds else '') + " | — |\n")
+    f.write("\n## Sections\n\n| § | Units built / spec | % | Processes at 100% |\n|---|---|---|---|\n")
     for k, s in by_section.items(): f.write(f"| {k} | {s['built']}/{s['spec']} | {round(100*s['built']/s['spec'],1) if s['spec'] else 100} | {s['done']}/{s['processes']} |\n")
-    f.write('\n## Processes\n\n| Process | T-ids | tables | timers | notices | tools | figures | units | % |\n|---|---|---|---|---|---|---|---|---|\n')
-    for r in rows: f.write(f"| {r['process']} | {frac(r['tids'])} | {frac(r['tables'])} | {frac(r['timers'])} | {frac(r['notices'])} | {frac(r['tools'])} | {frac(r['figures'])} | {frac(r['units'])} | {r['pct']} |\n")
+    f.write('\n## Processes\n\n| Process | T-ids | tables | timers | notices | tools | figures | units | retired | % |\n|---|---|---|---|---|---|---|---|---|---|\n')
+    for r in rows: f.write(f"| {r['process']} | {frac(r['tids'])} | {frac(r['tables'])} | {frac(r['timers'])} | {frac(r['notices'])} | {frac(r['tools'])} | {frac(r['figures'])} | {frac(r['units'])} | {retired_cell(r)} | {r['pct']} |\n")
 print(brief)
 print('  by section: ' + '  '.join(f"§{k}:{s['built']}/{s['spec']}" for k, s in by_section.items()))
-print(f"  T-ids scaffolded as todo (not counted): {sum(r['tids']['todo'] for r in rows)}; timers armable but not satisfiable: {sum(r['timers']['armable'] - r['timers']['built'] for r in rows)}")
+print(f"  T-ids scaffolded as todo (not counted): {sum(r['tids']['todo'] for r in rows)}; timers armable but not satisfiable: {sum(r['timers']['armable'] - r['timers']['built'] for r in rows)}; retired units (not counted): {retired_n['units']}")
 errs = check()
 print(('  ratchet: ' + '; '.join(errs)) if errs else '  ratchet ok')

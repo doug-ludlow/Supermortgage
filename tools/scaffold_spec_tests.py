@@ -2,7 +2,8 @@
 """One verbatim test file per process: src/domain/<section-dir>/<n>-<m>.spec.test.ts with one node:test per
 T-id, named exactly as the spec ("2.1-T3: <verbatim Given/When/Then>"). T-ids that no live test implements
 are emitted as `{ todo: true }` placeholders carrying the spec text; tools/audit.py does not count those.
-T-ids already implemented elsewhere are listed as a comment so the file indexes the whole process.
+T-ids already implemented elsewhere are listed as a comment so the file indexes the whole process, and so is a
+retired T-id (spec/registry/retired.json) — never scaffolded as a todo test, its line names the decision record.
 Never overwrites an existing file: implement a T-id by replacing its todo line with a real test.
 
   python3 tools/scaffold_spec_tests.py            write missing files
@@ -41,6 +42,13 @@ for f in sorted(glob.glob(os.path.join(root, 'src/**/*.test.ts'), recursive=True
 def covered_in(pid, n):
     """Which live (non-scaffold) test file names <pid>-T<n>, or None."""
     return live_index.get((pid, n))
+# Retired T-ids (spec/registry/retired.json, rows {unit_id, decision, date, reason}; tools/audit.py subtracts them
+# before it counts): (pid, n) -> decision record. Never scaffolded as a todo test.
+RETIRED = os.path.join(root, 'spec/registry/retired.json')
+retired = {}
+for row in (json.load(open(RETIRED, encoding='utf-8')) if os.path.exists(RETIRED) else []):
+    m = re.fullmatch(r'(\d{1,2}\.\d{1,2})-T(\d+)', str(row.get('unit_id', '')) if isinstance(row, dict) else '')
+    if m: retired[(m.group(1), int(m.group(2)))] = row.get('decision', '')
 
 written = 0
 for p in manifest:
@@ -49,15 +57,17 @@ for p in manifest:
     if sec == 1 and pid != '1.1': d = 'transfers'  # 1.2–1.7 (transfer-in) live with 17.x in src/domain/transfers
     path = os.path.join(root, 'src/domain', d, pid.replace('.', '-') + '.spec.test.ts')
     if os.path.exists(path): continue
-    missing = set(cov[pid]['tids']['missing']) if pid in cov else {t['n'] for t in p['tids']}  # not audited yet → every T-id is todo
+    retired_here = {n for (q, n) in retired if q == pid}
+    missing = (set(cov[pid]['tids']['missing']) if pid in cov else {t['n'] for t in p['tids']}) - retired_here  # not audited yet → every T-id is todo; a retired id never
     lines = [f'// {pid} {p["title"]}', f'// spec/{p["path"]}', '// One node:test per T-id, named exactly as the spec. `todo: true` = not implemented yet (tools/audit.py does not',
              '// count it). Implement by replacing the todo line with a real test; never edit the name.', 'import { test } from "node:test";', '']
     for t in p['tids']:
         n = t['n']; name = f'{pid}-T{n}' + (f': {t["text"]}' if t['text'] else '')
-        if n in missing: lines.append(f'test({json.dumps(name, ensure_ascii=False)}, {{ todo: true }});')  # literal characters, never \uXXXX: the audit compares titles verbatim
+        if n in retired_here: lines.append(f'// {pid}-T{n} — retired ({retired[(pid, n)]}); not counted, never scaffolded')
+        elif n in missing: lines.append(f'test({json.dumps(name, ensure_ascii=False)}, {{ todo: true }});')  # literal characters, never \uXXXX: the audit compares titles verbatim
         else: lines.append(f'// {pid}-T{n} — implemented in {covered_in(pid, n)}')
     lines.append('')
-    print(('would write ' if dry else 'wrote ') + os.path.relpath(path, root) + f'  ({len(missing)} todo, {len(p["tids"]) - len(missing)} indexed)')
+    print(('would write ' if dry else 'wrote ') + os.path.relpath(path, root) + f'  ({len(missing)} todo, {len(p["tids"]) - len(missing) - len(retired_here)} indexed, {len(retired_here)} retired)')
     if not dry:
         os.makedirs(os.path.dirname(path), exist_ok=True); open(path, 'w', encoding='utf-8').write('\n'.join(lines))
     written += 1

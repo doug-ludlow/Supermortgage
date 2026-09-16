@@ -291,8 +291,8 @@ import type { CreditBureauPort, CreditOrder, CreditReportResponse, BorrowerCredi
 import { FakeCbsv, FakeOfacScreener, FakeFraudTool, FakeMers as FakeMersSearch, identityPass, type IdentityVendorPort, type IdentityMethod, type IdentitySessionResult } from "../domain/verification/ops-22-6.ts";
 import { FakeAmc, FakePropertyDataApi } from "../domain/property/ops-24-1.ts";
 import { FakeUcdp } from "../domain/property/ops-24-2.ts";
-/** The FAKE UCDP's Doc File ID: 10 characters as the real one (29.3 R3(c) `docFileIdCheck`), stable per appraisal id. */
-const fakeDocFileId = (appraisalId: string): string => `12${String(createHash("sha256").update(appraisalId).digest().readUInt32BE(0) % 100_000_000).padStart(8, "0")}`;
+/** The FAKE UCDP's Doc File ID: 10 characters, leading digit ≥ 2 as UAD 3.6 issues them (29.3 R3(c) `docFileIdCheck`), stable per appraisal id. */
+const fakeDocFileId = (appraisalId: string): string => `2${String(createHash("sha256").update(appraisalId).digest().readUInt32BE(0) % 1_000_000_000).padStart(9, "0")}`;
 import { FakePurchaseAdviceApi, FakeCollectionBank } from "../domain/warehouse/ops-27-2.ts";
 import { FakeTitleVendor, FakeWireVerification, FakeAltaRegistry, FakeStateDoi } from "../domain/property/ops-24-4.ts";
 import { FakeERegistry26, FakeRonPlatform, type ERegistryPort26, type ERegistryAck } from "../domain/closing/ops-26-2.ts";
@@ -415,7 +415,7 @@ export function originationServices(clock: Clock): OriginationServiceSet {
       case "le-21-2": return new LoanEstimateService({ events, clock: c, escalations });
       case "companion": return new CompanionDisclosureService({ events, clock: c, escalations, timers: ctx.timers });
       case "tolerance": return new ToleranceService({ events, clock: c, ledger, escalations });
-      case "secondary": return new CommitmentService({ events, clock: c, ledger, escalations, pewl: new FakePewl({ price: "100.875" }), salesDesk: new FakeSalesDesk() });
+      case "secondary": return new CommitmentService({ events, clock: c, ledger, escalations, pewl: fixed["pewl"] as FakePewl, salesDesk: new FakeSalesDesk() });
       case "delivery-29-3": return new DeliveryBuildService({ events, clock: c, escalations, earlycheck: fixed["earlycheck"] as FakeEarlyCheck });
       case "delivery-29-4": return new DeliveryService({ events, clock: c, escalations, registry: warehouse.registry });
       case "orig-boarding": return new OriginationBoardingService({ events, ledger, clock: c, timers: ctx.timers, escalations, ext: { licensed: (st) => DEFAULT_LICENSED_STATES.includes(st), onPlatform: () => false, mers: () => undefined }, prepurchaseTiAccountId: "", ...(opts.origBoarding ?? {}) });

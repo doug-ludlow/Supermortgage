@@ -7,8 +7,7 @@
 import type { DomainEvent } from "../../kernel/events/index.ts";
 import type { EntityRecord } from "../../app/tools.ts";
 import { type OrchRecord, type Source, src, RecordGap } from "./facts-35-6.ts";
-import { closingFacts, partyFacts, loanTerms, escrowFacts, cdRow, productFacts, ltvPct, type ClosingFacts } from "./facts-35-6-b.ts";
-import { FACILITY_FIXTURE } from "../warehouse/ops-27-1.ts";
+import { partyFacts, loanTerms, escrowFacts, cdRow, productFacts, type ClosingFacts } from "./facts-35-6-b.ts";
 
 type Row = Record<string, unknown>;
 const S = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
@@ -27,10 +26,15 @@ export function commitmentFacts(rec: OrchRecord): { row: EntityRecord | null; ev
   const terms = loanTerms(rec); const row = terms.commitment; const ev = terms.commitment_event;
   if (!row && !ev) throw new RecordGap("commitment.executed", "no best-efforts commitment on the record (21.4 requestCommitment → 29.1)");
   const d = row?.data ?? {}; const p = ev?.payload ?? {};
-  const fee = Number(d["servicing_fee_bps"] ?? p["servicing_fee_bps"] ?? 25);
-  const rt = String(d["remittance_type"] ?? p["remittance_type"] ?? "actual_actual");
+  // the servicing fee: 29.1's row when it carries one; otherwise 29.1's C2-1.1-02 identity (pass-through rate = note rate − servicing fee) over the commitment's PTR and the lock's note rate — 21.4's `commitments` projection has no fee column
+  const ptr = S(d["pass_through_rate"] ?? p["ptr"]); if (!ptr) throw new RecordGap("commitments.pass_through_rate", "29.1's commitment carries no pass-through rate");
+  const feeRaw = d["servicing_fee_bps"] ?? p["servicing_fee_bps"];
+  const fee = feeRaw !== undefined && feeRaw !== null ? Number(feeRaw) : Math.round((Number(terms.note_rate_pct.value) - Number(ptr)) * 100);
+  if (!Number.isFinite(fee) || fee < 0) throw new RecordGap("commitments.servicing_fee_bps", `29.1's commitment yields no servicing fee (note rate ${terms.note_rate_pct.value}, PTR ${ptr})`);
+  const rtRaw = d["remittance_type"] ?? p["remittance_type"]; if (rtRaw === undefined || rtRaw === null) throw new RecordGap("commitments.remittance_type", "29.1's commitment carries no remittance type");
+  const rt = String(rtRaw);
   return { row, event: ev, commitment_id: String(d["commitment_id"] ?? p["commitment_id"] ?? row?.id ?? ""), commitment_id_fnma: String(d["commitment_id_fnma"] ?? p["commitment_id_fnma"] ?? ""), expires_on: String(d["expires_on"] ?? p["expires_on"] ?? ""), price: String(d["commitment_price"] ?? p["price"] ?? ""),
-    pass_through_rate: String(d["pass_through_rate"] ?? p["ptr"] ?? ""), servicing_fee_rate: bpsToRate(fee), remittance_type: rt === "aa" || rt === "A/A" ? "actual_actual" : rt, type: String(d["type"] ?? p["type"] ?? "best_efforts"), status: String(d["status"] ?? ""),
+    pass_through_rate: ptr, servicing_fee_rate: bpsToRate(fee), remittance_type: rt === "aa" || rt === "A/A" ? "actual_actual" : rt, type: String(d["type"] ?? p["type"] ?? "best_efforts"), status: String(d["status"] ?? ""),
     source: row ? src("entity", `commitments:${row.id}:${row.version}`, "29.1") : src("event", `commitment.executed:${ev!.id}`, "29.1") };
 }
 
@@ -47,14 +51,18 @@ export function closingUlad(rec: OrchRecord): { snapshot: Row; submission_number
 
 /** 23.4's delivery gate facts as 29.4 evaluates them on submitDelivery: the current QM determination, the HOEPA/state high-cost determination. */
 export function deliveryGateFacts(rec: OrchRecord): { facts: Row; sources: Record<string, Source> } {
-  const qm = rec.last("compliance.qm.determined"); const qmRow = [...rec.entities("qm_determinations")].at(-1) ?? null; const hc = rec.last("compliance.high_cost.determined");
-  if (!qm) throw new RecordGap("compliance.qm.determined", "no QM determination on the record (23.4)");
-  const p = qm.payload; const d = qmRow?.data ?? {};
-  const stage = String(p["stage"] ?? "consummation");
-  const facts: Row = { qm_type: String(p["qm_type"]), apr_test_pass: p["apr_test_pass"] === true, pf_pass: p["pf_pass"] === true, product_tests_pass: d["product_tests_pass"] !== undefined ? d["product_tests_pass"] === true : p["product_tests_pass"] !== false, consider_verify_complete: p["consider_verify_complete"] === true,
-    consider_verify_missing: Array.isArray(d["consider_verify_missing"]) ? d["consider_verify_missing"] : [], stage, apor_stale: p["apor_stale"] === true, blocked_reason: p["blocked_reason"] ?? null, computed_from_final_cd: stage === "consummation",
-    is_hoepa: hc ? hc.payload["is_hoepa"] === true : false, state_tests: hc ? ((hc.payload["state_tests"] as unknown[] | undefined) ?? []) : [] };
-  return { facts, sources: { qm: src("event", `compliance.qm.determined:${qm.id}`, "23.4"), ...(qmRow ? { qm_row: src("entity", `qm_determinations:${qmRow.id}:${qmRow.version}`, "23.4") } : {}), high_cost: hc ? src("event", `compliance.high_cost.determined:${hc.id}`, "23.4") : src("derived", "no compliance.high_cost.determined (23.4): no HOEPA/state high-cost determination", "23.4") } };
+  // rule 5: 29.4's submitDelivery gates read 23.4's own rows — the current consummation-stage QM determination and the same stage's HOEPA/state high-cost determination; a missing row is a gap, never a default
+  const qmRow = rec.entities("qm_determinations", (d) => d["stage"] === "consummation" && d["status"] === "current").at(-1) ?? null;
+  if (!qmRow) throw new RecordGap("qm_determinations", "no current consummation-stage QM determination on the record (23.4 runQmTests{stage: consummation})");
+  const hcRow = rec.entities("high_cost_determinations", (d) => d["stage"] === "consummation").at(-1) ?? null;
+  if (!hcRow) throw new RecordGap("high_cost_determinations", "no consummation-stage HOEPA/state high-cost determination on the record (23.4)");
+  const d = qmRow.data; const h = hcRow.data;
+  for (const k of ["qm_type", "apr_test_pass", "pf_pass", "product_tests_pass", "consider_verify_complete", "computed_from_final_cd"]) if (d[k] === undefined) throw new RecordGap(`qm_determinations.${k}`, `23.4's determination row carries no ${k}`);
+  if (h["is_hoepa"] === undefined) throw new RecordGap("high_cost_determinations.is_hoepa", "23.4's high-cost row carries no is_hoepa");
+  const facts: Row = { qm_type: d["qm_type"], apr_test_pass: d["apr_test_pass"] === true, pf_pass: d["pf_pass"] === true, product_tests_pass: d["product_tests_pass"] === true, consider_verify_complete: d["consider_verify_complete"] === true,
+    consider_verify_missing: Array.isArray(d["consider_verify_missing"]) ? d["consider_verify_missing"] : [], stage: String(d["stage"]), apor_stale: d["apor_stale"] === true, blocked_reason: d["blocked_reason"] ?? null, computed_from_final_cd: d["computed_from_final_cd"] === true,
+    is_hoepa: h["is_hoepa"] === true, state_tests: Array.isArray(h["state_tests"]) ? h["state_tests"] : [] };
+  return { facts, sources: { qm_row: src("entity", `qm_determinations:${qmRow.id}:${qmRow.version}`, "23.4"), high_cost: src("entity", `high_cost_determinations:${hcRow.id}:${hcRow.version}`, "23.4") } };
 }
 
 /** 23.4's consummation-stage determination input (`runQmTests{op: stage, stage: consummation, computed_from_final_cd}` — the row 23.4's gates read on consummate/authorizeFunding/submitDelivery), every field from the record: 25.1's cd-checkpoint APR, 21.4's executed lock as the rate-set lock, 23.4's own `apor_tables` rows and the consider-and-verify evidence its LE-stage row carries, the consummated CD's fee lines, 21.4's product, 21.1's subject state/county, 26.2's note date, 30.3's escrow. */
@@ -65,16 +73,19 @@ export async function qmConsummationInput(rec: OrchRecord, i: { closing: Closing
   if (!prior) throw new RecordGap("qm_determinations.consider_verify", "no prior 23.4 determination carrying the consider-and-verify evidence (23.4 assembleAtrEvidence)");
   const consummated = rec.last("closing.consummated"); if (!consummated) throw new RecordGap("closing.consummated", "no closing.consummated (26.2)");
   const subject = rec.app.properties[0]; if (!subject) throw new RecordGap("application_properties", "no subject property (21.1)");
+  const agentAffiliate = rec.entities("settlement_agents").at(-1)?.data["affiliate"];
+  if (product.amortization === "arm") throw new RecordGap("locks.arm_terms", "an ARM record needs 21.4's ARM terms mapped to 23.4's product.arm — not built");
+  if (rec.app.occupancy === null || rec.app.occupancy === undefined) throw new RecordGap("applications.occupancy", "the application carries no occupancy (21.1)");
   const kindOf = (section: string): "public_official" | "third_party" | "creditor" => (section === "E_taxes_gov" ? "public_official" : section === "B_cannot_shop" || section === "C_can_shop" ? "third_party" : "creditor");
   const fee_items = ((i.cd.data["fees"] as Row[] | undefined) ?? []).filter((f) => f["fee_code"] !== "escrow_deposit" && String(f["section"] ?? "") !== "G_initial_escrow").map((f) => {
     const code = String(f["fee_code"]); const kind = kindOf(String(f["section"] ?? "")); const paidTo = kind === "creditor" ? parties.partner_legal_name : kind === "public_official" ? `${parties.county ?? subject.state} County Recorder` : parties.settlement_agent_name;
-    return { fee_item_id: `${i.cd.id}:${code}`, service_code: code === "prepaid_interest" ? "interest_prepaid" : code, description: String(f["description"] ?? code), amount_cents: String(f["amount_cents"]), paid_to: paidTo, paid_to_kind: kind, payee: paidTo, ...(kind === "creditor" ? { retained_by_creditor: true } : {}), ...(kind === "third_party" ? { affiliate: rec.entities("settlement_agents").at(-1)?.data["affiliate"] === true, reasonable: true } : {}) };
+    return { fee_item_id: `${i.cd.id}:${code}`, service_code: code === "prepaid_interest" ? "interest_prepaid" : code, description: String(f["description"] ?? code), amount_cents: String(f["amount_cents"]), paid_to: paidTo, paid_to_kind: kind, payee: paidTo, ...(kind === "creditor" ? { retained_by_creditor: true } : {}), ...(kind === "third_party" && typeof agentAffiliate === "boolean" ? { affiliate: agentAffiliate } : {}) };
   });
   const lockKind = ["initial", "extension", "relock", "float_down", "renegotiation"].includes(String(lock.payload["kind"])) ? String(lock.payload["kind"]) : "initial";
   const input: Row = { op: "stage", stage: "consummation", apr: String(i.apr.data["apr_disclosed_str"]), apr_calculation_id: String(i.apr.data["apr_calculation_id"] ?? i.apr.id), loan_amount_cents: String(terms.loan_amount_cents.value),
-    locks: [{ lock_id: String(lock.payload["lock_id"]), kind: lockKind, locked_at: String(lock.payload["locked_at"] ?? lock.occurredAt), rate_pct: terms.note_rate_pct.value, product: product.amortization === "arm" ? "adjustable" : "fixed", term_years: Math.round(terms.term_months / 12) }],
+    locks: [{ lock_id: String(lock.payload["lock_id"]), kind: lockKind, locked_at: String(lock.payload["locked_at"] ?? lock.occurredAt), rate_pct: terms.note_rate_pct.value, product: "fixed", term_years: Math.round(terms.term_months / 12) }],
     apor_tables: apor.map((r) => ({ ...r.data })), fee_items, product: { term_months: terms.term_months, amortization: product.balloon ? "balloon" : "fully_amortizing", substantially_equal_payments: !product.balloon, arm: null }, consider_verify: prior.data["consider_verify"],
-    lien: product.lien_position, state: subject.state, county: parties.county, consummation_date: String(consummated.payload["note_date"]), escrow_established_before_consummation: escrowFacts(rec) !== null, computed_from_final_cd: true, loan_id: i.loan_id };
+    lien: product.lien_position, principal_dwelling: rec.app.occupancy === "primary", state: subject.state, county: parties.county, consummation_date: String(consummated.payload["note_date"]), escrow_established_before_consummation: escrowFacts(rec) !== null, computed_from_final_cd: true, loan_id: i.loan_id };
   return { input, sources: { apr: src("entity", `apr_calculations:${i.apr.id}:${i.apr.version}`, "25.1"), lock: terms.note_rate_pct.source, apor_tables: src("entity", apor.map((r) => `apor_tables:${r.id}:${r.version}`).join(","), "23.4"), consider_verify: src("entity", `qm_determinations:${prior.id}:${prior.version}`, "23.4"), fees: src("entity", `disclosures:${i.cd.id}:${i.cd.version}`, "25.2"), product: product.source, consummation: src("event", `closing.consummated:${consummated.id}`, "26.2") } };
 }
 
@@ -110,17 +121,23 @@ export async function loanFileBase(rec: OrchRecord, i: { loan_id: string; seller
   put("du_final", src("event", `du.final_submission.recorded:${finalSub.id}`, "23.1")); put("du_document", src("event", `du.document.emitted:${duDoc.id}`, "23.6")); put("credit", src("event", `credit.representative_score.computed:${score.id}`, "22.2")); put("uli", src("event", `hmda.uli.assigned:${uli.id}`, "28.3"));
   if (hpml) put("rate_spread", src("event", `compliance.hpml.determined:${hpml.id}`, "23.4")); if (registered) put("enote", src("event", `enote.registered:${registered.id}`, "26.2")); if (advanceFunded) put("warehouse", src("event", `warehouse.advance.funded:${advanceFunded.id}`, "27.1")); if (custody) put("custody", src("event", `custody.record.seeded:${custody.id}`, "26.2"));
   const escrow = escrowFacts(rec);
+  const transactionType = rec.app.transaction_type; if (!transactionType) throw new RecordGap("applications.transaction_type", "the application carries no transaction type (21.1)");
+  // 29.3 R3(d): the valuation method is 24.1's (`valuation_orders.method`; its valuation.received carries it too)
+  const order = rec.entities("valuation_orders", (d) => valuation === null || d["order_id"] === valuation.payload["order_id"]).at(-1) ?? rec.entities("valuation_orders").at(-1) ?? null;
+  const valuationMethod = S(order?.data["method"]) ?? S(valuation?.payload["method"]) ?? S(appraisal.data["method"]); if (!valuationMethod) throw new RecordGap("valuation_orders.method", "neither 24.1's valuation order nor its valuation.received nor 24.2's appraisal row names the valuation method");
+  const warehouseLenderId = S(i.wire["warehouse_lender_org_id"]); const baileeLetterName = S(i.wire["bailee_letter_name"]);
+  if (!warehouseLenderId || !baileeLetterName) throw new RecordGap("wire_instructions", "29.4's approved warehouse wire instruction names no warehouse lender org id / bailee letter name");
   const base: Row = {
-    application_id: rec.app.id, loan_id: i.loan_id, partner_id: rec.app.partner_party_id, seller_number: parties.partner_servicer_number ?? "", servicing_loan_number: i.seller_loan_number, purpose: rec.app.transaction_type ?? "limited_cash_out",
+    application_id: rec.app.id, loan_id: i.loan_id, partner_id: rec.app.partner_party_id, seller_number: parties.partner_servicer_number ?? "", servicing_loan_number: i.seller_loan_number, purpose: transactionType,
     loan_amount_cents: String(terms.loan_amount_cents.value), note_rate_pct: terms.note_rate_pct.value, term_months: terms.term_months, note_date: String(consummated?.payload["note_date"] ?? i.closing.scheduled_note_date), disbursement_date: String(funded.payload["disbursement_date"]), first_payment_date: String(noteTerms["first_payment_date"]), maturity_date: String(noteTerms["maturity_date"]),
     sales_price_cents: rec.app.transaction_type === "purchase" ? S(rec.payload("application.trid_received")?.["sales_price_cents"]) : null, appraised_value_cents: String(appraisal.data["appraised_value_cents"]),
     property: { property_id: subject.property_id ?? subject.id, street: subject.address_line1, city: subject.city, state: subject.state, zip: subject.postal_code, units: rec.subject?.units ?? 1, usage, type: (rec.propertyType() ?? "sfr") === "condo" ? "attached" : "detached" },
     escrowed: !!escrow, initial_escrow_deposit_cents: escrow ? String(escrow.initial_escrow_payment_cents) : null,
     // 29.3 R3(a)/(b): SID 322 = `du_casefiles.casefile_id` of the final submission (`du.final_submission.recorded{casefile_id}`); the UCD's `casefile_id_ucd` must equal it
     du: { casefile_id: String(finalSub.payload["casefile_id"] ?? casefileRec?.payload["casefile_id"] ?? ""), is_final: finalSub.payload["is_final"] !== false, recommendation: String(finalSub.payload["recommendation"] ?? findings?.payload["recommendation"] ?? ""), closed_loan_snapshot_hash: String(finalSub.payload["closed_loan_snapshot_hash"] ?? ""), du_spec_file_sha256: String(duDoc.payload["sha256"]), du_spec_document_id: String(duDoc.payload["document_id"]) },
-    valuation: { method: String(valuation?.payload["method"] ?? appraisal.data["method"] ?? "traditional"), offer_date: null, property_data_id: null, special_feature_codes: [] },
+    valuation: { method: valuationMethod, offer_date: null, property_data_id: null, special_feature_codes: [] },
     lock: { locked_on: lockedOn, extensions }, commitment: { commitment_id_fnma: commitment.commitment_id_fnma, expires_on: commitment.expires_on, type: commitment.type, remittance_type: commitment.remittance_type, pass_through_rate: commitment.pass_through_rate, servicing_fee_rate: commitment.servicing_fee_rate },
-    warehouse: { advance_outstanding: !!advanceFunded && !repaid, payee_code: S(i.wire["payee_code"]), warehouse_lender_id: S(i.wire["warehouse_lender_org_id"]) ?? FACILITY_FIXTURE.fnma_warehouse_lender_id, custodian_fin: S(custody?.payload["custodian_fin"]), bailee_letter_name: S(i.wire["bailee_letter_name"]) ?? FACILITY_FIXTURE.bailee_letter_name },
+    warehouse: { advance_outstanding: !!advanceFunded && !repaid, payee_code: S(i.wire["payee_code"]), warehouse_lender_id: warehouseLenderId, custodian_fin: S(custody?.payload["custodian_fin"]), bailee_letter_name: baileeLetterName },
     note: { form: i.closing.note_form, enote_registered_at: registered ? String(registered.payload["registered_at"] ?? registered.occurredAt) : null, min: S(registered?.payload["min"]) ?? S(rec.payload("closing.scheduled")?.["min"]), closing_type: i.closing.closing_type === "wet" ? "paper" : i.closing.closing_type },
     notarization_kind: i.closing.closing_type === "ron" ? "ron" : i.closing.closing_type === "ipen" ? "rin" : "in_person",
     // 22.2 B3-5.1-02: the representative score is the lowest applicable score across scored borrowers (each borrower's applicable score is the middle of three / lower of two) — MISMO CreditScoreImpairmentType-free; the selection method as ULDD names that rule
@@ -128,6 +145,5 @@ export async function loanFileBase(rec: OrchRecord, i: { loan_id: string; seller
     hmda: { rate_spread_pct: hpml ? S(hpml.payload["spread"]) : null, uli: String(uli.payload["uli"]) },
     subordinations: [], ...(mi ? { mi: { certificate_number: String(mi.data["certificate_number"] ?? ""), mi_company_code: String(mi.data["mi_company_code"] ?? ""), coverage_pct: String(mi.data["coverage_pct"] ?? ""), premium_plan: String(mi.data["premium_plan"] ?? ""), financed_premium_cents: String(mi.data["financed_premium_cents"] ?? "0"), status: String(mi.data["status"]), activated_at: S(mi.data["activated_at"]) } } : {}),
   };
-  void cents; void ltvPct; void closingFacts;
   return { base, sources };
 }

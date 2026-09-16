@@ -33,7 +33,7 @@ const COMPLIANCE = { kind: "agent", id: "compliance-tester" } as const;
 const VERIFICATION = { kind: "agent", id: "verification" } as const;
 const CLOSER = { kind: "agent", id: "title-closing" } as const;
 const FUNDER = { kind: "agent", id: "funder" } as const;
-const WAREHOUSE = { kind: "agent", id: "warehouse" } as const;
+export const WAREHOUSE = { kind: "agent", id: "warehouse" } as const;
 const POST_CLOSING = { kind: "agent", id: "post-closing" } as const;
 const ESCROW = { kind: "agent", id: "escrow" } as const;
 const S = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
@@ -42,7 +42,7 @@ const plus = (iso: string, ms: number): string => new Date(Date.parse(iso) + ms)
 /** 25.1's AprCalculation with its cents as bigints (the compliance snapshot is taken raw off the bus input; a stored row carries strings). */
 const aprBig = (a: Row): Row => ({ ...a, ...Object.fromEntries(["amount_financed_cents", "prepaid_finance_charges_cents", "prepaid_interest_cents", "finance_charge_cents", "total_of_payments_cents", "total_interest_cents", "loan_amount_cents"].filter((k) => a[k] !== undefined && a[k] !== null).map((k) => [k, cents(a[k])])) });
 /** The funding id and the closing id are the application's (one funding per orchestration). */
-const fundingIdOf = (rec: OrchRecord): string => S(rec.payload("funding.requested")?.["funding_id"]) ?? `F-${rec.app.id.slice(0, 8)}`;
+export const fundingIdOf = (rec: OrchRecord): string => S(rec.payload("funding.requested")?.["funding_id"]) ?? `F-${rec.app.id.slice(0, 8)}`;
 const advanceIdOf = (rec: OrchRecord): string => `ADV-${rec.app.id.slice(0, 8)}`;
 const UNWIND_TRIGGERS: readonly UnwindTrigger[] = ["rescission_exercised_pre_disbursement", "rescission_exercised_post_disbursement", "conditions_failed", "documents_not_returned", "agent_failed_to_disburse", "fraud", "borrower_withdrew", "partner_hold"];
 const cdIdOf = (rec: OrchRecord, version: number): string => `CD-${rec.app.id.slice(0, 8)}-${version}`;
@@ -528,10 +528,6 @@ export const closingSteps: readonly StepDef[] = [
   closingScheduled, cdDelivered, documentsReleased, consummated, executionReviewed,
 ];
 export const fundingSteps: readonly StepDef[] = [fundingAuthorized, wireReleased];
-export const deliverySteps: readonly StepDef[] = [
-  { name: "certified", exit: exitOn("loan.purchased"), clocked: () => true },
-  { name: "purchased", exit: exitOn("orchestration.purchase.reconciled"), clocked: () => true },
-];
 
 // ───────────────────────────── unwinding (T15): the owners' unwind in the owners' order ─────────────────────────────
 export const unwindStep: StepDef = {

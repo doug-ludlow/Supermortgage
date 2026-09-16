@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8178/8756 (93.4%): tids 2272/2458, tables 779/848, timers 2048/2097, notices 308/308, tools 1452/1578, figures 1319/1467; processes at 100%: 193/205",
+ "brief": "spec units built 8182/8756 (93.4%): tids 2276/2458, tables 779/848, timers 2048/2097, notices 308/308, tools 1452/1578, figures 1319/1467; processes at 100%: 193/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2272
+   "built": 2276
   },
   "tables": {
    "spec": 848,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8756,
-   "built": 8178
+   "built": 8182
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 154,
+   "built": 158,
    "processes": 12,
    "done": 1
   }
@@ -8835,15 +8835,11 @@
    "title": "Closing, funding and delivery orchestration: the state machine from clear-to-close through the CD, consummation, funding, the hand-off from the record, delivery, purchase-advice reconciliation and the warehouse paydown",
    "tids": {
     "spec": 19,
-    "built": 13,
-    "todo": 6,
+    "built": 17,
+    "todo": 2,
     "missing": [
-     11,
-     14,
      16,
-     17,
-     18,
-     19
+     17
     ]
    },
    "tables": {
@@ -8874,9 +8870,9 @@
    },
    "units": {
     "spec": 80,
-    "built": 74
+    "built": 78
    },
-   "pct": 92.5
+   "pct": 97.5
   },
   {
    "process": "35.7",

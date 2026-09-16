@@ -9,29 +9,29 @@
 import type { StepDef, StepOutcome } from "./steps-35-6.ts";
 import type { OrchRecord } from "./facts-35-6.ts";
 import { RecordGap, src } from "./facts-35-6.ts";
-import { escrowFacts, cdRow, loanTerms, closingFacts, type ClosingFacts } from "./facts-35-6-b.ts";
+import { escrowFacts, cdRow, loanTerms, closingFacts, partyFacts, type ClosingFacts } from "./facts-35-6-b.ts";
 import { wireInstruction, commitmentFacts, closingUlad, deliveryGateFacts, loanFileBase, qmConsummationInput } from "./facts-35-6-c.ts";
-import { exitOn, DISCLOSURE, ESCROW, COMPLIANCE, S, civil, recordSnapshot } from "./steps-35-6-b.ts";
+import { exitOn, DISCLOSURE, ESCROW, COMPLIANCE, WAREHOUSE, S, civil, recordSnapshot } from "./steps-35-6-b.ts";
+import { FANNIE_MAE_ORG_ID } from "../warehouse/ops-27-1.ts";
 import { ORCH_ACTOR } from "./orchestration-35-6.ts";
 import { storeDocument } from "./documents-port-35-6.ts";
-import { wallClock } from "../../kernel/calendar/zoned.ts";
 
 type Row = Record<string, unknown>;
 const BOARDING = { kind: "agent", id: "boarding" } as const;
 const CLOSER = { kind: "agent", id: "title-closing" } as const;
-const SECONDARY = { kind: "agent", id: "secondary" } as const;
+export const SECONDARY = { kind: "agent", id: "secondary" } as const;
 const UNDERWRITER = { kind: "agent", id: "underwriter" } as const;
 /** Rule 4: the FAKE Loan Delivery operator acts after the delay as a human of the role (INTEGRATIONS=fake); a person's queue otherwise. */
 const FAKE_OPERATOR = { kind: "human", id: "FAKE:fnma_portal_operator", role: "fnma_portal_operator" } as const;
-const deliveryIdOf = (rec: OrchRecord): string => `DLV-${rec.app.id.slice(0, 8)}`;
-function needClosing(rec: OrchRecord): ClosingFacts { const c = closingFacts(rec); if (!c) throw new RecordGap("closing.scheduled", "no closing on the record (26.2)"); return c; }
-async function servicingLoanNumber(ctx: Parameters<NonNullable<StepDef["actions"]>>[0], loanId: string): Promise<string> {
+export const deliveryIdOf = (rec: OrchRecord): string => `DLV-${rec.app.id.slice(0, 8)}`;
+export function needClosing(rec: OrchRecord): ClosingFacts { const c = closingFacts(rec); if (!c) throw new RecordGap("closing.scheduled", "no closing on the record (26.2)"); return c; }
+export async function servicingLoanNumber(ctx: Parameters<NonNullable<StepDef["actions"]>>[0], loanId: string): Promise<string> {
   const row = (await ctx.rt.db.query<{ n: string }>(`SELECT servicer_loan_number AS n FROM loans WHERE id = $1`, [loanId]))[0];
   if (!row) throw new RecordGap("loans", `no loans row ${loanId} (30.2)`);
   return row.n;
 }
 /** 30.2's servicing loan for the application once the hand-off ran (applications.loan_id ↔ loans.origination_application_id). */
-const loanIdOf = (rec: OrchRecord): string | null => rec.loanId ?? S(rec.payload("loan.boarded")?.["loan_id"]) ?? S(rec.payload("loan.staged")?.["loan_id"]) ?? null;
+export const loanIdOf = (rec: OrchRecord): string | null => rec.loanId ?? S(rec.payload("loan.boarded")?.["loan_id"]) ?? S(rec.payload("loan.staged")?.["loan_id"]) ?? null;
 
 /** The funded step exits on 30.2's `loan.boarded` only once the owners' post-funding work is on the record too (30.3's establishment when escrowed, 25.4's post-closing run, 30.4's hand-off) — a refusal after boarding never skips them (rule 10). */
 const fundedComplete = (rec: OrchRecord) => {
@@ -48,6 +48,12 @@ export const fundedStep: StepDef = {
   actions: async (ctx): Promise<StepOutcome> => {
     let rec = ctx.rec; const now = ctx.now;
     const funded = rec.last("loan.funded"); if (!funded) throw new RecordGap("loan.funded", "26.3's loan.funded is not on the record");
+    // 27.1 rule 7: the facility's wire fee per outbound advance (pass-through of the bank's cost; the payoff carries it as fees outstanding) — assessed once the advance wire is out, as `warehouse`
+    const advanceOut = rec.last("warehouse.advance.funded");
+    if (advanceOut && !rec.has("warehouse.fee.assessed", (p) => p["kind"] === "wire_out")) {
+      await ctx.run({ process: "27.1", name: "assessFee", actor: WAREHOUSE, input: { advance_id: String(advanceOut.payload["advance_id"]), facility_id: String(advanceOut.payload["facility_id"]), kind: "wire_out", on: String(advanceOut.payload["advance_date"]) }, detail: { sources: { advance: src("event", `warehouse.advance.funded:${advanceOut.id}`, "27.1") } } });
+      rec = await ctx.refresh();
+    }
     // rule 6: the snapshot from the record (its sources and gaps stored), then 30.2's hand-off from that row — both this process's own tools, so the guardrails (SNAPSHOT_CITES_SOURCES, FIXTURE_REFUSED_IN_PRODUCTION, NO_CLIENT_STATE) and the decision record apply as on the hosted API
     if (!loanIdOf(rec) && !rec.has("loan.staged")) {
       const snap = await ctx.run<Row>({ process: "35.6", name: "orchestration.snapshot", actor: ORCH_ACTOR, input: { at: now }, detail: { sources: { funded: src("event", `loan.funded:${funded.id}`, "26.3") } } });
@@ -98,6 +104,13 @@ export const boardedStep: StepDef = {
     const funded = rec.last("loan.funded"); if (!funded) throw new RecordGap("loan.funded", "no loan.funded (26.3)");
     const sln = await servicingLoanNumber(ctx, loanId);
     const noteTerms = ((rec.entities("closing_data_snapshots").at(-1)?.data["payload"] as Row | undefined)?.["note_terms"] as Row | undefined) ?? null;
+    // 27.1 rule 4 (eNote): the eRegistry's notification that SM was added as Secured Party at registration (26.2's enote.registered names SM as Delegatee) → `secured_control`, the collateral status 27.1 demands before a Transfer of Control — as `warehouse`
+    const registeredNote = rec.last("enote.registered"); const advanceFunded = rec.last("warehouse.advance.funded");
+    if (closing.note_form === "enote" && registeredNote && advanceFunded && !rec.has("warehouse.secured_party.added")) {
+      await ctx.run({ process: "27.1", name: "trackCollateral", actor: WAREHOUSE, input: { op: "secured_party_added", advance_id: String(advanceFunded.payload["advance_id"]), facility_id: String(advanceFunded.payload["facility_id"]), min: String(registeredNote.payload["min"]), added_at: String(registeredNote.payload["registered_at"] ?? registeredNote.occurredAt), ...(S(registeredNote.payload["txn_id"]) ? { notification_id: String(registeredNote.payload["txn_id"]) } : {}) },
+        detail: { sources: { enote: src("event", `enote.registered:${registeredNote.id}`, "26.2"), advance: src("event", `warehouse.advance.funded:${advanceFunded.id}`, "27.1") } } });
+      rec = await ctx.refresh();
+    }
     // 29.1: the best-efforts commitment moves to closed status once the loan is disbursed (PE–WL: closed = funds disbursed; FNMA_PEWL_CLOSED_STATUS_1BD) — as `secondary`
     const c = commitmentFacts(rec);
     if (c.row && c.status !== "closed" && !rec.has("commitment.closed_status.set") && !rec.has("commitment.closed")) {
@@ -204,8 +217,8 @@ export const packageFrozenStep: StepDef = {
     // rule 4: the import/submit is the fnma_portal_operator's act — the FAKE operator after the delay under INTEGRATIONS=fake, a person's queue otherwise
     if (task && !task.data["completed_at"]) {
       const fakes = ctx.fakes; const openedAt = String(task.data["opened_at"] ?? now);
-      const humanStarted = !fakes.fills("fnma_portal_operator") && task.data["started_at"] !== null && task.data["started_at"] !== undefined;
-      if (closing.note_form === "enote" && registered && ((fakes.fills("fnma_portal_operator") && fakes.operator.ready(openedAt, now)) || humanStarted)) await requestTransfer();
+      // a person's queue (FAKE_REVIEWERS=off): 29.4 records no "started" act, so the same-day request is kept current on each pass the task stays open (one re-request per day; 35.7's submit surface runs this step first)
+      if (closing.note_form === "enote" && registered && (fakes.fills("fnma_portal_operator") ? fakes.operator.ready(openedAt, now) : true)) await requestTransfer();
       if (fakes.fills("fnma_portal_operator") && fakes.operator.ready(openedAt, now)) {
         const ev = fakes.operator.evidence(String(task.id), loanId, now);
         await ctx.run({ process: "29.4", name: "parseOperatorEvidence", actor: FAKE_OPERATOR, scope: { loanId }, input: { task_id: task.id, operator_id: FAKE_OPERATOR.id, evidence: ev.evidence, hash_confirmed: true, edits: [], captured_state: { fnma_loan_number: ev.fnma_loan_number, submitted_at: now, commitment_number: c.commitment_id_fnma, file_sha256: String(frozen.payload["sha256"]), loan_delivery_status: "Purchase Requested", certification_status: "Awaiting Certification" }, at: now }, detail: { sources: { task: src("entity", `delivery_operator_tasks:${task.id}:${task.version}`, "29.4"), frozen: src("event", `delivery.package.frozen:${frozen.id}`, "29.3") }, fake: fakes.operator.vendorName } });
@@ -227,7 +240,17 @@ export const deliveredStep: StepDef = {
     const loanId = loanIdOf(rec); if (!loanId) throw new RecordGap("applications.loan_id", "no servicing loan (30.2)");
     const submitted = rec.last("delivery.submitted"); if (!submitted) throw new RecordGap("delivery.submitted", "no submission (29.4)");
     const deliveryId = S(submitted.payload["delivery_id"]) ?? deliveryIdOf(rec);
-    if (!rec.entities("custodian_certifications", (d) => d["delivery_id"] === deliveryId).length && !rec.has("custody.package.prepared")) {
+    // 27.1 rule 4 (eNote): SM confirms the partner's Transfer of Control and Location (29.4's latest accepted same-day request) as Secured Party → `warehouse.secured_party.released{effective_date}`; the Funding Agreement governs until the proceeds — as `warehouse`
+    const toc = rec.last("enote.transfer_of_control.requested", (p) => p["accepted"] !== false); const advanceFunded = rec.last("warehouse.advance.funded"); const registeredNote = rec.last("enote.registered");
+    if (closing.note_form === "enote" && toc && advanceFunded && registeredNote && !rec.has("warehouse.secured_party.released")) {
+      const parties = await partyFacts(rec, closing); const partnerOrg = parties.partner_mers_org_id ?? S(registeredNote.payload["controller_org_id"]);
+      if (!partnerOrg) throw new RecordGap("parties.mers_org_id", "the partner's MERS org id is not on the record (20.2 / 26.2)");
+      await ctx.run({ process: "27.1", name: "confirmTransferOfControl", actor: WAREHOUSE, input: { advance_id: String(advanceFunded.payload["advance_id"]), facility_id: String(advanceFunded.payload["facility_id"]), transfer: { transfer_id: String(toc.payload["transfer_id"]), min: String(toc.payload["min"]), from_controller_org_id: partnerOrg, to_controller_org_id: FANNIE_MAE_ORG_ID, effective_date: String(toc.payload["effective_date"]), initiated_by_org_id: partnerOrg } },
+        detail: { sources: { transfer: src("event", `enote.transfer_of_control.requested:${toc.id}`, "29.4"), enote: src("event", `enote.registered:${registeredNote.id}`, "26.2"), advance: src("event", `warehouse.advance.funded:${advanceFunded.id}`, "27.1"), partner: parties.sources["partner"]! } } });
+      rec = await ctx.refresh();
+    }
+    // C1-2-04: an eNote has no paper custodian package (29.4 answers evault_auto); a paper note's package (the endorsed note, the signing officer) is group C 3/3
+    if (closing.note_form === "enote" && !rec.entities("custodian_certifications", (d) => d["delivery_id"] === deliveryId).length && !rec.has("custody.package.prepared")) {
       await ctx.run({ process: "29.4", name: "prepareCustodianPackage", actor: SECONDARY, scope: { loanId }, input: { delivery_id: deliveryId }, detail: { sources: { submitted: src("event", `delivery.submitted:${submitted.id}`, "29.4") }, note_form: closing.note_form } });
       rec = await ctx.refresh();
     }

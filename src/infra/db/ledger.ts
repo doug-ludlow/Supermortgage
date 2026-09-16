@@ -8,6 +8,19 @@ import type { EntrySet, Line, AccountRef, AccountScope, LoanAccount, CustodialAc
 import type { Cents } from "../../kernel/money/cents.ts";
 import type { PlainDate } from "../../kernel/calendar/date.ts";
 import type { Queryable } from "./client.ts";
+import { createHash } from "node:crypto";
+
+/**
+ * Custodial accounts named by reference (27.1's facility bank accounts: `bank:sm-collection:hash-c1`, …) map to one stable uuid
+ * (v5-shaped) — `ledger_lines.custodial_account_id` is a uuid FK to `custodial_accounts`; a uuid stays as given. The domain and
+ * the in-memory ledger keep the names; this repository maps on write and on the balance read. The `custodial_accounts` row is
+ * the account's owner's (the facility set-up for 27.1's accounts).
+ */
+export function custodialAccountIdFor(ref: string): string {
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)) return ref;
+  const h = createHash("sha256").update(`supermortgage:custodial_account:${ref}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0")}${h.slice(18, 20)}-${h.slice(20, 32)}`;
+}
 
 interface SetRow extends Record<string, unknown> { id: string; effective_date: string; posted_at: string; description: string; source_event_id: string | null; reverses_set_id: string | null; }
 interface LineRow extends Record<string, unknown> { id: string; set_id: string; sequence: number; scope: AccountScope; account: string; loan_id: string | null; custodial_account_id: string | null; amount_cents: bigint; rule_ref: string; memo: string | null; }
@@ -22,7 +35,7 @@ function rowToLine(r: LineRow): Line {
 }
 function whereAccount(a: AccountRef, startAt: number): { sql: string; params: unknown[] } {
   if (a.scope === "loan") return { sql: `scope = 'loan' AND loan_id = $${startAt} AND account = $${startAt + 1}`, params: [a.loanId, a.account] };
-  if (a.scope === "custodial") return { sql: `scope = 'custodial' AND custodial_account_id = $${startAt} AND account = $${startAt + 1}`, params: [a.custodialAccountId, a.account] };
+  if (a.scope === "custodial") return { sql: `scope = 'custodial' AND custodial_account_id = $${startAt} AND account = $${startAt + 1}`, params: [custodialAccountIdFor(a.custodialAccountId), a.account] };
   return { sql: `scope = 'corporate' AND account = $${startAt}`, params: [a.account] };
 }
 
@@ -37,7 +50,7 @@ export class PgLedgerRepository {
     for (const l of set.lines) {
       const a = l.account;
       await q.query(`INSERT INTO ledger_lines (id, set_id, sequence, scope, account, loan_id, custodial_account_id, amount_cents, rule_ref, memo) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [l.id, set.id, l.sequence, a.scope, a.account, a.scope === "loan" ? a.loanId : null, a.scope === "custodial" ? a.custodialAccountId : null, l.amountCents, l.ruleRef, l.memo ?? null]);
+        [l.id, set.id, l.sequence, a.scope, a.account, a.scope === "loan" ? a.loanId : null, a.scope === "custodial" ? custodialAccountIdFor(a.custodialAccountId) : null, l.amountCents, l.ruleRef, l.memo ?? null]);
     }
   }
   async balance(account: AccountRef, asOf?: PlainDate): Promise<Cents> {

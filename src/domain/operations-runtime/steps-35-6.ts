@@ -14,8 +14,9 @@ import { creditOrderFacts, usableScore, identitiesVerified, creditReports, duFac
 import { createCasefile } from "../underwriting/ops-23-1.ts";
 import { MemoryEventStore, FixedClock } from "../../kernel/events/index.ts";
 import { newDecisionFile } from "../application/ops-21-6.ts";
-import { closingSteps, fundingSteps, deliverySteps, unwindStep } from "./steps-35-6-b.ts";
+import { closingSteps, fundingSteps, unwindStep } from "./steps-35-6-b.ts";
 import { fundedStep, boardedStep, packageFrozenStep, deliveredStep } from "./steps-35-6-c.ts";
+import { certifiedStep, purchasedStep } from "./steps-35-6-d.ts";
 
 type Row = Record<string, unknown>;
 export interface Wait { readonly status: OrchStatus; readonly waiting_on?: string | null; readonly clocked?: boolean }
@@ -135,7 +136,7 @@ const conditionsOpen: StepDef = {
   },
 };
 
-export const STEPS: readonly StepDef[] = [creditOrdered, duSubmitted, conditionsOpen, ...closingSteps, ...fundingSteps, fundedStep, boardedStep, packageFrozenStep, deliveredStep, ...deliverySteps, { name: "completed", exit: () => null, terminal: true }, unwindStep];
+export const STEPS: readonly StepDef[] = [creditOrdered, duSubmitted, conditionsOpen, ...closingSteps, ...fundingSteps, fundedStep, boardedStep, packageFrozenStep, deliveredStep, certifiedStep, purchasedStep, { name: "completed", exit: () => null, terminal: true }, unwindStep];
 export const STEP_NAMES: readonly string[] = STEPS.map((s) => s.name);
 export function stepIndex(name: string): number { const i = STEPS.findIndex((s) => s.name === name); if (i < 0) throw new RangeError(`35.6: unknown step ${name}`); return i; }
 export { cents };

@@ -292,8 +292,4 @@ export const dollars = (c: bigint): string => { const neg = c < 0n; const a = ne
 /** 26.2's execution review is unrecoverable when it blocks funding with no redraw cure (26.2 emits `funding_blocked` and `redraw`; a redraw is a cure, not an unwind). One definition for the off-path detector and the unwind step. */
 export const executionReviewUnrecoverable = (p: Row): boolean => p["funding_blocked"] === true && (p["redraw"] === null || p["redraw"] === undefined || p["redraw"] === false);
 /** The platform's `custodial_accounts.id` for a bank account 27.1 names by reference (`bank:partner-haircut:hash-h1`): the reference itself when it is already the row's uuid, otherwise a name-derived uuid (SHA-256 of the reference, version-5 shaped) so the ledger's custodial lines and the fixture's deposit key the same row. */
-export function custodialAccountIdFor(ref: string): string {
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)) return ref;
-  const h = createHash("sha256").update(`supermortgage:custodial_account:${ref}`).digest("hex");
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0")}${h.slice(18, 20)}-${h.slice(20, 32)}`;
-}
+export { custodialAccountIdFor } from "../../infra/db/ledger.ts";

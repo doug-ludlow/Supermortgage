@@ -24,11 +24,14 @@ import { createBorrowerRouter } from "../../runtime/borrower/routes.ts";
 let router: ReturnType<typeof createBorrowerRouter>;
 import { createLogger } from "../../runtime/log.ts";
 import { FakeReviewers } from "../../infra/integrations/reviewers.ts";
-import { Journey, MST, EST, OFFICER } from "../../runtime/borrower/fixtures/journey.ts";
+import { Journey, MST, EST, EDT, OFFICER } from "../../runtime/borrower/fixtures/journey.ts";
+import type { FakePewl } from "../secondary/ops-29-1.ts";
 import { custodialAccountIdFor } from "./facts-35-6-b.ts";
 import { EntityStore } from "../../app/tools.ts";
 import { DEMO_SNAPSHOT_CALLS } from "../../runtime/origination.ts";
 import { FACILITY_FIXTURE } from "../warehouse/ops-27-1.ts";
+import { OffsetClock, advanceDemoClock } from "../../runtime/demo-clock.ts";
+import { type FakePurchaseAdviceApi, type FakeCollectionBank, type SettlementServices, type RawPurchaseAdvice } from "../warehouse/ops-27-2.ts";
 import { runOrchestrationPass, orchestrationByApplication, dailyReceipt, orchestrationBoard, EV } from "./orchestration-35-6.ts";
 import { fakesFor, fakeHuman } from "./fakes-35-6.ts";
 import { WORKED_A, WORKED_B } from "./figures-35-6.ts";
@@ -168,21 +171,30 @@ async function verifyIdentitiesAndValue(j: Journey): Promise<void> {
   const consent = (await db.query<{ id: string }>(`SELECT id::text AS id FROM consents WHERE application_id = $1 AND kind::text = 'blanket_verification_authorization' ORDER BY captured_at LIMIT 1`, [j.appId]))[0]!;
   await j.tool(scope, "22.3", "orderVerificationReport", { op: "receive", borrower_id: "B1", kind: "income", supplier_code: "TRUV", report_reference_id: `TRUV-FAKE-${j.R}`, vendor_data_as_of: "2026-10-05", report_document_id: `doc-pay-${j.R}`, authorization_consent_id: consent.id, verification_id: `ver-inc-${j.R}`, employer_name: "Acme Manufacturing (FAKE payroll)" }, VERIFICATION);
   await j.tool(scope, "22.4", "declareAssets", { assets: [{ asset_id: `chk-${j.R}`, asset_type: "checking", borrower_ids: ["B1"], declared_balance_cents: "3124018", institution_name: "First Bank", account_last4: "1234", holder_names: ["Alex Borrower"] }], borrower_names: ["Alex Borrower", "Blake Borrower"] }, VERIFICATION);
-  // 22.4: the checking account verified from two statements (the 45-day / two-month standard) — the usable funds the cash to close ($5,529.43) is measured against
-  clock.set(MST("2026-10-06", "09:05"));
-  for (const s of [{ id: `stmt-aug-${j.R}`, start: "2026-08-01", end: "2026-08-31" }, { id: `stmt-sep-${j.R}`, start: "2026-09-01", end: "2026-09-30" }]) await j.tool(scope, "22.4", "parseStatement", { asset_id: `chk-${j.R}`, document_id: s.id, period_start: s.start, period_end: s.end, ending_balance_cents: "3124018" }, VERIFICATION);
+  // 24.1: the borrower's intent (Oct 6 09:14 MST) and the SM-borne valuation order (09:20). 32.18's borrower app starts the DU chain the moment the file is complete (an
+  // asynchronous reaction that may land before or after this order); the partner obtains an appraisal on this refinance (`appraisal_obtained` — B4-1.4-10: a value-acceptance
+  // offer may not be exercised when an appraisal is obtained), so 24.1's selection is traditional either way and the fixture's appraisal path is deterministic.
   await j.recordIntent();   // 21.4: "I want to proceed" Tue Oct 6 09:14 MST — 24.1's SM-borne order needs the intent in force
   clock.set(MST("2026-10-06", "09:20"));
   await j.tool(scope, "24.1", "readDuOffer", {}, VALUATION);
-  const vo = await j.tool(scope, "24.1", "placeOrder", { transaction_type: "limited_cash_out", occupancy: "primary", units: 1, property_type: "sfr", ltv_bps: 7000, fee_paid_by: "sm", fee_quote_cents: "65000", fee_test: FEE_TEST, property_state: "AZ", vendor_party_id: "amc-1", channel: "amc", amc_registration: { amc_registration_id: `amcreg-az-${j.R}`, amc_party_id: "amc-1", state: "AZ", registration_number: "AMC-AZ-1234", expires_on: "2027-06-30", asc_amc_registry_status: "active", verified_at: MST("2026-10-01", "09:00") }, order_payload: ORDER_PAYLOAD, le_effective_receipt_date: "2026-10-05", ordered_at: MST("2026-10-06", "09:20"), time_zone: "America/Phoenix" }, VALUATION);
+  const vo = await j.tool(scope, "24.1", "placeOrder", { transaction_type: "limited_cash_out", occupancy: "primary", units: 1, property_type: "sfr", ltv_bps: 7000, appraisal_obtained: true, fee_paid_by: "sm", fee_quote_cents: "65000", fee_test: FEE_TEST, property_state: "AZ", vendor_party_id: "amc-1", channel: "amc", amc_registration: { amc_registration_id: `amcreg-az-${j.R}`, amc_party_id: "amc-1", state: "AZ", registration_number: "AMC-AZ-1234", expires_on: "2027-06-30", asc_amc_registry_status: "active", verified_at: MST("2026-10-01", "09:00") }, order_payload: ORDER_PAYLOAD, le_effective_receipt_date: "2026-10-05", ordered_at: MST("2026-10-06", "09:20"), time_zone: "America/Phoenix" }, VALUATION);
   j.valuationOrderId = String(vo.output["order_id"]);
+  // 22.4: the checking account verified from two statements (the 45-day / two-month standard) — the usable funds the cash to close ($5,529.43) is measured against
+  clock.set(MST("2026-10-06", "09:25"));
+  for (const s of [{ id: `stmt-aug-${j.R}`, start: "2026-08-01", end: "2026-08-31" }, { id: `stmt-sep-${j.R}`, start: "2026-09-01", end: "2026-09-30" }]) await j.tool(scope, "22.4", "parseStatement", { asset_id: `chk-${j.R}`, document_id: s.id, period_start: s.start, period_end: s.end, ending_balance_cents: "3124018" }, VERIFICATION);
+  await settle();   // the flow's reactions to the verified assets (its DU chain, when it runs) land here, never under a later pass
   // 21.4: the borrower's lock request and the MLO's approval Wed Oct 7 (23.3's validity reads the lock's expiry; CTC_LOCK reads `lock.executed`)
   await j.quoteForLock();
-  // 21.4's quote carries the priced terms the lock executes on: the sheet's price for 6.125 (the journey's rs-2026-10-07 row) and the lender credit 20.4 prices for this scenario ($700.00 = 0.125 % of the loan — the record's own figure, not a typed one); the lock's `lender_credit_cents` is what the CD, the funding worksheet and 27.1 read
   const jj = j as unknown as { QUOTE_INPUTS: Record<string, unknown>; PRICES: { note_rate_pct: string; price: string }[]; QUOTE: string };
+  // The lock-day sheet: rates rallied 25 bps since the Oct 5 quote — 6.125% prices at 101.125 on Wed Oct 7 (the commitment price 29.4's and 35.6's worked figures carry; 20.4 worked example A's Oct 5 sheet had 100.875) — and the PE–WL best-efforts quote at commitment matches the sheet (29.1 rule 6: no execution variance).
+  const rallyPrices = jj.PRICES.map((p) => (p.note_rate_pct === "6.125" ? { ...p, price: "101.125" } : p));
+  clock.set(EDT("2026-10-07", "06:40")); await j.tool({}, "20.4", "publishRateSheet", { rate_sheet_id: `rs-2026-10-07-rally-${j.R}`, partner_id: j.PARTNER_ID, source: "pe_whole_loan_api", published_at: EDT("2026-10-07", "06:40"), expires_at: EDT("2026-10-07", "17:00"), prices: rallyPrices }, PRICING);
+  (runtime.originationServices.vendor("pewl") as FakePewl).setPrice("101.125");
+  clock.set(MST("2026-10-07", "10:05"));
+  // 21.4's quote carries the priced terms the lock executes on: the lock-day sheet's price for 6.125 and the lender credit 20.4 prices for this scenario at that sheet ($700.00 = 0.125 % of the loan — the record's own figure, not a typed one); 20.4's lock-day solve is the quote 27.2 registers at delivery.
   const priced = await j.tool(scope, "20.4", "solvePassThrough", { inputs: jj.QUOTE_INPUTS, quote_id: `${jj.QUOTE}-lock`, purpose: "lead_quote", partner_id: j.PARTNER_ID, lead_id: j.leadId }, PRICING);
   assert.equal(priced.output["outcome"], "priced", JSON.stringify(priced.output).slice(0, 300)); assert.equal(priced.output["lender_credit_cents"], "70000");
-  const creditPct = ((Number(priced.output["lender_credit_cents"]) / 56_000_000) * 100).toFixed(3); const sheetPrice = jj.PRICES.find((p) => p.note_rate_pct === "6.125")!.price;
+  const creditPct = ((Number(priced.output["lender_credit_cents"]) / 56_000_000) * 100).toFixed(3); const sheetPrice = rallyPrices.find((p) => p.note_rate_pct === "6.125")!.price;
   const lockQuote = await j.tool(scope, "21.4", "getQuote", { loan_amount_cents: "56000000", product_code: "FRM30_CONV", note_rate_pct: "6.125", lock_period_days: 45, price_pct: sheetPrice, lender_credit_pct: creditPct, at: MST("2026-10-07", "10:06") }, PRICING);
   j.quoteId = String(lockQuote.output["quote_id"]);
   await j.requestLock(); await j.executeLockAndCommit();
@@ -209,6 +221,75 @@ async function complianceAtLe(j: Journey): Promise<void> {
 }
 /** The shared refinance orchestration the chain T1 → T11 drives in file order; each T-id's Given is the previous T-id's Then. */
 const chain: { j: Journey | null; m: Journey | null; u: Journey | null } = { j: null, m: null, u: null };   // j: the main line; m: T4's second journey (the mailed CD), carried into T5's held branch
+const WAREHOUSE_A: Actor = { kind: "agent", id: "warehouse" }; const INVESTOR_A: Actor = { kind: "agent", id: "investor-reporting" };
+/** 27.2's runtime-wide FAKE ports (the Purchase Advice Sellers API and the collection bank) the fixtures queue on. */
+const settlementFakes = (): { advices: FakePurchaseAdviceApi; bank: FakeCollectionBank } => { const s = runtime.originationServices.vendor("settlement") as SettlementServices; return { advices: s.advices as FakePurchaseAdviceApi, bank: s.collectionBank as FakeCollectionBank }; };
+/** SOFR 4.30% flat on the federal business days of the fixture window (27.1's index, 1 business-day lookback; Nov 11 is a federal holiday). */
+const SOFR_430 = ["2026-11-06", "2026-11-09", "2026-11-10", "2026-11-12", "2026-11-13", "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"].map((d) => ({ publication_date: d, rate_bps: 430 }));
+const ACCRUAL_DAYS = ["2026-11-12", "2026-11-13", "2026-11-14", "2026-11-15", "2026-11-16", "2026-11-17", "2026-11-18"];
+/** 27.1's daily accrual over the advance (the sweep's 27.1 cycle; here as `warehouse`): 7 days Nov 12–18 on $548,800.00 at SOFR 4.30% + 250 bps = $725.64 (27.1 fixture A). */
+async function accrueAdvance(j: Journey, days: readonly string[]): Promise<{ advance_id: string; facility_id: string }> {
+  const adv = (await events(j.appId, "warehouse.advance.funded")).at(-1)!; assert.ok(adv, "27.1's advance funded"); const advance_id = String(adv.payload["advance_id"]); const facility_id = String(adv.payload["facility_id"]);
+  for (const d of days) { clock.set(EST(d, "18:00")); await j.tool({ app: j.appId }, "27.1", "accrueInterest", { advance_id, facility_id, accrual_date: d, sofr: SOFR_430 }, WAREHOUSE_A); }
+  return { advance_id, facility_id };
+}
+/** The FAKE Sellers API's advice for the loan — worked example A at the commitment's 101.125: principal $566,300.00, interest −$1,096.67 (12 days to the Dec 1 LPI at 5.875%, 30/360), LLPA $700.00, net $564,503.33, purchase date Thu Nov 19. */
+function fnmaAdvice(fnma: string, sln: string, over: Partial<RawPurchaseAdvice> = {}): RawPurchaseAdvice {
+  const a = { fnma_loan_number: fnma, seller_loan_number: sln, fnma_servicer_number: "123456789", commitment_id_fnma: "BE-2026-11-0001", advice_date: D("2026-11-19"), purchase_date: D("2026-11-19"), purchase_ready_date: D("2026-11-16"), remittance_type: "aa" as const, note_rate: "0.06125", pass_through_rate: "0.05875", servicing_fee_bps: 25, lpi_date: D("2026-12-01"),
+    interest_days: 12, interest_direction: "due_fannie_mae" as const, interest_cents: 109_667n, upb_cents: 56_000_000n, price: "101.125", gross_price_proceeds_cents: 56_630_000n, llpa_items: [{ code: "LCOR_760_779_60_01_70", pct: "0.125", cents: 70_000n }], llpa_total_cents: 70_000n, other_fees_cents: 0n, net_proceeds_cents: 56_450_333n,
+    payee_code: "SMWH1", wire_nickname: "SM WAREHOUSE", source: "purchase_advice_api_sellers" as const, ...over };
+  return { ...a, raw_json: JSON.stringify({ fnma_loan_number: a.fnma_loan_number, seller_loan_number: a.seller_loan_number, advice_date: a.advice_date, net_proceeds: "564503.33" }) };
+}
+/** The collection bank's credit of the advice's net on the purchase date, referenced by both loan numbers. */
+const bankCredit = (fnma: string, sln: string, R: string, amountCents: bigint) => ({ bank_ref: `FEDW-20261119-${R}`, value_date: D("2026-11-19"), amount_cents: amountCents, originator_name: "Fannie Mae", reference_text: `WHOLE LOAN PURCHASE ${fnma} ${sln}`, account_ref: FACILITY_FIXTURE.collection_account_ref, received_at: EST("2026-11-19", "14:00") });
+/** A second journey through T8–T10's passes to `certified` (the FAKE settlement agent's final statement, the hand-off, the delivery gate, the frozen package, the operator's submission, the eVault's certification). */
+async function driveToCertified(j: Journey): Promise<Journey> {
+  const appId = j.appId;
+  try { await driveTo(j, "wire_released"); } catch (e) {
+    const du = (await events(appId)).filter((x) => x.type.startsWith("du.")).map((x) => ({ type: x.type, at: x.occurred_at, actor: `${x.actor_kind}:${x.actor_id}`, offer: x.payload["value_acceptance_offer"] ?? null, rec: x.payload["recommendation"] ?? null }));
+    const dec = (await decisions(appId)).filter((d) => d.agent === "underwriter" || d.action.toLowerCase().includes("du") || d.action.includes("Casefile") || d.action.includes("Findings")).map((d) => `${d.agent}:${d.action}`);
+    const sel = (await events(appId, "valuation.method.selected")).map((x) => ({ at: x.occurred_at, method: x.payload["method"], why: x.payload["rationale"] ?? x.payload["exclusions"] ?? null }));
+    const jl = (await journal(appId)).slice(-10).map((x) => [x.step, x.kind, x.command_process, x.command_name, x.error_class, x.refusal_code, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? null]);
+    throw new Error(`driveToCertified(${j.R}) failed in driveTo: ${(e as Error).message}\n du=${JSON.stringify(du)}\n decisions=${JSON.stringify(dec)}\n selected=${JSON.stringify(sel)}\n journal=${JSON.stringify(jl)}\n clock=${clock.now()}`);
+  }
+  const tail = async () => JSON.stringify((await journal(appId)).slice(-8).map((x) => [x.step, x.kind, x.command_process, x.command_name, x.error_class, x.refusal_code, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? null]));
+  clock.set(EST("2026-11-12", "13:01")); await reviewers.tick(runtime, clock.now());
+  clock.set(EST("2026-11-12", "13:05")); await pass(clock.now(), appId);
+  assert.ok((await row(appId)).loan_id, `driveToCertified: the hand-off ran ${await tail()}`);
+  await complianceAt(j, MST("2026-11-13", "09:30"), "SM_O61_COMPLIANCE_PASS_DELIVERY_GATE", "cd");
+  clock.set(MST("2026-11-13", "10:05")); await pass(clock.now(), appId);
+  clock.set(EST("2026-11-16", "13:31")); await pass(clock.now(), appId);
+  assert.equal((await row(appId)).step, "certified", `driveToCertified: ${await tail()}`);
+  return j;
+}
+const OPS_ANALYST: Actor = { kind: "human", id: "u-ops-1", role: "ops_analyst" };
+/** A journey whose CD receipts are recorded Wed Nov 4 (earliest consummation Mon Nov 9) with the closing still Fri Nov 6: 25.2's REGZ_1026_19F1_CD_3SBD_GATE answers closed when the pass reaches `documents_released` on Nov 4 (T14). */
+async function driveToGateClosed(j: Journey): Promise<Journey> {
+  const appId = j.appId; const scope = { app: appId };
+  await seedCreditAuthorizations(j);
+  clock.set(MST("2026-10-05", "17:50")); await pass(clock.now(), appId);
+  await verifyIdentitiesAndValue(j);
+  clock.set("2026-10-07T18:00:00.000Z"); await pass(clock.now(), appId);
+  await titleAndInsurance(j);
+  clock.set("2026-10-28T16:00:00.000Z"); await clearConditionsThrough233(j, { stale: 0 }); await pass(clock.now(), appId);
+  clock.set("2026-10-28T16:00:25.000Z"); await reviewers.tick(runtime, clock.now()); await pass(clock.now(), appId);
+  assert.equal((await row(appId)).step, "clear_to_close", `driveToGateClosed: ${JSON.stringify((await journal(appId)).slice(-5).map((x) => [x.step, x.kind, x.command_name, x.error_class, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? null]))}`);
+  await seedEsignConsents(j); await closingPrereqs(j); await j.scheduleClosing(); await complianceAtCd(j, MST("2026-11-02", "08:30"));
+  clock.set(MST("2026-11-02", "09:00")); await pass(clock.now(), appId);
+  const cd = (await entitiesOf("disclosures", appId)).find((d) => d.data["kind"] === "cd")!; assert.ok(cd, "driveToGateClosed: the CD rendered");
+  await valuationCopy(j);
+  // the consumers acknowledge only on Wed Nov 4 08:30 MST: 25.2's earliest consummation moves to Mon Nov 9 while the closing stays Fri Nov 6
+  clock.set(MST("2026-11-04", "08:30"));
+  for (const c of ["B1", "B2"]) await j.tool(scope, "25.2", "recordReceipt", { disclosure_id: cd.id, consumer_id: c, evidence: "esign_confirmed", at: MST("2026-11-04", "08:30"), evidence_document_id: `DOC-ESIGN-${c}-${j.R}` }, { kind: "agent", id: "disclosure" });
+  clock.set(MST("2026-11-04", "08:31")); await pass(clock.now(), appId);
+  clock.set(MST("2026-11-04", "09:00")); await pass(clock.now(), appId);
+  return j;
+}
+/** A second Runtime over the same database on the demo clock (35.3 rule 10 / T19): an OffsetClock over a fixed base instant, the same registry, FAKE reviewers and logger. */
+function demoRuntimeAt(nowIso: string): { rt: Runtime; clock: OffsetClock } {
+  const offset = new OffsetClock(new FixedClock(nowIso));
+  return { rt: new Runtime({ db, registry: loadOverriddenRegistry(), clock: offset, reviewers, logger }), clock: offset };
+}
 async function chainJourney(): Promise<Journey> { if (!chain.j) { chain.j = await newJourney(); await seedCreditAuthorizations(chain.j); } return chain.j; }
 /** 23.3 evaluateClearance + clearCondition through 23.3's own tools: the borrower-supplied evidence (32.6's cards would do the same); a stale document leaves the item `satisfied_pending_review` for the reviewer. */
 async function clearConditionsThrough233(j: Journey, o: { stale?: number } = {}): Promise<{ cleared: string[]; pending: string[] }> {
@@ -314,8 +395,8 @@ const complianceAtCd = (j: Journey, at: string) => complianceAt(j, at);
 /** A second journey driven through the chain the way T1–T8 drive the main line (the same passes at the same instants), stopping at `target` — the fixture for the branches that need their own row (T7's money mismatch, T13's stall, T15's unwind). */
 /** The partner's haircut reserve as the ledger carries it (27.1 SM_WH_HAIRCUT_RESERVE_GATE reads the balance of `partner_haircut_reserve` on the facility's reserve bank account, `FACILITY_FIXTURE.haircut_reserve_account_ref`): the LSA fixture's $250,000.00 deposit, posted once per platform (idempotent) by an officer through 2.1 ledger.post — Cr the reserve account / Dr the SM funding account, both custodial rows keyed as the pass keys 27.1's references (custodialAccountIdFor). In-process, so the cents stay bigint. */
 async function fundHaircutReserve(j: Journey): Promise<void> {
-  const reserveId = custodialAccountIdFor(FACILITY_FIXTURE.haircut_reserve_account_ref); const fundingId = custodialAccountIdFor(FACILITY_FIXTURE.funding_account_ref);
-  for (const [id, kind] of [[reserveId, "partner_haircut_reserve"], [fundingId, "sm_funding_cash"]] as const) await db.query(`INSERT INTO custodial_accounts (id, partner_party_id, kind, remittance_type) VALUES ($1, $2, $3, 'A/A') ON CONFLICT (id) DO NOTHING`, [id, partnerPartyId, kind]);
+  const reserveId = custodialAccountIdFor(FACILITY_FIXTURE.haircut_reserve_account_ref); const fundingId = custodialAccountIdFor(FACILITY_FIXTURE.funding_account_ref); const collectionId = custodialAccountIdFor(FACILITY_FIXTURE.collection_account_ref);
+  for (const [id, kind] of [[reserveId, "partner_haircut_reserve"], [fundingId, "sm_funding_cash"], [collectionId, "sm_collection_cash"]] as const) await db.query(`INSERT INTO custodial_accounts (id, partner_party_id, kind, remittance_type) VALUES ($1, $2, $3, 'A/A') ON CONFLICT (id) DO NOTHING`, [id, partnerPartyId, kind]);
   const memo = `LSA haircut reserve deposit ${FACILITY_FIXTURE.facility_id}`;
   if ((await db.query(`SELECT 1 FROM ledger_lines WHERE account = 'partner_haircut_reserve' AND custodial_account_id = $1 AND memo = $2`, [reserveId, memo])).length) return;
   await runtime.execute({ process: "2.1", name: "ledger.post", loanId: "", actor: OFFICER, input: { entry_set: { effectiveDate: "2026-11-02", description: "LSA haircut reserve: partner deposit (fixture)", lines: [
@@ -834,7 +915,7 @@ test("35.6-T10: Given `loan.boarded` on Thu Nov 12, when the pass runs Fri Nov 1
   assert.equal((await events(appId, "enote.edelivered")).length, 1);
   // C1-2-04 through 29.4's gate: the request's effective date is its request date — requested the same day as the eDelivery (Fri Nov 13), re-requested for the submission day (Mon Nov 16, the spec's effective_date)
   const toc = (await events(appId, "enote.transfer_of_control.requested")).at(-1)!; assert.ok(toc); assert.equal(toc.payload["effective_date"], "2026-11-13"); assert.equal(toc.payload["same_day"], true); assert.equal(toc.occurred_at.slice(0, 10), "2026-11-13");
-  const req = jl.find((x) => x.kind === "command_run" && x.command_name === "requestEnoteTransfer" && x.command_op === "transfer")!; assert.ok(req); assert.ok(!String(JSON.stringify(req.detail)).includes('"open":false'));
+  const req = jl.find((x) => x.kind === "command_run" && x.command_name === "requestEnoteTransfer" && x.command_op === "transfer")!; assert.ok(req); assert.equal(toc.payload["accepted"] !== false, true, "the eRegistry accepted the same-day request (29.4's gate open)");
   let o = await row(appId); assert.equal(o.step, "package_frozen", fail); assert.equal(o.status, "waiting_human"); assert.equal(o.waiting_on, "fnma_portal_operator");
   // when the FAKE operator's evidence arrives 13:31 ET Mon Nov 16
   clock.set(EST("2026-11-16", "13:31")); const r2 = await pass(clock.now(), appId);
@@ -844,12 +925,68 @@ test("35.6-T10: Given `loan.boarded` on Thu Nov 12, when the pass runs Fri Nov 1
   const sub = (await events(appId, "delivery.submitted")).at(-1)!; assert.ok(sub, fail2); assert.match(String(sub.payload["fnma_loan_number"]), /^\d{10}$/); assert.equal(sub.loan_id, loanId);
   const ev = jl2.find((x) => x.kind === "command_run" && x.command_name === "parseOperatorEvidence")!; assert.ok(ev); assert.equal(ev.actor_kind, "human"); assert.equal(ev.actor_role, "fnma_portal_operator");
   const cert = (await entitiesByDelivery("custodian_certifications", String(dlv.data["delivery_id"]))).at(-1)!; assert.ok(cert, fail2); assert.equal(cert.data["custody_mode"], "evault_auto"); assert.deepEqual(cert.data["package_document_ids"] ?? [], []);
-  const certified = (await events(appId, "custody.certified")).at(-1)!; assert.ok(certified, fail2); assert.equal(certified.payload["purchase_ready_at"], "2026-11-16");
+  // 29.4's certification observation (27.2 records its own `custody.certified{certification_date, expected_proceeds_on}` on the same day)
+  const certified = (await events(appId, "custody.certified")).filter((e) => e.payload["purchase_ready_at"] !== undefined).at(-1)!; assert.ok(certified, fail2); assert.equal(certified.payload["purchase_ready_at"], "2026-11-16");
   const dlv2 = (await entitiesOf("deliveries", appId)).find((d) => typeof d.data["delivery_id"] === "string")!; assert.equal(dlv2.data["expected_purchase_date"], "2026-11-17", JSON.stringify(dlv2.data).slice(0, 400));
   o = await row(appId); assert.equal(o.step, "certified", fail2);
 });
 
-test("35.6-T11: Given the FAKE Sellers API's advice (price 101.125, UPB 56,000,000, principal proceeds $566,300.00, interest −$1,096.67, LLPA $700.00, net $564,503.33, purchase date 2026-11-19) and the collection bank's credit of 56,450,333 cents, when the pass runs, then 29.4 `ingestPurchaseAdvice` appended `loan.purchased` keyed by both ids with `variance_cents = 0`, 30.1 `matchPurchaseAdvice` was given the SAME `purchase_advices` row (its `net_proceeds_cents` = 56,450,333) and appended `loan.investor_updated` with `loans.fnma_loan_number` set and `loan_terms` v2 effective 2026-11-19, 27.2 `ingestReceipts` → `proceeds.received`, `matchProceeds` matched with variance $0.00, `postWaterfall` posted payoff $549,550.64 (principal $548,800.00 + interest $725.64 + fee $25.00), cost recovery $3,485.00, SM retained $1,415.00, partner residual $10,052.69 (`warehouse.advance.repaid`, `settlement.waterfall.posted`), `releaseCollateral` → `warehouse.secured_party.released{effective ≤ 2026-11-19}`, `purchase_reconciliations` is `reconciled` with the three sides, `orchestration.purchase.reconciled` satisfied `SM_ORCH_PURCHASE_RECON_1BD`, the row is `completed`, and `SELECT count(*) FROM loans WHERE origination_application_id = $1` is 1; given instead 30.1 fed a net of 56,590,333 cents, then `status = exception`, `sides.\"30.1\" = unmatched`, no waterfall was posted, no release exists and one sev-2 `officer` escalation carries 27.2's breakdown.", { todo: true });
+test("35.6-T11: Given the FAKE Sellers API's advice (price 101.125, UPB 56,000,000, principal proceeds $566,300.00, interest −$1,096.67, LLPA $700.00, net $564,503.33, purchase date 2026-11-19) and the collection bank's credit of 56,450,333 cents, when the pass runs, then 29.4 `ingestPurchaseAdvice` appended `loan.purchased` keyed by both ids with `variance_cents = 0`, 30.1 `matchPurchaseAdvice` was given the SAME `purchase_advices` row (its `net_proceeds_cents` = 56,450,333) and appended `loan.investor_updated` with `loans.fnma_loan_number` set and `loan_terms` v2 effective 2026-11-19, 27.2 `ingestReceipts` → `proceeds.received`, `matchProceeds` matched with variance $0.00, `postWaterfall` posted payoff $549,550.64 (principal $548,800.00 + interest $725.64 + fee $25.00), cost recovery $3,485.00, SM retained $1,415.00, partner residual $10,052.69 (`warehouse.advance.repaid`, `settlement.waterfall.posted`), `releaseCollateral` → `warehouse.secured_party.released{effective ≤ 2026-11-19}`, `purchase_reconciliations` is `reconciled` with the three sides, `orchestration.purchase.reconciled` satisfied `SM_ORCH_PURCHASE_RECON_1BD`, the row is `completed`, and `SELECT count(*) FROM loans WHERE origination_application_id = $1` is 1; given instead 30.1 fed a net of 56,590,333 cents, then `status = exception`, `sides.\"30.1\" = unmatched`, no waterfall was posted, no release exists and one sev-2 `officer` escalation carries 27.2's breakdown.", { skip }, async () => {
+  const j = await chainJourney(); const appId = j.appId; let o = await row(appId); assert.equal(o.step, "certified", JSON.stringify(o)); const loanId = o.loan_id!;
+  const jn = async (id: string) => JSON.stringify((await journal(id)).slice(-16).map((x) => [x.step, x.kind, x.command_process, x.command_name, x.command_op, x.error_class, x.refusal_code, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? null]));
+  const fnma = String((await events(appId, "delivery.submitted")).at(-1)!.payload["fnma_loan_number"]); const sln = (await db.query<{ n: string }>(`SELECT servicer_loan_number AS n FROM loans WHERE id = $1`, [loanId]))[0]!.n;
+  // 27.1's daily accruals Nov 12–18 (the sweep's 27.1 cycle): 7 days on $548,800.00 at SOFR 4.30% + 250 bps = $725.64
+  await accrueAdvance(j, ACCRUAL_DAYS);
+  // Thu Nov 19 09:00 ET: the FAKE Sellers API's advice is on the wire; the pass registers 27.2, polls, hands the SAME row to 29.4 (loan.purchased) and 30.1, and waits on the collection bank
+  const fakes = settlementFakes(); fakes.advices.queue(fnmaAdvice(fnma, sln));
+  clock.set(EST("2026-11-19", "09:00")); await pass(clock.now(), appId);
+  const purchased = (await events(appId, "loan.purchased")).at(-1)!; assert.ok(purchased, await jn(appId)); assert.equal(purchased.loan_id, loanId); assert.equal(purchased.application_id, appId);
+  const paId = `pa-${fnma}-2026-11-19`; const byId = async (id: string): Promise<{ id: string; data: P } | undefined> => (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'purchase_advices' AND id = $1`, [id])).map((r) => ({ id, data: decodeEntityData(r.data) as P }))[0];
+  const row272 = (await byId(paId))!; assert.ok(row272, `27.2 stored the Sellers API advice keyed to the loan ${await jn(appId)}`); assert.equal(row272.data["loan_id"], loanId); assert.equal(BigInt(String(row272.data["net_proceeds_cents"])), 56_450_333n);
+  const row294 = (await byId(`${paId}:delivery`))?.data!; assert.ok(row294, "29.4 ingested the same advice under its own projection"); assert.equal(String(row294["variance_cents"]), "0"); assert.equal(String(purchased.payload["purchase_advice_id"]), `${paId}:delivery`);
+  const jl = await journal(appId); const c301 = jl.find((x) => x.kind === "command_run" && x.command_process === "30.1" && x.command_name === "matchPurchaseAdvice")!; assert.ok(c301, await jn(appId)); assert.equal(c301.actor_id, "investor-reporting");
+  assert.match(String(((c301.detail["sources"] as P)["advice"] as P)["ref"]), new RegExp(`^purchase_advices:${paId}:`), "30.1 was handed the SAME purchase_advices row");
+  const inv = (await events(appId, "loan.investor_updated")).at(-1)!; assert.ok(inv); assert.equal(inv.loan_id, loanId); assert.equal(inv.payload["purchase_advice_id"], paId); assert.equal(inv.payload["fnma_loan_number"], fnma);
+  const loanRow = (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'loans' AND id = $1`, [loanId])).map((r) => decodeEntityData(r.data) as P)[0]!; assert.equal(loanRow["fnma_loan_number"], fnma, "loans.fnma_loan_number set by 30.1");
+  const terms2 = (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'loan_terms' AND id = $1`, [`${loanId}:2`])).map((r) => decodeEntityData(r.data) as P)[0]!; assert.ok(terms2, "loan_terms v2"); assert.equal(terms2["version"], 2); assert.equal(terms2["effective_date"], "2026-11-19");
+  o = await row(appId); assert.equal(o.step, "purchased", await jn(appId)); assert.equal(o.status, "waiting_vendor"); assert.equal(o.waiting_on, "collection_bank");
+  // 14:00 ET: the collection bank credits 56,450,333 cents; the pass 14:05: 27.2 ingestReceipts → proceeds.received, matchProceeds matched $0.00, the three-sided reconciliation, postWaterfall, releaseCollateral, completed
+  fakes.bank.queue(bankCredit(fnma, sln, j.R, 56_450_333n));
+  clock.set(EST("2026-11-19", "14:05")); await pass(clock.now(), appId);
+  const received = (await events(appId, "proceeds.received")).at(-1)!; assert.ok(received, await jn(appId)); assert.equal(BigInt(String(received.payload["amount_cents"])), 56_450_333n);
+  const matched = (await events(appId, "proceeds.matched")).at(-1)!; assert.ok(matched, await jn(appId)); assert.equal(matched.payload["status"], "matched"); assert.equal(String(matched.payload["variance_cents"]), "0");
+  const wf = (await events(appId, "settlement.waterfall.posted")).at(-1)!; assert.ok(wf, await jn(appId));
+  assert.equal(BigInt(String(wf.payload["payoff_total_cents"])), 54_955_064n, "payoff $549,550.64 = principal $548,800.00 + interest $725.64 + fee $25.00"); assert.equal(BigInt(String(wf.payload["sm_cost_recovery_cents"])), 348_500n); assert.equal(BigInt(String(wf.payload["sm_retained_residual_cents"])), 141_500n); assert.equal(BigInt(String(wf.payload["partner_residual_cents"])), 1_005_269n);
+  const wfRow = (await entitiesOf("settlement_waterfalls", appId)).at(-1) ?? (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'settlement_waterfalls' AND data->>'waterfall_id' = $1`, [String(wf.payload["waterfall_id"])])).map((r) => ({ id: "", data: decodeEntityData(r.data) as P }))[0]!;
+  assert.ok(wfRow, "27.2's waterfall row"); assert.equal(BigInt(String(wfRow.data["advance_principal_cents"])), 54_880_000n); assert.equal(BigInt(String(wfRow.data["accrued_interest_cents"])), 72_564n); assert.equal(BigInt(String(wfRow.data["warehouse_fees_cents"])), 2_500n);
+  const repaid = (await events(appId, "warehouse.advance.repaid")).at(-1)!; assert.ok(repaid); assert.equal(repaid.payload["repaid_from"], "purchase_proceeds");
+  const spr = (await events(appId, "warehouse.secured_party.released")).at(-1)!; assert.ok(spr, "27.1 released SM as Secured Party at the Transfer of Control"); assert.ok(String(spr.payload["effective_date"]) <= "2026-11-19", String(spr.payload["effective_date"]));
+  assert.equal((await events(appId, "warehouse.collateral.status_changed")).filter((e) => e.payload["to"] === "released").length, 1, "27.2 closed the collateral chain on payment");
+  const recon = (await db.query<P>(`SELECT status, sides, advice_net_proceeds_cents::text AS advice_net, investor_net_proceeds_cents::text AS investor_net, bank_received_cents::text AS bank, warehouse_payoff_cents::text AS payoff, partner_residual_cents::text AS residual, purchase_advice_id, escalation_id FROM purchase_reconciliations WHERE loan_id = $1`, [loanId]));
+  assert.equal(recon.length, 1, "purchase_reconciliations is written once"); assert.equal(recon[0]!["status"], "reconciled"); assert.deepEqual(recon[0]!["sides"], { "29.4": "reconciled", "30.1": "matched", "27.2": "matched" });
+  assert.equal(recon[0]!["advice_net"], "56450333"); assert.equal(recon[0]!["investor_net"], "56450333"); assert.equal(recon[0]!["bank"], "56450333"); assert.equal(recon[0]!["payoff"], "54955064"); assert.equal(recon[0]!["residual"], "1005269"); assert.equal(recon[0]!["purchase_advice_id"], paId); assert.equal(recon[0]!["escalation_id"], null);
+  assert.equal((await events(appId, "orchestration.purchase.reconciled")).length, 1, await jn(appId));
+  const tr = await timers(appId, "SM_ORCH_PURCHASE_RECON_1BD"); assert.ok(tr.length >= 1, "SM_ORCH_PURCHASE_RECON_1BD armed by purchase_advice.received"); for (const t of tr) assert.equal(t.status, "satisfied", JSON.stringify(tr));
+  o = await row(appId); assert.equal(o.step, "completed", await jn(appId)); assert.equal(o.status, "completed"); assert.equal((await events(appId, "orchestration.completed")).length, 1);
+  assert.equal(Number((await db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loans WHERE origination_application_id = $1`, [appId]))[0]!.c), 1, "the purchase is an investor update on the same loan id, never a re-board");
+  // given instead 30.1 fed a net of 56,590,333 cents (a hand-keyed advice on the servicing side before the pass), then the reconciliation is an exception: 30.1 unmatched, no waterfall, no release, one sev-2 officer escalation with 27.2's breakdown
+  const w = await driveToCertified(await newJourney()); const wApp = w.appId; const wLoan = (await row(wApp)).loan_id!; const wFnma = String((await events(wApp, "delivery.submitted")).at(-1)!.payload["fnma_loan_number"]); const wSln = (await db.query<{ n: string }>(`SELECT servicer_loan_number AS n FROM loans WHERE id = $1`, [wLoan]))[0]!.n;
+  await accrueAdvance(w, ACCRUAL_DAYS);
+  const wMin = String((await events(wApp, "enote.registered")).at(-1)!.payload["min"]);
+  clock.set(EST("2026-11-19", "08:30"));
+  await w.tool({ app: wApp }, "30.1", "matchPurchaseAdvice", { loan_id: wLoan, application_id: wApp, loan: { servicing_loan_number: wSln, original_upb_cents: "56000000", first_payment_date: "2027-01-01", note_rate_pct: "6.125", commitment_remittance_type: "AA", escrowed: true, note_form: "enote", mers_registered: true, min: wMin },
+    advice: { advice_id: `PA-HAND-${w.R}`, fnma_loan_number: wFnma, fnma_servicer_number: "123456789", lender_loan_number: wSln, advice_date: "2026-11-19", purchase_date: "2026-11-19", remittance_type: "AA", pass_through_rate: "5.875", note_rate_pct: "6.125", servicing_fee_bps: 25, interest_adjustment_cents: "-109667", net_proceeds_cents: "56590333" } }, INVESTOR_A);
+  fakes.advices.queue(fnmaAdvice(wFnma, wSln)); fakes.bank.queue(bankCredit(wFnma, wSln, w.R, 56_450_333n));
+  clock.set(EST("2026-11-19", "14:10")); await pass(clock.now(), wApp);
+  const wRecon = (await db.query<P>(`SELECT status, sides, escalation_id::text AS escalation_id, warehouse_payoff_cents::text AS payoff FROM purchase_reconciliations WHERE loan_id = $1`, [wLoan]));
+  assert.equal(wRecon.length, 1, await jn(wApp)); assert.equal(wRecon[0]!["status"], "exception"); assert.equal((wRecon[0]!["sides"] as P)["30.1"], "unmatched"); assert.equal(wRecon[0]!["payoff"], null);
+  assert.equal((await events(wApp, "settlement.waterfall.posted")).length, 0, "no waterfall on a one-sided figure"); assert.equal((await events(wApp, "warehouse.advance.repaid")).length, 0);
+  assert.equal((await events(wApp, "warehouse.collateral.status_changed")).filter((e) => e.payload["to"] === "released").length + (await events(wApp, "warehouse.bailee_letter.released")).length, 0, "no release exists");
+  const esc = await db.query<P>(`SELECT id::text AS id, severity, payload FROM escalations WHERE application_id = $1 AND owner_role = 'officer' AND payload->>'reason' = 'PURCHASE_EXCEPTION'`, [wApp]);
+  assert.equal(esc.length, 1, "one sev-2 officer escalation"); assert.equal(esc[0]!["severity"], "sev2"); assert.equal(esc[0]!["id"], wRecon[0]!["escalation_id"]);
+  const ep = esc[0]!["payload"] as P; assert.ok(ep["variance_breakdown"] && typeof ep["variance_breakdown"] === "object", "27.2's breakdown attached"); assert.deepEqual(ep["sides"], { "29.4": "reconciled", "30.1": "unmatched", "27.2": "matched" });
+  assert.equal((await events(wApp, "orchestration.purchase.exception")).length, 1); const wo = await row(wApp); assert.equal(wo.step, "purchased"); assert.equal(wo.status, "waiting_human"); assert.equal(wo.waiting_on, "officer");
+});
 
 test("35.6-T12: Given 50 open orchestrations with a new fact each and two sweeps' passes started in the same minute, then every row was claimed by exactly one pass (`FOR UPDATE SKIP LOCKED`), each row has exactly one new `entered`/`command_run` journal entry, no owning event was appended twice, and a third pass with no new facts writes nothing; given a step whose owning command throws, then the journal has `command_failed{error_class}`, no other row of that unit of work exists, the next pass retries, and after the third failure the row is `held{failed}` with one `ops_analyst` escalation.", { skip }, async () => {
   // fifty open orchestrations at clear_to_close (the borrower's wait), each on its own application, each with one new fact: 26.2's closing.scheduled
@@ -957,7 +1094,40 @@ test("35.6-T13: Given a row entered `wire_released` at Thu Nov 12 13:00 ET with 
   assert.equal(await n(`FROM escalations WHERE owner_role = 'ops_analyst' AND payload->>'application_id' = $1 AND payload->>'step' = 'wire_released'`, [j.appId]), 0);
 });
 
-test("35.6-T14: Given a request to `orchestration.step` on the hosted API whose input carries `conditions`, `facts`, a `*_cents` field or `state`, then it is refused `NO_CLIENT_STATE` before any write; given a row whose next step is `documents_released` while 25.2's `assertGateOpen` answers closed, then it is `held{gate_closed}` and no 26.1 command ran; given a money-field change proposed by the agent (an `officer`-only snapshot override on `POST /fund`), when no `officer` approval record exists, then the command is refused and nothing is written; given any pass, then no `timers` row was satisfied, extended or cancelled by this process (a contract test over the timer repository's callers).", { todo: true });
+test("35.6-T14: Given a request to `orchestration.step` on the hosted API whose input carries `conditions`, `facts`, a `*_cents` field or `state`, then it is refused `NO_CLIENT_STATE` before any write; given a row whose next step is `documents_released` while 25.2's `assertGateOpen` answers closed, then it is `held{gate_closed}` and no 26.1 command ran; given a money-field change proposed by the agent (an `officer`-only snapshot override on `POST /fund`), when no `officer` approval record exists, then the command is refused and nothing is written; given any pass, then no `timers` row was satisfied, extended or cancelled by this process (a contract test over the timer repository's callers).", { skip }, async () => {
+  const j = await chainJourney(); const appId = j.appId;
+  const counts = async (id: string) => ({ events: Number((await db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1`, [id]))[0]!.c), journal: (await journal(id)).length, snapshots: Number((await db.query<{ c: string }>(`SELECT count(*)::text AS c FROM funding_snapshots WHERE application_id = $1`, [id]))[0]!.c), loans: Number((await db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loans WHERE origination_application_id = $1`, [id]))[0]!.c) });
+  // rule 2 / NO_CLIENT_STATE: a hand-fed object, a *_cents field or a state on `orchestration.step` is refused on the hosted API before anything is written
+  const c0 = await counts(appId);
+  for (const extra of [{ conditions: [{ condition_id: "c-1", status: "cleared" }] }, { facts: { cd_delivered: true } }, { net_wire_cents: "55685207" }, { state: { step: "funded", status: "open" } }]) {
+    const r = await call("POST", `/v1/applications/${appId}/tools/35.6/orchestration.step`, { actor: OPS_ANALYST, input: { op: "retry", ...extra } });
+    assert.equal(r.status, 409, JSON.stringify(r.body).slice(0, 400)); assert.equal(r.body["code"], "NO_CLIENT_STATE", JSON.stringify(r.body).slice(0, 400));
+  }
+  assert.deepEqual(await counts(appId), c0, "refused before any write: no event, no journal row, no snapshot, no loan");
+  // rule 5: a closed 25.2 gate at `documents_released` is held{gate_closed}; no 26.1 command ran
+  const u = await driveToGateClosed(await newJourney());
+  // the row whose NEXT step is documents_released: it stays at cd_delivered, held on the gate the pass asserted before entering
+  const o = await row(u.appId); assert.equal(o.step, "cd_delivered", JSON.stringify(o)); assert.equal(o.status, "held", JSON.stringify(o)); assert.equal(o.hold_reason, "gate_closed"); assert.equal(o.waiting_on, "REGZ_1026_19F1_CD_3SBD_GATE", JSON.stringify(o));
+  const jl = await journal(u.appId);
+  const refused = jl.find((x) => x.kind === "command_refused" && x.command_process === "25.2" && x.command_name === "assertGateOpen"); assert.ok(refused, JSON.stringify(jl.slice(-6).map((x) => [x.step, x.kind, x.command_process, x.command_name, x.refusal_code])));
+  // no 26.1 command ran behind the closed gate: none of 26.1's document-generation commands at all, and no 26.1 command after the refusal (26.1 computeNoteTerms for the CD's figures ran earlier, before the gate)
+  const docGen = new Set(["evaluateDocGenGates", "takeClosingSnapshot", "renderDocument", "buildSmartDocENote", "runDocumentQc", "releaseToSettlementAgent"]);
+  assert.equal(jl.filter((x) => x.kind === "command_run" && x.command_process === "26.1" && docGen.has(String(x.command_name))).length, 0, "no 26.1 document-generation command ran");
+  assert.equal(jl.filter((x) => x.kind === "command_run" && x.command_process === "26.1" && x.created_at >= refused.created_at).length, 0, "no 26.1 command after the gate refused");
+  assert.equal((await events(u.appId, "closing.documents.released")).length, 0);
+  // rule 4 / OFFICER_OVERRIDE_ONLY: an agent's snapshot override on POST /fund is refused with nothing written (no officer approval record)
+  const c1 = await counts(appId);
+  const f = await call("POST", `/v1/applications/${appId}/fund`, { actor: DISCLOSURES, snapshot: { escrow_analysis: { cushion_cents: "0" } } });
+  assert.equal(f.status, 409, JSON.stringify(f.body).slice(0, 400)); assert.equal(f.body["code"], "NO_CLIENT_STATE", JSON.stringify(f.body).slice(0, 300));
+  assert.deepEqual(await counts(appId), c1, "the override wrote nothing");
+  // NO_CLOCK_EDIT: a contract over the timer repository's callers — nothing under src/domain/operations-runtime or the 35.6 tools satisfies, extends or cancels a timers row
+  const files = [...SOURCE_FILES(), fileURLToPath(new URL("../../app/tools/section35-6.ts", import.meta.url))];
+  assert.ok(files.length >= 10, `contract scope: ${files.length} files`);
+  for (const f of files) {
+    const text = readFileSync(f, "utf8");
+    for (const bad of [/timers\.(satisfy|extend|cancel|arm|breach)\(/, /\.(satisfyTimer|extendTimer|cancelTimer)\(/, /UPDATE\s+timers\b/i, /DELETE\s+FROM\s+timers\b/i, /INSERT\s+INTO\s+timers\b/i]) assert.ok(!bad.test(text), `${f} touches the timer repository: ${bad}`);
+  }
+});
 
 test("35.6-T15: Given `rescission.exercised` on Mon Nov 9 (32.7's ChoiceCard through 25.3) on a row at `execution_reviewed`, when the pass runs, then 26.3 `openUnwind` ran, 26.4's MIN reversal request exists, no `warehouse.advance.requested`, `funding.authorized` or `loan.funded` was ever appended, no `loans` row exists, the row is `unwinding` and, on 26.3's `funding.unwind.completed`, `unwound` (terminal); given `funding.cancelled` after `funding.wire.accepted`, then `SM_O73_FUNDS_RETURN_2BD` is armed by 26.3 and the row is `unwinding` until 27.1 matches the returned funds.", { skip }, async () => {
   // a row at execution_reviewed (its own journey, consummated Fri Nov 6) and rescission.exercised on Mon Nov 9 through 25.3's own tool (32.7's ChoiceCard → 25.3 record_exercise)
@@ -1005,6 +1175,62 @@ test("35.6-T16: Given the purchase fixture (Columbus, OH; wet; paper note; the s
 
 test("35.6-T17: Given the OH loan delivered Mon Nov 30, certified Tue Dec 1 and the advice dated Wed Dec 2 (price 101.000, LLPA waived, interest due lender $70.10, net wire $416,190.10) with the matching bank credit, when the pass runs, then the payoff is $404,852.72 (principal $403,760.00 + 14 days' interest $1,067.72 + $25.00), cost recovery $2,774.00, SM retained $831.00 (premium $4,120.00 − lender credit $515.00 − LLPA $0.00 − costs $2,774.00), partner residual $7,732.38, `purchase_reconciliations.status = reconciled`, `warehouse.bailee_letter.released{effective=2026-12-02}` exists, and `SM_WH_INTERIM_FUNDER_RELEASE_2BD` is armed by 27.2.", { todo: true });
 
-test("35.6-T18: Given the sweep at 06:00 ET, then 35.3's `closing_orchestration_daily` unit ran `orchestration.pass{op: daily_receipt}` once, `orchestration_daily_receipts` has one row for the date with `open`, `waiting_human`, `waiting_vendor`, `waiting_borrower`, `waiting_window`, `held`, `completed_today` and `fixture_used_today` matching a direct count of `closing_orchestrations`, `orchestration.daily.run_completed` satisfied and re-armed `SM_ORCH_OPEN_BOOK_DAILY` on the global subject (one armed instance), the board document is a 35.2 row, and `orchestration.board` returns every open row with `step`, `status`, `waiting_on`, the next owning clock due and the advance's dwell day.", { todo: true });
+test("35.6-T18: Given the sweep at 06:00 ET, then 35.3's `closing_orchestration_daily` unit ran `orchestration.pass{op: daily_receipt}` once, `orchestration_daily_receipts` has one row for the date with `open`, `waiting_human`, `waiting_vendor`, `waiting_borrower`, `waiting_window`, `held`, `completed_today` and `fixture_used_today` matching a direct count of `closing_orchestrations`, `orchestration.daily.run_completed` satisfied and re-armed `SM_ORCH_OPEN_BOOK_DAILY` on the global subject (one armed instance), the board document is a 35.2 row, and `orchestration.board` returns every open row with `step`, `status`, `waiting_on`, the next owning clock due and the advance's dwell day.", { skip }, async () => {
+  // an earlier platform day's receipt so the recurring clock has an armed instance to satisfy and re-arm (35.3's cycle runs daily; the first receipt arms it)
+  clock.set(EST("2026-11-19", "06:00")); await runtime.sweep(clock.now(), { verify: false });
+  const asOf = "2026-11-20"; const dayStart = EST("2026-11-20", "00:00");
+  const openCount = async () => Number((await db.query<{ c: string }>(`SELECT count(*)::text AS c FROM closing_orchestrations WHERE status NOT IN ('completed', 'unwound', 'cancelled')`))[0]!.c);
+  clock.set(EST("2026-11-20", "06:00")); await runtime.sweep(clock.now(), { verify: false });
+  // 35.3's closing_orchestration_daily unit ran orchestration.pass{op: daily_receipt} once: one row for the date; a second sweep the same day writes nothing more
+  clock.set(EST("2026-11-20", "06:05")); await runtime.sweep(clock.now(), { verify: false });
+  const receipts = await db.query<P>(`SELECT * FROM orchestration_daily_receipts WHERE as_of_date = $1`, [asOf]); assert.equal(receipts.length, 1, "one receipt row for the date");
+  const r = receipts[0]!;
+  const byStatus = Object.fromEntries((await db.query<{ status: string; c: string }>(`SELECT status, count(*)::text AS c FROM closing_orchestrations GROUP BY status`)).map((x) => [x.status, Number(x.c)]));
+  assert.equal(Number(r["open"]), await openCount(), "open = a direct count of the open rows");
+  for (const k of ["waiting_human", "waiting_vendor", "waiting_borrower", "waiting_window", "held"] as const) assert.equal(Number(r[k]), byStatus[k] ?? 0, `${k} matches a direct count`);
+  assert.equal(Number(r["completed_today"]), Number((await db.query<{ c: string }>(`SELECT count(*)::text AS c FROM closing_orchestrations WHERE status = 'completed' AND completed_at >= $1::timestamptz`, [dayStart]))[0]!.c));
+  assert.equal(Number(r["fixture_used_today"]), Number((await db.query<{ c: string }>(`SELECT count(*)::text AS c FROM funding_snapshots WHERE fixture_used AND built_at >= $1::timestamptz`, [dayStart]))[0]!.c));
+  // orchestration.daily.run_completed once for the date; it satisfied the armed SM_ORCH_OPEN_BOOK_DAILY and re-armed it on the global subject — one armed instance
+  const daily = await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE type = 'orchestration.daily.run_completed' AND payload->>'as_of_date' = $1`, [asOf]); assert.equal(daily.length, 1);
+  const clocks = await db.query<{ status: string; subject_kind: string; subject_id: string; due_at: string | null }>(`SELECT status::text AS status, subject_kind, subject_id, due_at::text AS due_at FROM timers WHERE code = 'SM_ORCH_OPEN_BOOK_DAILY' ORDER BY armed_at`);
+  assert.equal(clocks.filter((t) => t.status === "armed").length, 1, JSON.stringify(clocks)); assert.ok(clocks.some((t) => t.status === "satisfied"), JSON.stringify(clocks));
+  for (const t of clocks) assert.equal(t.subject_kind, "global", JSON.stringify(t));
+  // the board document is a 35.2 row
+  assert.ok(r["report_document_id"], "report_document_id"); const doc = (await db.query<{ kind: string; retention_class: string }>(`SELECT kind, retention_class::text AS retention_class FROM documents WHERE id = $1`, [r["report_document_id"]]))[0]!; assert.ok(doc, "documents row"); assert.equal(doc.kind, "closing_board_daily");
+  // orchestration.board (a read; the Closing screen's rows): every open row with step, status, waiting_on, the next owning clock due and the advance's dwell day
+  const board = await call("POST", `/v1/tools/35.6/orchestration.board`, { actor: OPS_ANALYST, input: { at: clock.now() } }); assert.equal(board.status, 200, JSON.stringify(board.body).slice(0, 400));
+  const rows = (board.body["output"] as P)["rows"] as P[]; assert.equal(rows.length, await openCount(), "every open row");
+  for (const b of rows) { for (const k of ["application_id", "step", "status", "waiting_on", "next_clock", "advance_dwell_days"]) assert.ok(k in b, `board row has ${k}: ${JSON.stringify(b)}`); }
+  const withAdvance = rows.filter((b) => b["advance_dwell_days"] !== null); for (const b of withAdvance) assert.ok(Number(b["advance_dwell_days"]) >= 0);
+  assert.ok(rows.some((b) => b["next_clock"] !== null && typeof (b["next_clock"] as P)["code"] === "string"), "an open row names its next owning clock");
+});
 
-test("35.6-T19: Given a row at `funded` on the demo clock at 2026-11-12 and `POST /v1/demo/advance{days: 3}`, then the pass ran inline per crossed day: `loan.staged`/`loan.boarded` dated 2026-11-12, `delivery.package.frozen` dated 2026-11-13, the operator task's SLA 2026-11-16 15:00 MT, `SM_ORCH_HANDOFF_AFTER_FUNDED_4H` and `SM_ORCH_DELIVERY_OPEN_2BD` satisfied, and `closing_orchestration_steps.sweep_run_id` differs per day.", { todo: true });
+test("35.6-T19: Given a row at `funded` on the demo clock at 2026-11-12 and `POST /v1/demo/advance{days: 3}`, then the pass ran inline per crossed day: `loan.staged`/`loan.boarded` dated 2026-11-12, `delivery.package.frozen` dated 2026-11-13, the operator task's SLA 2026-11-16 15:00 MT, `SM_ORCH_HANDOFF_AFTER_FUNDED_4H` and `SM_ORCH_DELIVERY_OPEN_2BD` satisfied, and `closing_orchestration_steps.sweep_run_id` differs per day.", { skip }, async () => {
+  // a fresh journey funded Thu Nov 12 by the platform's own sweep (its run id is that day's): loan.funded, the hand-off (loan.staged/loan.boarded dated Nov 12) and the boarded step held on 25.2's delivery gate — no 25.1 delivery-checkpoint run yet
+  const d = await driveTo(await newJourney(), "wire_released"); const appId = d.appId;
+  clock.set(EST("2026-11-12", "13:01")); await reviewers.tick(runtime, clock.now());
+  clock.set(EST("2026-11-12", "13:05")); const day1 = await runtime.sweep(clock.now(), { verify: false }); assert.ok(day1);
+  let o = await row(appId); assert.ok(o.loan_id, `funded and handed off by the Nov 12 sweep: ${JSON.stringify(o)}`); assert.equal(o.step, "boarded", JSON.stringify(o));
+  // 25.1's delivery checkpoint (the compliance tester's run) lands after that sweep — the new fact the Nov 13 pass releases the gate on
+  await complianceAt(d, EST("2026-11-12", "16:30"), "SM_O61_COMPLIANCE_PASS_DELIVERY_GATE", "cd");
+  // the demo clock at 2026-11-12 (13:10 ET); POST /v1/demo/advance{days: 3} walks Fri Nov 13, Sat Nov 14 and the target through the sweep minute, the pass inline per crossed day
+  const demo = demoRuntimeAt(EST("2026-11-12", "13:10"));
+  const report = await advanceDemoClock({ runtime: demo.rt, clock: demo.clock, logger }, { days: 3 });
+  assert.equal(report.advanced, true); assert.equal(report.complete, true, JSON.stringify(report).slice(0, 400)); assert.equal(report.days_crossed, 3); assert.equal(report.steps.length, 3);
+  assert.deepEqual(report.steps.map((s) => s.date), ["2026-11-13", "2026-11-14", "2026-11-15"]);
+  const etDate = (pg: string) => new Date(pg.replace(" ", "T").replace(/\+00$/, "Z")).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const staged = (await events(appId, "loan.staged")).at(-1)!; const boarded = (await events(appId, "loan.boarded")).at(-1)!; assert.ok(staged && boarded, "loan.staged / loan.boarded");
+  assert.equal(etDate(staged.occurred_at), "2026-11-12"); assert.equal(etDate(boarded.occurred_at), "2026-11-12");
+  const frozen = (await events(appId, "delivery.package.frozen")).at(-1)!; assert.ok(frozen, `delivery.package.frozen: ${JSON.stringify((await journal(appId)).slice(-8).map((x) => [x.step, x.kind, x.command_process, x.command_name, x.error_class, x.refusal_code, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? null]))}`);
+  assert.equal(etDate(frozen.occurred_at), "2026-11-13");
+  const dlv = (await entitiesOf("deliveries", appId)).find((x) => typeof x.data["delivery_id"] === "string")!; assert.ok(dlv, "29.4's delivery");
+  const task = (await entitiesByDelivery("delivery_operator_tasks", String(dlv.data["delivery_id"]))).find((t) => t.data["kind"] === "import_and_submit")!; assert.ok(task, "the operator task"); assert.equal(task.data["sla_due_at"], MST("2026-11-16", "15:00"));
+  for (const code of ["SM_ORCH_HANDOFF_AFTER_FUNDED_4H", "SM_ORCH_DELIVERY_OPEN_2BD"]) { const t = await timers(appId, code); assert.ok(t.length >= 1, code); for (const x of t) assert.equal(x.status, "satisfied", `${code}: ${JSON.stringify(t)}`); }
+  // the row left package_frozen behind the operator's SLA; under INTEGRATIONS=fake the FAKE fnma_portal_operator acts after its delay, so a demo day may already have carried the row to delivered/certified (rule 4)
+  o = await row(appId); assert.ok(["package_frozen", "delivered", "certified"].includes(o.step), JSON.stringify(o)); if (o.step === "package_frozen") { assert.equal(o.status, "waiting_human"); assert.equal(o.waiting_on, "fnma_portal_operator"); }
+  // closing_orchestration_steps.sweep_run_id differs per day: the Nov 12 sweep's rows and the Nov 13 demo step's rows carry different sweep runs (sweep_runs.as_of_date names each run's day; created_at is wall-clock)
+  const runs = await db.query<{ day: string; run_id: string }>(`SELECT DISTINCT r.as_of_date::text AS day, s.sweep_run_id::text AS run_id FROM closing_orchestration_steps s JOIN sweep_runs r ON r.id = s.sweep_run_id WHERE s.orchestration_id = $1 ORDER BY day`, [o.id]);
+  const byDay = new Map<string, Set<string>>(); for (const r of runs) { if (!byDay.has(r.day)) byDay.set(r.day, new Set()); byDay.get(r.day)!.add(r.run_id); }
+  assert.ok(byDay.has("2026-11-12") && byDay.has("2026-11-13"), JSON.stringify(runs));
+  for (const id of byDay.get("2026-11-13")!) assert.ok(!byDay.get("2026-11-12")!.has(id), `the Nov 13 step ran under a different sweep than Nov 12: ${JSON.stringify(runs)}`);
+});

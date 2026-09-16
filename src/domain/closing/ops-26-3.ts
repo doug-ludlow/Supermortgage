@@ -399,8 +399,8 @@ export function evaluateFundingConditions(funding_id: string, f: ConditionFacts)
   return { checklist_id: `${funding_id}:fc:${at}`, funding_id, evaluated_at: at, items, passed: blocking.length === 0 && pending.length === 0, blocking_codes: blocking, pending_codes: pending, waivers, pre_signing_subset_passed: pre.every(ok), soft_flags: soft };
 }
 export const fcStatus = (c: FundingConditions, code: FcCode): FcStatus => c.items.find((x) => x.code === code)!.status;
-export function recordConditionsEvaluated(events: EventStore, application_id: string, c: FundingConditions, at: string): DomainEvent {
-  return emit(events, application_id, "funding.conditions.evaluated", { checklist_id: c.checklist_id, funding_id: c.funding_id, passed: c.passed, blocking_codes: [...c.blocking_codes], pending_codes: [...c.pending_codes], first_payment_2m: fcStatus(c, "FC_FIRST_PAYMENT_2M"), pre_signing_subset_passed: c.pre_signing_subset_passed, soft_flags: [...c.soft_flags] }, at);
+export function recordConditionsEvaluated(events: EventStore, application_id: string, c: FundingConditions, at: string, subset: "pre_signing" | null = null): DomainEvent {
+  return emit(events, application_id, "funding.conditions.evaluated", { checklist_id: c.checklist_id, funding_id: c.funding_id, passed: c.passed, blocking_codes: [...c.blocking_codes], pending_codes: [...c.pending_codes], first_payment_2m: fcStatus(c, "FC_FIRST_PAYMENT_2M"), pre_signing_subset_passed: c.pre_signing_subset_passed, soft_flags: [...c.soft_flags], ...(subset ? { subset } : {}) }, at);
 }
 /** Rule 10(d) — dry state, executed package not returned: deadline = next creditor business day after signing, 17:00 local; day 2 → settlement agent; day 5 → title underwriter (CPL) and cancellation/re-schedule. */
 export function documentsNotReturned(i: { signing_on: PlainDate; time_zone: string; as_of: string; package_returned: boolean }): { return_deadline_at: string; overdue: boolean; day: number; stage: "not_due" | "overdue" | "escalate_settlement_agent" | "notify_title_underwriter"; escalate_settlement_agent_on: PlainDate; notify_title_underwriter_on: PlainDate } {

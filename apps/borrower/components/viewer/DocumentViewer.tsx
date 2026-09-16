@@ -53,11 +53,10 @@ export function DocumentViewer({ id }: { id: string }) {
   }, [id]);
 
   const title = state.kind === "ready" ? state.link.title : "Document";
-  const pages = state.kind === "ready" && state.link.text_layer ? state.link.text_layer.split("\f") : [];
   return (
     <main className="sm-viewer-page" style={{ padding: 24, maxWidth: 900 }} data-document-id={id}>
       <p>
-        <Link href="/app">← Back to your conversation</Link>
+        <Link href="/">← Back to your conversation</Link>
       </p>
       <h1 style={{ fontSize: "1.375rem" }}>{title}</h1>
       {state.kind === "loading" ? <p className="sm-viewer" data-testid="doc-loading">Opening your document…</p> : null}
@@ -74,7 +73,7 @@ export function DocumentViewer({ id }: { id: string }) {
             </object>
           </div>
           <section className="sm-viewer__text" data-testid="doc-text-layer" aria-label={`${state.link.title}, text`}>
-            {pages.length ? pages.map((page, i) => <p key={i} data-page={i + 1} style={{ whiteSpace: "pre-wrap" }}>{page}</p>) : <p data-page={1}>{state.link.text_layer ?? ""}</p>}
+            <p style={{ whiteSpace: "pre-wrap" }}>{state.link.text_layer ?? ""}</p>
           </section>
           <p className="sm-source" data-testid="doc-footer">
             {state.link.template_code ? `Template ${state.link.template_code} ${state.link.template_version ?? ""}`.trim() + " · " : ""}

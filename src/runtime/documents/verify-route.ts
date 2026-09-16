@@ -28,27 +28,34 @@ export async function statementForToken(runtime: Runtime, token: string): Promis
   return { token: minted, statement_id: s.id, statement: decodeEntityData(s.data) };
 }
 
-const evidenceDocumentOf = (statement: Record<string, unknown>): string | null => {
-  const delivered = (statement["delivered_to"] as { evidence_document_id?: unknown }[] | undefined) ?? [];
-  for (let k = delivered.length - 1; k >= 0; k--) { const id = delivered[k]?.evidence_document_id; if (typeof id === "string" && id) return id; }
+const STATEMENT_TEMPLATE = "NTC_REGZ_36C3_PAYOFF_STMT";
+/** The statement's own rendered documents row: `delivered_to[].rendered_document_id` (16.1 sendNotice), else the notice's `document_id`; a delivery receipt the caller supplied as evidence is never the statement. */
+async function statementDocumentOf(runtime: Runtime, statement: Record<string, unknown>): Promise<string | null> {
+  const delivered = (statement["delivered_to"] as { rendered_document_id?: unknown; notice_id?: unknown; evidence_document_id?: unknown }[] | undefined) ?? [];
+  for (let k = delivered.length - 1; k >= 0; k--) { const id = delivered[k]?.rendered_document_id; if (typeof id === "string" && id) return id; }
+  const noticeIds = [...delivered.map((d) => d.notice_id), statement["notice_id"]].filter((x): x is string => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x));
+  for (const nid of noticeIds.reverse()) { const n = (await runtime.db.query<{ document_id: string | null }>(`SELECT document_id FROM notices WHERE id = $1 AND template_code = $2`, [nid, STATEMENT_TEMPLATE]))[0]; if (n?.document_id) return n.document_id; }
+  // an older row whose only pointer is evidence_document_id: accepted only when that row is the rendered statement itself
+  for (let k = delivered.length - 1; k >= 0; k--) { const id = delivered[k]?.evidence_document_id; if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) continue; const d = (await runtime.db.query<{ kind: string; template_code: string | null }>(`SELECT kind, template_code FROM documents WHERE id = $1`, [id]))[0]; if (d && d.kind === "rendered_notice" && d.template_code === STATEMENT_TEMPLATE) return id; }
   return null;
-};
+}
 
 /** Mounted in src/runtime/server.ts before the borrower router; answers true when the request was `/verify/{token}`. */
 export async function handleVerifyRoute(runtime: Runtime, req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean> {
   const m = /^\/verify\/([^/]+)$/.exec(url.pathname);
   if (!m) return false;
   if (method !== "GET") { json(res, 405, { code: "METHOD_NOT_ALLOWED" }); return true; }
-  const token = decodeURIComponent(m[1]!);
+  let token: string; try { token = decodeURIComponent(m[1]!); } catch { json(res, 404, { code: "TOKEN_UNKNOWN" }); return true; }
   if (!VERIFY_TOKEN_RE.test(token)) { json(res, 404, { code: "TOKEN_UNKNOWN" }); return true; }
   const found = await statementForToken(runtime, token);
   if (!found) { json(res, 404, { code: "TOKEN_UNKNOWN" }); return true; }
-  const documentId = evidenceDocumentOf(found.statement);
+  const documentId = await statementDocumentOf(runtime, found.statement);
   const facts = { token, statement_id: found.statement_id, good_through: found.statement["good_through"] ?? null, total_cents: found.statement["total_cents"] ?? null, wire_instruction_version_id: found.token["wire_instruction_version_id"] ?? null, issued_at: found.token["issued_at"] ?? null };
   if (!documentId) { json(res, 200, { ...facts, verified: false, reason: "STATEMENT_NOT_YET_DELIVERED", document_id: null, statement_sha256: null }); return true; }
   const ip = (req.socket.remoteAddress ?? null); const ua = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : null;
   const opened = await openDocumentInUow(runtime, { document_id: documentId, purpose: "verify_portal", ip, user_agent: ua }, PORTAL);
   if (opened.kind === "unknown" || opened.kind === "unavailable") { json(res, 503, { ...facts, verified: false, reason: "DOCUMENT_CONTENT_UNAVAILABLE", document_id: documentId }); return true; }
+  if (opened.kind === "bytes" && opened.store_missing) await raiseServedMismatch(runtime, documentId, PORTAL).catch((e) => runtime.logger?.error("verify portal: missing-object escalation failed", { document_id: documentId, error: e }));
   if (opened.kind === "tombstone") { json(res, 410, { ...facts, verified: false, reason: "DOCUMENT_DISPOSED", document_id: documentId, statement_sha256: opened.sha256, disposed_at: opened.disposed_at }); return true; }
   if (opened.kind === "mismatch") { await raiseServedMismatch(runtime, documentId, PORTAL).catch((e) => runtime.logger?.error("verify portal: served mismatch escalation failed", { document_id: documentId, error: e })); json(res, 409, { ...facts, verified: false, reason: "INTEGRITY_FAILED", document_id: documentId }); return true; }
   json(res, 200, { ...facts, verified: true, document_id: documentId, statement_sha256: opened.sha256, byte_size: opened.byte_size, page_count: opened.row.page_count, template_code: opened.row.template_code, template_version: opened.row.template_version, served_from: opened.served_from });

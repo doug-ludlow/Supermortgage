@@ -8,21 +8,26 @@
 import type { Runtime } from "../app.ts";
 import type { Queryable } from "../../infra/db/client.ts";
 import type { Actor } from "../../kernel/events/index.ts";
-import { openDocument, type OpenInput, type OpenResult } from "../../domain/operations-runtime/documents/open.ts";
+import { openDocument, insertAccessLog, type OpenInput, type OpenResult } from "../../domain/operations-runtime/documents/open.ts";
 import { readDocument } from "../../domain/operations-runtime/documents/shared.ts";
 
 export async function openDocumentInUow(runtime: Runtime, input: OpenInput, actor: Actor): Promise<OpenResult> {
   const row = await readDocument(runtime.db, input.document_id);
   if (!row) return { kind: "unknown" };
   const scope = { ...(row.loan_id ? { loanId: row.loan_id } : {}), ...(row.application_id ? { applicationId: row.application_id } : {}) };
+  // with 35.1's seam the unit of work carries `ctx.q` and the access-log row is written inside `fn`; before it, the row is written in the `before` hook — the same transaction the event commits in
+  let pending: OpenResult | null = null; let logged: string | null = null;
   const r = await runtime.uow.run(scope, async (ctx) => {
-    const q = (ctx as { q?: Queryable }).q ?? runtime.db;
-    const out = await openDocument({ q, blobs: runtime.blobs }, input);
-    if (out.kind === "bytes") ctx.events.append({ type: "document.opened", ...(row.loan_id ? { loanId: row.loan_id } : {}), ...(row.application_id ? { applicationId: row.application_id } : {}), aggregate: { kind: "document", id: row.id }, actor,
-      payload: { document_id: row.id, purpose: input.purpose, ...(input.party_id ? { party_id: input.party_id } : {}), ...(input.staff_user_id ? { staff_user_id: input.staff_user_id } : {}), sha256: out.sha256, byte_size: out.byte_size, served_from: out.served_from, access_log_id: out.access_log_id } });
+    const q = (ctx as { q?: Queryable }).q;
+    const out = await openDocument({ q: q ?? runtime.db, blobs: runtime.blobs }, { ...input, log: q ? input.log !== false : false });
+    if (out.kind === "bytes") { pending = out; ctx.events.append({ type: "document.opened", ...(row.loan_id ? { loanId: row.loan_id } : {}), ...(row.application_id ? { applicationId: row.application_id } : {}), aggregate: { kind: "document", id: row.id }, actor,
+      payload: { document_id: row.id, purpose: input.purpose, ...(input.party_id ? { party_id: input.party_id } : {}), ...(input.staff_user_id ? { staff_user_id: input.staff_user_id } : {}), sha256: out.sha256, byte_size: out.byte_size, served_from: out.served_from, store_missing: out.store_missing } }); }
     return out;
-  }, { clock: runtime.clock });
-  return r.result;
+  }, { clock: runtime.clock, before: async (q) => {
+    if (!pending || pending.kind !== "bytes" || pending.access_log_id || input.log === false) return;
+    logged = await insertAccessLog(q, { document_id: row.id, purpose: input.purpose, party_id: input.party_id ?? null, staff_user_id: input.staff_user_id ?? null, session_id: input.session_id ?? null, ip: input.ip ?? null, user_agent: input.user_agent ?? null, sha256_served: pending.sha256, byte_size_served: pending.byte_size, served_from: pending.served_from });
+  } });
+  return r.result.kind === "bytes" && logged ? { ...r.result, access_log_id: logged } : r.result;
 }
 
 /** A served mismatch (rule 7): the same sev 1 as the daily run, through the bus — after the open's unit of work returned. */

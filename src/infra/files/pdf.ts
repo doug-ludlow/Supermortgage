@@ -28,7 +28,7 @@ export interface PdfPage { readonly ops: readonly TextOp[]; }
 export interface PdfDoc { readonly pages: readonly PdfPage[]; readonly info: { readonly title: string; readonly creationDate: string }; readonly idSeed: string; }
 
 export interface BlockInput { readonly id: string; readonly page: number; readonly yFraction: number; readonly pt: number; readonly bold: boolean; readonly text: string; }
-export interface Placement { readonly block_id: string; readonly page: number; readonly y_fraction: number; readonly pt: number; readonly bold: boolean; readonly lines: number; }
+export interface Placement { readonly block_id: string; readonly page: number; /** the drawn position of the first line, as a fraction of the body height (rule 3: what was drawn) */ readonly y_fraction: number; /** the template's declared fraction */ readonly declared_y_fraction: number; readonly pt: number; readonly bold: boolean; readonly lines: number; }
 export interface WriteInput { readonly blocks: readonly BlockInput[]; readonly title: string; readonly idSeed: string; readonly creationDate: string; }
 export interface Written { readonly bytes: Buffer; readonly page_count: number; readonly placements: readonly Placement[]; readonly text: string; readonly doc: PdfDoc; }
 
@@ -120,22 +120,23 @@ export function layoutBlocks(blocks: readonly BlockInput[]): { pages: PdfPage[];
     const lines = wrap(b.text, font, pt, BODY_W, b.id);
     let page = Math.max(1, Math.floor(b.page) || 1);
     let y = below(page, PAGE_H - MARGIN - Math.min(Math.max(b.yFraction, 0), 1) * BODY_H - pt, pt);
-    let first = true; let drawnOn = page;
+    let first = true; let drawnOn = page; let drawnY = y;
     for (const line of lines) {
       while (y < MARGIN) { page += 1; y = below(page, PAGE_H - MARGIN - pt, pt); }
-      if (first) drawnOn = page;
+      if (first) { drawnOn = page; drawnY = y; }
       pageOps(page).push({ font, pt, x: MARGIN, y: round2(y), text: line, ...(first ? { block: b.id } : {}) });
       lastBaseline.set(page, y);
       first = false;
       y -= LEADING * pt;
     }
     if (!lines.length) pageOps(page);
-    placements.push({ block_id: b.id, page: drawnOn, y_fraction: b.yFraction, pt, bold: b.bold, lines: lines.length });
+    placements.push({ block_id: b.id, page: drawnOn, y_fraction: round4((PAGE_H - MARGIN - pt - drawnY) / BODY_H), declared_y_fraction: b.yFraction, pt, bold: b.bold, lines: lines.length });
   }
   if (!pages.length) pages.push([]);
   return { pages: pages.map((ops) => ({ ops })), placements };
 }
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+const round4 = (n: number): number => Math.round(n * 10000) / 10000;
 
 // ───────── the bytes ─────────
 let renders = 0;

@@ -23,6 +23,7 @@ export function documentStaffRoutes(deps: { runtime: Runtime }): readonly Contro
       if (r.kind === "tombstone") return { status: 410, body: { code: "DOCUMENT_DISPOSED", document_id: id, sha256: r.sha256, disposal_run_id: r.disposal_run_id, disposed_at: r.disposed_at }, subject };
       if (r.kind === "unavailable") return { status: 404, body: { code: "DOCUMENT_CONTENT_UNAVAILABLE", document_id: id }, subject };
       if (r.kind === "mismatch") { await raiseServedMismatch(rt, id, req.actor).catch((e) => rt.logger?.error("staff view: served mismatch escalation failed", { document_id: id, error: e })); return { status: 409, body: { code: "INTEGRITY_FAILED", document_id: id, expected_sha256: r.expected_sha256, actual_sha256: r.actual_sha256 }, subject }; }
+      if (r.store_missing) await raiseServedMismatch(rt, id, req.actor).catch((e) => rt.logger?.error("staff view: missing-object escalation failed", { document_id: id, error: e }));
       return { status: 200, subject, body: { document_id: id, kind: r.row.kind, mime_type: r.mime_type, sha256: r.sha256, byte_size: r.byte_size, page_count: r.row.page_count, served_from: r.served_from, storage_status: r.row.storage_status, verify_status: r.row.verify_status, legal_hold: r.row.legal_hold, retention_class: r.row.retention_class, template_code: r.row.template_code, template_version: r.row.template_version, text_layer: r.text, bytes_base64: r.bytes.toString("base64"), access_log_id: r.access_log_id } };
     } },
   ];

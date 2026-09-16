@@ -699,7 +699,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const d = await visibleDocument(ctx, id);
     const exp = String(Date.parse(at) + DOCUMENT_URL_MINUTES * 60_000);
     const url = `/v1/borrower/documents/${d.id}/content?exp=${exp}&sig=${signUrl(ctx.session.session_id, d.id, exp)}`;
-    if (d.storage_status === "disposed") throw new BorrowerError(410, "DOCUMENT_DISPOSED", undefined, "the document was disposed under its retention class; the tombstone remains");
+    if (d.storage_status === "disposed") { await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, kind: "document_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { document_id: d.id, doc_class: d.doc_class, kind: d.kind, route: "link", status: 410 } }); throw new BorrowerError(410, "DOCUMENT_DISPOSED", undefined, "the document was disposed under its retention class; the tombstone remains"); }   // 35.2 edge case: logged, then the tombstone
     await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, kind: "document_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { document_id: d.id, doc_class: d.doc_class, kind: d.kind, route: "link" } });
     // 35.2: the viewer's text layer rides with the link (the bytes' own, never a re-render) — the /content serve is the logged access
     let text: string | null = null;
@@ -713,12 +713,13 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const d = await visibleDocument(ctx, id);
     if (!/^\d+$/.test(exp) || Number(exp) <= Date.parse(at)) throw new BorrowerError(401, "DEEP_LINK_EXPIRED", undefined, "the signed URL has expired; ask for the document again");
     if (!sameSig(sig, signUrl(ctx.session.session_id, id, exp))) throw new BorrowerError(401, "URL_SIGNATURE", undefined, "the signed URL is bound to another session");
-    if (d.storage_status === "disposed") throw new BorrowerError(410, "DOCUMENT_DISPOSED", undefined, "the document was disposed under its retention class; the tombstone remains");
+    if (d.storage_status === "disposed") { await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, kind: "document_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { document_id: d.id, doc_class: d.doc_class, kind: d.kind, route: "content", status: 410 } }); throw new BorrowerError(410, "DOCUMENT_DISPOSED", undefined, "the document was disposed under its retention class; the tombstone remains"); }
     const opened = await openDocumentInUow(runtime, { document_id: d.id, purpose: "borrower_view", party_id: ctx.party.id, session_id: ctx.session.session_id, ip: ctx.ip, user_agent: ctx.userAgent }, { kind: "human", id: ctx.party.id, role: "borrower" });
     if (opened.kind === "unknown") throw new BorrowerError(404, "NOT_YOUR_DOCUMENT");
     if (opened.kind === "tombstone") throw new BorrowerError(410, "DOCUMENT_DISPOSED");
     if (opened.kind === "unavailable") throw new BorrowerError(404, "DOCUMENT_CONTENT_UNAVAILABLE");
     if (opened.kind === "mismatch") { await raiseServedMismatch(runtime, d.id, { kind: "system", id: "borrower-viewer" }).catch((e) => logger.error("borrower.document.integrity_escalation_failed", { document_id: d.id, error: e })); throw new BorrowerError(409, "INTEGRITY_FAILED", undefined, "the stored bytes do not match the recorded hash; a sev 1 is open"); }
+    if (opened.store_missing) await raiseServedMismatch(runtime, d.id, { kind: "system", id: "borrower-viewer" }).catch((e) => logger.error("borrower.document.missing_escalation_failed", { document_id: d.id, error: e }));   // the staged copy is served (its hash matched); the store's missing object is the daily run's finding, raised now
     await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, kind: "document_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { document_id: d.id, doc_class: d.doc_class, kind: d.kind, route: "content", sha256: opened.sha256, served_from: opened.served_from } });
     const filename = (d.metadata["filename"] as string | undefined) ?? null;
     res.writeHead(200, { "content-type": opened.mime_type, "content-length": opened.byte_size, "cache-control": "private, no-store", "x-document-sha256": opened.sha256, "x-served-from": opened.served_from, "content-disposition": `inline${filename ? `; filename="${filename.replace(/"/g, "")}"` : ""}` });

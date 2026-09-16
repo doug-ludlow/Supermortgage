@@ -520,7 +520,7 @@ test("35.2-T11: Given the FAKE store is told to alter one stored object's bytes,
   const ev = r2.events.find((e) => e.type === "document.integrity.mismatch" && e.payload["document_id"] === id); assert.ok(ev, "document.integrity.mismatch is logged");
   assert.equal(ev.payload["expected_sha256"], finding.expected_sha256); assert.equal(ev.payload["actual_sha256"], finding.actual_sha256); assert.equal(ev.payload["escalation_id"], finding.escalation_id); assert.equal(ev.loanId, f.loanId);
   const esc = await one<{ kind: string; owner_role: string; status: string; severity: string }>(`SELECT kind, owner_role, status, severity FROM escalations WHERE id = $1`, [finding.escalation_id]);
-  assert.equal(esc.kind, "sev1"); assert.equal(esc.owner_role, "ciso"); assert.equal(esc.status, "open");
+  assert.equal(esc.kind, "sev1"); assert.equal(esc.owner_role, "ciso"); assert.equal(esc.status, "open"); assert.equal(esc.severity, "1");
   // 19.1-T12: disposal of a mismatched object is refused before anything else is asked
   await refused(run("documents.dispose", { document_id: id, disposal_run_id: randomUUID() }, OFFICER, { loanId: f.loanId }), "WORM_INTEGRITY_FAILED_SEV1");
   // the report lists the finding; the run's completion satisfies today's clock and re-arms it for tomorrow 02:30 ET
@@ -532,8 +532,10 @@ test("35.2-T11: Given the FAKE store is told to alter one stored object's bytes,
   assert.equal(Date.parse(timers[1]!.due_at!), zonedEpochMs(D("2026-09-19"), "02:30", "America/New_York"), "tomorrow at 02:30 America/New_York");
   // a later run never returns the object to verified
   clock.set("2026-09-19T06:30:00.000Z"); blobs.restore(id);
-  await run("documents.verify", { op: "run" });
+  const r3 = await run("documents.verify", { op: "run" });
   assert.equal((await one<{ verify_status: string }>(`SELECT verify_status FROM documents WHERE id = $1`, [id])).verify_status, "mismatch", "a mismatch never returns to verified by a later run");
+  assert.equal((r3.output as { still_flagged: number }).still_flagged, 1, "the run reports the still-flagged object apart from the verified ones");
+  assert.equal(await count(`FROM escalations WHERE owner_role = 'ciso' AND status = 'open' AND payload->>'document_id' = $1`, [id]), 1, "one open sev 1 per object, never one per run");
   clock.set(T0);
 });
 test("35.2-T12: Given worked example B's `tax_forms_1098` row, when `documents.render{document_kind=irs_1098_copy_b}` runs, then the PDF's text layer shows `$5,743.99` in Box 1 and `$400,000.00` in Box 2, the payer TIN as `XXX-XX-1234`, the recipient/lender TIN in full and no other full TIN, the tax year, form number and form name together in one area, a direct-access telephone number, the two Pub. 1179 §4.4.1 legends, and the row's `box1_cents = 574399` and `box2_cents = 40000000` are what the page reproduces; the monthly interest figures `$1,916.67`, `$1,914.67` and `$1,912.65` are the 2.1 allocations the box sums.", { skip }, async () => {

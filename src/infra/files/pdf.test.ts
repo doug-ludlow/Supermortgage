@@ -13,7 +13,9 @@ import { MemoryArtifactSink } from "../../runtime/documents/notice-sink.ts";
 import { FakePrintMail, FakeEdelivery } from "../../infra/integrations/delivery.ts";
 import { MemoryEventStore, FixedClock } from "../../kernel/events/index.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
-import { renderNoticePdf } from "../../domain/operations-runtime/documents/render.ts";
+import { renderNoticePdf, blocksFromPlacements } from "../../domain/operations-runtime/documents/render.ts";
+import { render } from "../../notices/render.ts";
+import { evaluateChecklist } from "../../notices/checklist.ts";
 
 const NOW = "2026-09-17T05:00:00.000Z";
 const blocks = [
@@ -98,6 +100,9 @@ test("sm-pdf: every authored notice version renders under sm-pdf from its own sa
       try {
         const pdf = renderNoticePdf(v, v.samplePayload, { now: NOW }); assert.ok(pdf.page_count >= 1); assert.equal(textLayer(pdf.bytes).text, pdf.text); rendered++;
         for (const [p, page] of readOwnPdf(pdf.bytes).pages.entries()) for (let k = 1; k < page.ops.length; k++) assert.ok(page.ops[k]!.y < page.ops[k - 1]!.y, `${code}@${v.version} page ${p + 1}: line ${k} overprints line ${k - 1}`);
+        // the checklist measured from the writer's placements (what was drawn) agrees with the block model's verdict for every published version
+        const model = render(v.source, v.samplePayload);
+        assert.equal(evaluateChecklist(v, v.samplePayload, { ...model, blocks: blocksFromPlacements(pdf.placements, model.blocks) }).passed, evaluateChecklist(v, v.samplePayload, model).passed, `${code}@${v.version}: the checklist from placements`);
       }
       catch (e) { failures.push(`${code}@${v.version}: ${(e as Error).message}`); }
     }

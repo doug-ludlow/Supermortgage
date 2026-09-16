@@ -88,8 +88,9 @@ export const TOOLS_35_3: readonly ToolDef[] = defineTools(CYCLES_PROCESS, OPS_ST
     handler: compute((i, ctx, rt) => cyclesOf(runtimeOf(rt)).planIn(ctx, rt, i)),
     decision: (_i, output) => { const o = output as PlanOutput | undefined; if (!o || o.skipped) return null;
       return { action: "cycles.plan", subject: { kind: "planner", id: o.as_of_date }, rationale: JSON.stringify({ as_of_date: o.as_of_date, planned_by: o.planned_by, runs_opened: o.runs_opened, jobs_planned: o.jobs_planned, leases_reclaimed: o.leases_reclaimed, unblocked: o.unblocked, requeued: o.requeued, receipts_reconciled: o.receipts_reconciled, overdue: o.overdue, errors: o.errors.length, duration_ms: o.duration_ms }) }; } },
+  // a missing or malformed run_id is a typed refusal (400 bad_request over HTTP), never a uuid cast error from the database (35.11 rule 10: the hosted probe posts `{}` to every tool and counts a 500 as `errored`)
   { name: "cycles.receipt", kind: "read", humanRoles: LIST_ROLES, guardrails: [NO_MONEY_FIELD, NO_CLOCK_EDIT],
-    handler: compute((i, _ctx, rt) => cyclesOf(runtimeOf(rt)).readReceipt(str(i, "run_id"))) },
+    handler: compute((i, _ctx, rt) => { const runId = str(i, "run_id"); if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) throw new RangeError("cycles.receipt needs run_id (the cycle_runs id, a uuid)"); return cyclesOf(runtimeOf(rt)).readReceipt(runId); }) },
   { name: "jobs.list", kind: "read", humanRoles: LIST_ROLES, guardrails: [NO_MONEY_FIELD, NO_CLOCK_EDIT],
     handler: compute((i, _ctx, rt) => cyclesOf(runtimeOf(rt)).listJobs({ cycle_code: str(i, "cycle_code") || null, status: str(i, "status") || null, period_key: str(i, "period_key") || null, loan_id: str(i, "loan_id") || null, run_id: str(i, "run_id") || null, ...(typeof i["limit"] === "number" ? { limit: i["limit"] } : {}) })) },
   // rule 7 / T13: `humanRoles` without `humanOnly` — an agent reaches the guardrail and is refused ROLE_REQUIRED (never HUMAN_ONLY); a dead job only (JOB_NOT_DEAD otherwise); the reason is required

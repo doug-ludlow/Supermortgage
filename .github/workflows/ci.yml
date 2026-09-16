@@ -39,6 +39,14 @@ jobs:
         run: |
           db/migrate.sh
           db/migrate.sh | grep -c skip
+      # 35.11 rule 10: the hosted probe on every push — every bus tool posted over HTTP to the API on the probe's own database
+      # (dropped, created and migrated to the newest file); docs/audit/hosted.json is the artifact the audit's `hosted` column reads
+      - name: hosted probe (35.11: every tool over HTTP against supermortgage_probe)
+        env: { PROBE_DATABASE_URL: postgresql://sm:sm@localhost:5432/supermortgage_probe, TEST_DATABASE_URL: postgresql://sm:sm@localhost:5432/supermortgage_test }
+        run: npm run test:hosted
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: hosted-probe, path: docs/audit/hosted.json, if-no-files-found: ignore }
 
   # Every test suite, database-backed ones included, split four ways by `node --test --test-shard`.
   # Each shard builds the migrated template once (tools/test-db-template.mts) and insists on Postgres with

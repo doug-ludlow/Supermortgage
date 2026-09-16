@@ -200,7 +200,13 @@ export async function dependencyMet(q: Queryable, dep: Dependency, unit: { reado
 const isUndefinedTable = (e: unknown): boolean => (e as { code?: unknown } | null)?.code === "42P01";
 /** A read over a table another process creates later (35.5's lockboxes, 35.9's cases, …): absent → no unit, never a failed pass. */
 async function rowsOf<R extends Record<string, unknown>>(q: Queryable, sql: string, params: readonly unknown[] = []): Promise<R[]> {
-  try { return await q.query<R>(sql, params); } catch (e) { if (isUndefinedTable(e)) return []; throw e; }
+  // the read in its own savepoint: a selector runs inside planCycle's transaction (rule 3), where a failed statement — the 42P01 this
+  // helper tolerates — leaves the transaction aborted and the run's INSERT fails with 25P02 (`current transaction is aborted`), as the
+  // hosted probe's `cycles.plan` showed for claims_sweep_daily (claim_candidates) and parallel_run.reconcile (parallel_runs); outside a
+  // transaction the SAVEPOINT is refused (25P01) and the read runs bare
+  const sp = await q.query(`SAVEPOINT rows_of`).then(() => true, () => false);
+  try { const rows = await q.query<R>(sql, params); if (sp) await q.query(`RELEASE SAVEPOINT rows_of`); return rows; }
+  catch (e) { if (sp) await q.query(`ROLLBACK TO SAVEPOINT rows_of`).catch(() => undefined); if (isUndefinedTable(e)) return []; throw e; }
 }
 const ACTIVE_LOAN = `l.boarded_at IS NOT NULL AND l.status NOT IN ('paid_off', 'transferred_out', 'repurchased', 'charged_off', 'monitored')`;
 const loanUnits = (rows: readonly { id: string }[], input: (id: string) => Record<string, unknown> = () => ({})): Unit[] => rows.map((r) => ({ unit_id: r.id, loan_id: r.id, input: { loan_id: r.id, ...input(r.id) } }));
@@ -247,7 +253,8 @@ export const selectors = {
   /** 35.5: every lockbox with a batch row (the table lands with 35.5; absent → no unit) */
   lockboxes: { name: "lockboxes", select: async (q, w) => (await rowsOf<{ id: string }>(q, `SELECT DISTINCT lockbox_id::text AS id FROM lockbox_batches ORDER BY id`)).map((r) => ({ unit_id: r.id, input: { lockbox_id: r.id, as_of_date: w.as_of_date } })) } satisfies NamedSelector,
   /** 27.1: every open warehouse advance (absent table → no unit) */
-  open_warehouse_advances: { name: "open_warehouse_advances", select: async (q, w) => (await rowsOf<{ id: string }>(q, `SELECT id::text AS id FROM warehouse_advances WHERE repaid_at IS NULL ORDER BY id`)).map((r) => ({ unit_id: r.id, input: { advance_id: r.id, as_of_date: w.as_of_date } })) } satisfies NamedSelector,
+  // 27.1's warehouse_advances is keyed advance_id (0097_warehouse_facility.sql: no `id` column); open = not yet repaid
+  open_warehouse_advances: { name: "open_warehouse_advances", select: async (q, w) => (await rowsOf<{ id: string }>(q, `SELECT advance_id::text AS id FROM warehouse_advances WHERE repaid_at IS NULL ORDER BY advance_id`)).map((r) => ({ unit_id: r.id, input: { advance_id: r.id, as_of_date: w.as_of_date } })) } satisfies NamedSelector,
   /** 35.9: every loan with an open bankruptcy case — 14.1's `bankruptcy_cases` rows as the entity store holds them (the typed table stays 14.x's record of what its tools wrote; the open statuses are default-35-9.ts OPEN_BK_STATUSES) */
   open_bankruptcy_loans: { name: "open_bankruptcy_loans", select: async (q) => loanUnits((await rowsOf<{ id: string | null }>(q, `SELECT DISTINCT coalesce(loan_id::text, data->>'loan_id') AS id FROM entity_current WHERE kind = 'bankruptcy_cases' AND coalesce(data->>'status', 'open') = ANY($1::text[]) ORDER BY 1`, [OPEN_BK_STATUSES])).filter((r): r is { id: string } => !!r.id)) } satisfies NamedSelector,
   /** 35.9 rule 2's universe: every loan with an open `regx_ei_windows` row (live leg open), an open `cases` row of type lossmit / foreclosure / bankruptcy / reo / claim, or an open `claim_candidates` row (absent tables → no unit) */

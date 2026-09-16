@@ -74,6 +74,8 @@ import { portalRoutes } from "../runtime/portal/routes.ts";
 import { FakeBlobStore, type BlobStorePort } from "../runtime/borrower/vendors/fake-blob-store.ts";
 // 35.7: the roles routes, dual control on the tools route (rule 2), the break-glass held set (rule 8), the action log's surface/source
 import { rolesRoutes } from "../domain/operations-runtime/roles-35-7/routes.ts";
+// 35.11: the stewardship boards' routes (the exceptions, the day's report, the runbook, the hand requeue through 34.4) — 34.4's table shape and dispatch
+import { stewardshipRoutes } from "../domain/operations-runtime/stewardship-35-11/routes.ts";
 import { executeWithControls } from "../domain/operations-runtime/roles-35-7/dual-control.ts";
 import { activeBreakglassOf, breakglassUsesOf } from "../domain/operations-runtime/roles-35-7/breakglass.ts";
 import { RolesRefused } from "../domain/operations-runtime/roles-35-7/refusals.ts";
@@ -211,7 +213,8 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
   const CONTROLS: readonly ControlsRoute[] = opts.runtime ? [...controlsRoutes({ runtime: opts.runtime, blobs }), ...documentStaffRoutes({ runtime: opts.runtime })] : [];   // 35.2: the staff document view rides 34.4's dispatch
   // 35.7: the grants, the approvals, the break-glass, the principals and the handover (src/domain/operations-runtime/roles-35-7/routes.ts) — 34.4's table shape and dispatch
   const ROLES: readonly ControlsRoute[] = opts.runtime ? rolesRoutes({ runtime: opts.runtime }) : [];
-  const SECTION34_PREFIXES = ["/api/directory", "/api/partner-book/", "/api/controls", "/api/portal/", "/api/roles", "/api/principals", "/api/handover"];   // the trailing slash: the legacy /api/portal-tasks/* acts are not 34.5's
+  const STEWARDSHIP: readonly ControlsRoute[] = opts.runtime ? stewardshipRoutes({ runtime: opts.runtime }) : [];
+  const SECTION34_PREFIXES = ["/api/directory", "/api/partner-book/", "/api/controls", "/api/portal/", "/api/roles", "/api/principals", "/api/handover", "/api/stewardship"];   // the trailing slash: the legacy /api/portal-tasks/* acts are not 34.5's
   let escalatesTo: Map<string, readonly string[]> | null = null;
   /** The roles a bus tool admits on the human path (src/app/tools.ts toolCommand's default: ops_analyst + officer + the process's escalation roles). */
   const toolRoles = (def: { humanRoles?: readonly string[]; process: string }): readonly string[] => { if (def.humanRoles) return def.humanRoles; escalatesTo ??= new Map(loadAgentsFile().processes.map((p) => [p.process, p.escalates_to] as const)); return [...new Set(["ops_analyst", "officer", ...(escalatesTo.get(def.process) ?? [])])]; };
@@ -363,12 +366,12 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
         const query = Object.fromEntries(url.searchParams); if (query["partner"] === undefined && query["partner_party_id"] !== undefined) query["partner"] = query["partner_party_id"];   // the console's older partner filter name
         answer(await route.handler({ params, query, body: b, staff: { staff_user_id: actor.id, role: actor.role!, session_id: r.staff?.session.session_id ?? null } })); return;
       }
-      const ctl = matchControlsRoute(CONTROLS, method, path) ?? matchControlsRoute(ROLES, method, path);
+      const ctl = matchControlsRoute(CONTROLS, method, path) ?? matchControlsRoute(ROLES, method, path) ?? matchControlsRoute(STEWARDSHIP, method, path);
       if (ctl) {
         // every route is logged the directory's way (logRoute above), so a `logged_query === false` row (none in 34.4 today) needs nothing more
         const b = method === "POST" ? await body(req) : {};
         // 35.7's routes: the body's `role` is the role being granted / handed over / broken into, never the "act as" preference (x-staff-role or ?role= carry that)
-        const actor = actAs(r, [...ctl.route.roles], ROLES.includes(ctl.route) ? "" : str(b, "role"));
+        const actor = actAs(r, [...ctl.route.roles], ROLES.includes(ctl.route) || STEWARDSHIP.includes(ctl.route) ? "" : str(b, "role"));
         answer(await ctl.route.handler({ actor, params: ctl.params, query: url.searchParams, body: b, now })); return;
       }
       if (method === "GET") {

@@ -54,7 +54,10 @@ import { CommandRefused, AiPathUnavailable } from "../app/commands.ts";
 import { refuseClientState } from "../domain/operations-runtime/cashiering-cycle.ts";
 import { CardRefused } from "../app/tools/section32-1.ts";
 import { RescissionRefused } from "../domain/compliance-disclosures/ops-25-3.ts";
+import { CyclesRefused } from "../domain/operations-runtime/service.ts";
 import { PortUnavailable } from "../app/tools.ts";
+// 35.11 rule 10: a port's own typed failure thrown by a tool (the FAKE bank's rejection of a date, a feed not yet refreshed) is a typed refusal the unit of work rolled back — never an unhandled 500
+import { AdapterUnavailable, PermanentRejection, TransientFailure } from "../infra/integrations/failures.ts";
 import { StaleRecord } from "../domain/operations-runtime/seam/guard.ts";
 import { RoleDenied } from "../app/roles.ts";
 import { StaffError } from "./staff/roles.ts";
@@ -415,12 +418,17 @@ export function createApiServer(opts: ServerOptions): Server {
       // a section's own typed refusal thrown by its tool (not a bus guardrail): the same 409 shape, its code and reason kept (32.5 T10, 32.7 T6)
       if (e instanceof CardRefused) { done(409, { error: "refused", code: e.code, reason: e.message }, { refused: e.code }); return; }
       if (e instanceof RescissionRefused) { done(409, { error: "refused", code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }
+      // 35.3's own typed refusal (RUN_NOT_FOUND, JOB_NOT_DEAD, RECEIPT_ONCE, …): the same 409 shape with its code and detail — a typed refusal the unit of work rolled back, never a 500 (35.11 rule 10's `refused_typed`)
+      if (e instanceof CyclesRefused) { done(409, { error: "refused", code: e.code, reason: e.message, ...e.detail }, { refused: e.code }); return; }
       if (e instanceof BoardingRefused) { done(409, { error: "refused", command: "applications.fund", code: e.code, citation: "30.2 rule 2 / OB-018: boarding is refused until the source record is corrected", reason: e.message, application_id: e.applicationId, validations: e.validations }, { refused: e.code }); return; }
       if (e instanceof ApplicationNotFound) { done(404, { error: "no_such_application", reason: e.message }); return; }
       if (e instanceof RoleDenied) { done(403, { error: "role_denied", reason: e.message }); return; }
       if (e instanceof AiPathUnavailable) { done(503, { error: "ai_path_unavailable", reason: e.message }); return; }
       if (e instanceof ToolNotFound) { done(404, { error: "no_such_tool", reason: e.message }); return; }
       if (e instanceof PortUnavailable) { done(501, { error: "not_wired", reason: e.message }); return; }
+      if (e instanceof PermanentRejection) { done(409, { error: "refused", code: `PORT_REJECTED:${e.code}`, kind: "rejected", reason: e.message, details: [...e.details] }, { refused: `PORT_REJECTED:${e.code}` }); return; }
+      if (e instanceof TransientFailure) { done(409, { error: "refused", code: "PORT_TRANSIENT", kind: "transient", retryable: true, reason: e.message }, { refused: "PORT_TRANSIENT" }); return; }
+      if (e instanceof AdapterUnavailable) { done(409, { error: "refused", code: "PORT_UNAVAILABLE", kind: "unavailable", fallback: e.fallbackKind, reason: e.message }, { refused: "PORT_UNAVAILABLE" }); return; }
       if (e instanceof RangeError || e instanceof TypeError || e instanceof SyntaxError) { done(400, { error: "bad_request", reason: e.message }); return; }
       logger.error("unhandled", { method, path, error: e });
       done(500, { error: "internal" });

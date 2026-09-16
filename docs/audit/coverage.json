@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8104/8756 (92.6%): tids 2259/2458, tables 774/848, timers 2045/2097, notices 308/308, tools 1441/1578, figures 1277/1467; processes at 100%: 193/205",
+ "brief": "spec units built 8176/8756 (93.4%): tids 2270/2458, tables 779/848, timers 2048/2097, notices 308/308, tools 1452/1578, figures 1319/1467; processes at 100%: 193/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2259
+   "built": 2270
   },
   "tables": {
    "spec": 848,
-   "built": 774
+   "built": 779
   },
   "timers": {
    "spec": 2097,
-   "built": 2045
+   "built": 2048
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1441
+   "built": 1452
   },
   "figures": {
    "spec": 1467,
-   "built": 1277
+   "built": 1319
   },
   "units": {
    "spec": 8756,
-   "built": 8104
+   "built": 8176
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 80,
+   "built": 152,
    "processes": 12,
    "done": 1
   }
@@ -8835,24 +8835,13 @@
    "title": "Closing, funding and delivery orchestration: the state machine from clear-to-close through the CD, consummation, funding, the hand-off from the record, delivery, purchase-advice reconciliation and the warehouse paydown",
    "tids": {
     "spec": 19,
-    "built": 0,
-    "todo": 19,
+    "built": 11,
+    "todo": 8,
     "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
      9,
      10,
      11,
-     12,
-     13,
      14,
-     15,
      16,
      17,
      18,
@@ -8861,24 +8850,14 @@
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "closing_orchestration_steps",
-     "closing_orchestrations",
-     "funding_snapshots",
-     "orchestration_daily_receipts",
-     "purchase_reconciliations"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 2,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_ORCH_OPEN_BOOK_DAILY",
-     "SM_ORCH_PURCHASE_RECON_1BD",
-     "SM_ORCH_STEP_STALLED_2BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8887,66 +8866,19 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "orchestration.open",
-     "orchestration.pass",
-     "orchestration.step",
-     "orchestration.snapshot",
-     "orchestration.fund",
-     "orchestration.reconcile",
-     "orchestration.hold",
-     "orchestration.release",
-     "orchestration.unwind",
-     "orchestration.board",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 40,
-    "built": 6,
-    "missing": [
-     "$1,067.72",
-     "$1,096.67",
-     "$1,240.00",
-     "$1,375.00",
-     "$1,415.00",
-     "$1,665.00",
-     "$10,052.69",
-     "$2,062.50",
-     "$2,774.00",
-     "$3,485.00",
-     "$4,090.12",
-     "$403,760.00",
-     "$404,852.72",
-     "$410,339.52",
-     "$412,000.00",
-     "$416,120.00",
-     "$416,190.10",
-     "$515.00",
-     "$548,800.00",
-     "$549,550.64",
-     "$556,852.07",
-     "$557,249.57",
-     "$564,503.33",
-     "$566,300.00",
-     "$6,579.52",
-     "$687.50",
-     "$7,732.38",
-     "$70.10",
-     "$700.00",
-     "$71.96",
-     "$725.64",
-     "$8,052.07",
-     "$831.00",
-     "$935.48"
-    ]
+    "built": 40,
+    "missing": []
    },
    "units": {
     "spec": 80,
-    "built": 8
+    "built": 72
    },
-   "pct": 10.0
+   "pct": 90.0
   },
   {
    "process": "35.7",
@@ -9112,11 +9044,9 @@
    },
    "figures": {
     "spec": 22,
-    "built": 5,
+    "built": 9,
     "missing": [
      "$1,352.94",
-     "$1,665.00",
-     "$2,062.50",
      "$2,192.57",
      "$2,412.90",
      "$227.23",
@@ -9125,19 +9055,17 @@
      "$250,390.82",
      "$34.00",
      "$44.22",
-     "$556,852.07",
      "$612.40",
      "$619.08",
-     "$700.00",
      "$79.01",
      "$82.17"
     ]
    },
    "units": {
     "spec": 63,
-    "built": 5
+    "built": 9
    },
-   "pct": 7.9
+   "pct": 14.3
   },
   {
    "process": "35.9",
@@ -9220,7 +9148,7 @@
    },
    "figures": {
     "spec": 27,
-    "built": 1,
+    "built": 2,
     "missing": [
      "$1,062.00",
      "$129.12",
@@ -9237,7 +9165,6 @@
      "$4,527.05",
      "$53,557.56",
      "$565.00",
-     "$6,000.00",
      "$7,069.05",
      "$7,198.17",
      "$7,406.60",
@@ -9252,9 +9179,9 @@
    },
    "units": {
     "spec": 72,
-    "built": 1
+    "built": 2
    },
-   "pct": 1.4
+   "pct": 2.8
   },
   {
    "process": "35.10",
@@ -9330,10 +9257,9 @@
    },
    "figures": {
     "spec": 27,
-    "built": 2,
+    "built": 4,
     "missing": [
      "$107.30",
-     "$2,062.50",
      "$2,521.38",
      "$2,540.11",
      "$2,628.68",
@@ -9354,16 +9280,15 @@
      "$562,084.39",
      "$575,000.00",
      "$612.50",
-     "$687.50",
      "$87.59",
      "$93.88"
     ]
    },
    "units": {
     "spec": 65,
-    "built": 2
+    "built": 4
    },
-   "pct": 3.1
+   "pct": 6.2
   },
   {
    "process": "35.11",
@@ -9536,20 +9461,19 @@
    },
    "figures": {
     "spec": 7,
-    "built": 2,
+    "built": 3,
     "missing": [
      "$1,250.00",
      "$3,412.92",
      "$3,417.92",
-     "$62.50",
      "$67.50"
     ]
    },
    "units": {
     "spec": 58,
-    "built": 4
+    "built": 5
    },
-   "pct": 6.9
+   "pct": 8.6
   }
  ]
 }

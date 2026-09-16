@@ -67,9 +67,10 @@ export const TOOLS_35_6: readonly ToolDef[] = defineTools(ORCH_PROCESS, ORCH_AGE
   { name: "orchestration.step", kind: "act", ruleSetVersion: ORCH_RULE_SET_VERSION, humanRoles: ["ops_analyst", "officer"], guardrails: [...ALL], handler: compute(async (i, ctx, rt) => {
       const runtime = runtimeOf(rt); const applicationId = appOf(i, ctx);
       if ((str(i, "op") || "retry") !== "retry") throw new RangeError("orchestration.step takes op: retry (the owners' tools are the other acts; 35.8's screens dispatch them)");
-      const row = await orchestrationByApplication(runtime.db, applicationId); if (!row) throw new RangeError(`no orchestration for application ${applicationId}`);
-      const forced = { ...row, status: row.status === "held" && row.hold_reason !== "failed" ? row.status : row.status === "held" ? ("open" as const) : row.status, step_attempts: 0, hold_reason: row.status === "held" && row.hold_reason === "failed" ? null : row.hold_reason };
-      const r = await processRow(runtime, forced, str(i, "at") || ctx.now, runtime.sweepRunId);
+      let row = await orchestrationByApplication(runtime.db, applicationId); if (!row) throw new RangeError(`no orchestration for application ${applicationId}`);
+      // rule 1: a retry of a held{failed} row is a release (journaled `released`, `orchestration.released`) and then the step again; a hold for a gate or a money mismatch stays the person's (orchestration.release lifts it)
+      if (row.status === "held" && row.hold_reason === "failed") row = await releaseOrchestration(runtime, applicationId, ctx.actor, str(i, "at") || ctx.now);
+      const r = await processRow(runtime, row, str(i, "at") || ctx.now, runtime.sweepRunId);
       return { ...r, orchestration_id: row.id, application_id: applicationId, step: r.to }; }),
     decision: decision("retried") },
   { name: "orchestration.snapshot", kind: "act", ruleSetVersion: ORCH_RULE_SET_VERSION, guardrails: [...ALL, SNAPSHOT_CITES_SOURCES, FIXTURE_REFUSED_IN_PRODUCTION], handler: compute(async (i, ctx, rt) => {

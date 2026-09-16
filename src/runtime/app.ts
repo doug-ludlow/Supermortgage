@@ -82,7 +82,7 @@ import type { AnalystLlm } from "./partner-book-analyst.ts";
 import { notifyPartnerBookTapeLate, sendPartnerBookReminders } from "./partner-book.ts";
 import { sweepDailyReports, type SweepDailyReportsResult } from "./book-ops/routes.ts";
 import { escalateLongTrips, expireKillSwitchRequests } from "./controls/ai.ts";
-import { runOrchestrationPass, dailyReceipt, dailyReceiptDue, type PassReport as OrchestrationPassReport, type DailyReceipt as OrchestrationDailyReceipt } from "../domain/operations-runtime/orchestration-35-6.ts";
+import { runOrchestrationPass, dailyReceipt, dailyReceiptDue, orchestrationBreachContext, type PassReport as OrchestrationPassReport, type DailyReceipt as OrchestrationDailyReceipt } from "../domain/operations-runtime/orchestration-35-6.ts";
 import type { Logger } from "./log.ts";
 
 export interface RuntimeDeps {
@@ -395,7 +395,7 @@ export class Runtime {
       // 35.6 rule 10: the closing orchestration pass after the FAKE reviewers (a FAKE release this minute is folded by this pass) and before the verify and breach passes (what a step satisfies is never breached by the same sweep) — errors logged, never thrown
       const orchestration = await logged("orchestration.pass", () => runOrchestrationPass(this, nowIso, { runId }), () => null as OrchestrationPassReport | null, (r) => (r ? { discovered: r.discovered, claimed: r.claimed, wrote: r.wrote } : { failed: true }));
       // 35.6 rule 10 / 35.3's `closing_orchestration_daily`: the day's receipt and the Closing board once per platform day at/after 06:00 ET (SM_ORCH_OPEN_BOOK_DAILY)
-      const orchestrationDaily = (await dailyReceiptDue(this, nowIso).catch(() => false)) ? await logged("orchestration.daily_receipt", () => dailyReceipt(this, nowIso), () => null as OrchestrationDailyReceipt | null, (r) => (r ? { as_of_date: r.as_of_date, open: r.open } : { failed: true })) : null;
+      const orchestrationDaily = (await dailyReceiptDue(this, nowIso).catch((e: unknown) => { this.logger?.warn("35.6 daily receipt due-check failed", { error: e instanceof Error ? e.message : String(e) }); return false; })) ? await logged("orchestration.daily_receipt", () => dailyReceipt(this, nowIso), () => null as OrchestrationDailyReceipt | null, (r) => (r ? { as_of_date: r.as_of_date, open: r.open } : { failed: true })) : null;
       // rule 13: the daily verify run once per calendar day at/after 06:00 ET — its own global unit of work (the gaps, the mismatches and their escalations, one projection_runs row, `projection.run_completed`); a failed run inserts `failed` and no event
       let verify: VerifyReport | null = null;
       const wc = wallClock(Date.parse(nowIso), "America/New_York");
@@ -423,8 +423,10 @@ export class Runtime {
         for (const b of engine.evaluate(nowIso)) {
           const sev = b.severity ?? 4;
           const owner = b.escalateTo[0] ?? "ops_analyst";
+          // 35.6's clocks: the registry says the escalation names application_id, step and waiting_on (the orchestration row the timer's application is on)
+          const context = await orchestrationBreachContext(this, b.instance).catch(() => ({}));
           escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), severity: String(sev), slaTimerId: b.instance.id,
-            payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText } }, { kind: "system", id: "sweep" });
+            payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText, ...context } }, { kind: "system", id: "sweep" });
           breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });
         }
         const persisted = await this.uow.events.append(events.since(0), q);

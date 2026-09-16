@@ -90,6 +90,7 @@ export class FakeReviewers {
     };
     if (this.fills("mlo_of_record")) await this.termsReviews(rt, nowIso, cutoff, run);
     if (this.fills("qc_officer")) await this.prefundingHolds(rt, nowIso, cutoff, run);
+    if (this.fills("underwriting_reviewer")) await this.pendingConditions(rt, nowIso, cutoff, run);
     await this.escalations(rt, nowIso, cutoff, run, actions);
     const approved = actions.filter((a) => a.outcome === "approved").length;
     const line = `FAKE reviewers ${nowIso}: pending=${pending} approved=${approved} left_open=${actions.filter((a) => a.outcome === "left_open").length} failed=${actions.filter((a) => a.outcome === "failed").length} delay_s=${this.delaySeconds}${approved ? ` [${actions.filter((a) => a.outcome === "approved").map((a) => `${a.kind}:${a.ref.slice(0, 24)}`).join(" ")}]` : ""}`;
@@ -132,6 +133,20 @@ export class FakeReviewers {
   }
 
   // ---- open escalations a FAKE role owns
+  // ---- 23.3's reviewer-only clearances (35.6 rule 4): a condition that sits `satisfied_pending_review` (23.3 evaluateClearance found the evidence but a reviewer must clear — requires_role, an age finding, a DU close-by) is cleared by the FAKE underwriting_reviewer after the delay with the latest clearance_evaluations row; the orchestration pass never performs the reviewer's act — it folds `condition.cleared`
+  private async pendingConditions(rt: Runtime, nowIso: string, cutoff: string, run: (a: Omit<FakeReviewerAction, "outcome" | "detail">, fn: () => Promise<string | undefined>) => Promise<void>): Promise<void> {
+    const rows = await rt.db.query<Row>(`SELECT id, data, updated_at FROM entity_current WHERE kind = 'conditions' AND data->>'status' = 'satisfied_pending_review' AND updated_at <= $1::timestamptz ORDER BY updated_at`, [cutoff]);
+    for (const r of rows) {
+      const d = decodeEntityData(r["data"]) as Row; const appId = s(d["application_id"]); const conditionId = String(d["condition_id"] ?? r["id"]); if (!appId) continue;
+      const evals = await rt.db.query<Row>(`SELECT id, data FROM entity_current WHERE kind = 'clearance_evaluations' AND data->>'condition_id' = $1 ORDER BY updated_at DESC LIMIT 1`, [conditionId]);
+      if (!evals[0]) continue;
+      const evaluation = decodeEntityData(evals[0]["data"]) as Row;
+      await run({ kind: "condition_review", role: "underwriting_reviewer", ref: conditionId, tool: "23.3 clearCondition", scope: { loan_id: null, application_id: appId } }, async () => {
+        await rt.execute({ process: "23.3", name: "clearCondition", loanId: "", applicationId: appId, actor: this.actor("underwriting_reviewer"), input: { condition_id: conditionId, evaluation, notes: fakeReviewNote(this.delaySeconds) } });
+        return `condition ${conditionId.slice(0, 40)} cleared (reviewer-only item, FAKE underwriting_reviewer)`;
+      });
+    }
+  }
   private async escalations(rt: Runtime, nowIso: string, cutoff: string, run: (a: Omit<FakeReviewerAction, "outcome" | "detail">, fn: () => Promise<string | undefined>) => Promise<void>, actions: FakeReviewerAction[]): Promise<void> {
     const rows = await rt.db.query<Row>(`SELECT id, kind, owner_role, loan_id, application_id, payload, opened_at FROM escalations WHERE completed_at IS NULL AND owner_role = ANY($1::text[]) AND opened_at <= $2::timestamptz ORDER BY opened_at`, [[...this.roles], cutoff]);
     for (const r of rows) {
@@ -157,6 +172,15 @@ export class FakeReviewers {
         await run({ kind: "underwriting_review", role, ref: id, tool: "21.6 openReviewerEscalation{op=decide} | 23.3 openEscalation{op=complete}", scope }, async () => {
           try { await exec("21.6", "openReviewerEscalation", { op: "decide", decision_id: s(p["decision_id"]), outcome: "approved", notes: fakeReviewNote(this.delaySeconds) }); return "decision review approved (21.6)"; }
           catch { await exec("23.3", "openEscalation", { op: "complete", escalation_id: id }); return "work item completed (23.3)"; }
+        });
+        continue;
+      }
+      if (role === "funding_approver" && p["package"] && typeof p["package"] === "object" && s((p["package"] as Row)["advance_id"]) && scope.application_id) {
+        // 27.1's dual control: the warehouse wire package handed to the funding_approver → `27.1 funding_approver{advance_id}` (the approval record and the bank release; the tool completes its own escalation)
+        const advanceId = s((p["package"] as Row)["advance_id"])!;
+        await run({ kind: "warehouse_wire_release", role, ref: id, tool: "27.1 funding_approver", scope }, async () => {
+          await exec("27.1", "funding_approver", { advance_id: advanceId });
+          return `warehouse advance ${advanceId.slice(0, 40)} released (dual control, FAKE approver)`;
         });
         continue;
       }

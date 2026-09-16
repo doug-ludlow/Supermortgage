@@ -68,6 +68,10 @@ export class OrchRecord {
   /** The hash of what the pass read (the facts object's hash in the decision record): the last sequence and the current entity versions. */
   sourcesHash(): string { return createHash("sha256").update(JSON.stringify({ seq: this.lastSequence(), versions: this.store.versionCount() })).digest("hex"); }
   partnerId(): string { return this.app.partner_party_id; }
+  /** The subject property's type as 21.1 recorded it on application_properties (loaded with the application), else the interview's. */
+  propertyType(): string | null { return this.subject?.property_type ?? (this.intake()?.["property_type"] as string | undefined) ?? null; }
+  /** The subject application_properties row's type and units (21.1's interview), loaded with the record. */
+  subject: { id: string; property_type: string | null; units: number | null } | null = null;
   state(): string { return this.app.properties[0]?.state ?? String(this.intake()?.["property_state"] ?? "") ?? ""; }
   timeZone(): string { return String(this.intake()?.["creditor_time_zone"] ?? (this.state() === "AZ" ? "America/Phoenix" : "America/New_York")); }
   civilDate(iso: string): string { return wallClock(Date.parse(iso), this.timeZone()).date; }
@@ -81,7 +85,10 @@ export async function loadRecord(rt: Runtime, app: ApplicationRecord, loanId: st
   const events = [...appEvents, ...loanEvents].filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => a.sequence - b.sequence);
   const store = new EntityStore();
   store.seed(await rt.entities.load({ applicationId: app.id, ...(loanId ? { loanId } : {}) }));
-  return new OrchRecord(rt, app, events, store, loanId);
+  const rec = new OrchRecord(rt, app, events, store, loanId);
+  const subject = (await rt.db.query<{ id: string; property_type: string | null; units: number | null }>(`SELECT id::text AS id, property_type, units FROM application_properties WHERE application_id = $1 ORDER BY is_subject DESC, created_at LIMIT 1`, [app.id]))[0];
+  rec.subject = subject ?? null;
+  return rec;
 }
 
 // ───────────────────────────── 22.2 — the credit order (T1) ─────────────────────────────
@@ -158,15 +165,24 @@ export async function duFacts(rec: OrchRecord, now: string): Promise<DuFacts> {
   const risk: Row = { credit: { score_model: String(report.data["score_model"] ?? "classic_fico"), representative_score: report.data["representative_score"] ?? null, history_summary: `22.2 report ${report.id}: ${(report.data["mortgage_tradelines"] as unknown[] | undefined)?.length ?? 0} mortgage tradeline(s), ${(report.data["public_records"] as unknown[] | undefined)?.length ?? 0} public record(s), ${(report.data["collections"] as unknown[] | undefined)?.length ?? 0} collection(s)` },
     capacity: { dti_bps: dti, residual_income_cents: String(income - obligations - pi), income_sources: ["base_salary"], income_reconciled_to_22_3: rec.has("income.finalized") || rec.has("income.validated") || rec.has("verification.received", (p) => p["kind"] === "income") || rec.entities("verifications", (d) => d["component"] === "income" && d["status"] === "received").length > 0 },
     capital: { funds_to_close_cents: String(rec.payload("funds_to_close.computed")?.["cash_to_close_cents"] ?? "0"), reserves_months: pi > 0n ? Number(assets / (pi || 1n)) : 0, assets_reconciled_to_22_4: rec.entities("application_assets").length > 0 },
-    collateral: { ltv_x100: ltvX100, cltv_x100: ltvX100, hcltv_x100: ltvX100, valuation_method: String(valuation?.payload["method"] ?? "traditional"), cu_score: null }, du_risk_factors: [ulad["loan_purpose"] as string], eligibility_outside_du_confirmed: true, legal_compliance_confirmed: true };
+    // B3-2-01: eligibility outside DU's scope is 23.2's interpretation of the findings (policy_outcome proceed); legal compliance is 23.4's determination on the record — never asserted by this process
+    collateral: { ltv_x100: ltvX100, cltv_x100: ltvX100, hcltv_x100: ltvX100, valuation_method: String(valuation?.payload["method"] ?? "traditional"), cu_score: null }, du_risk_factors: [ulad["loan_purpose"] as string], eligibility_outside_du_confirmed: rec.has("du.findings.interpreted", (p) => p["policy_outcome"] === "proceed"), legal_compliance_confirmed: rec.has("compliance.qm.determined") };
   const expiresAt = (d: unknown): string | null => (d ? String(d) : null);
-  const valuationRow = rec.entities("valuation_orders").at(-1);
-  const validity: Row = { credit_expires_at: expiresAt(report.data["expires_at"]) ?? rec.etDate(new Date(Date.parse(now) + 120 * 86_400_000).toISOString()), lock_expires_at: lock ? String(lock.payload["expires_on"]) : rec.etDate(new Date(Date.parse(now) + 45 * 86_400_000).toISOString()), valuation_expires_at: expiresAt(rec.payload("valuation.received")?.["age_4m_update_after"]) ?? expiresAt(valuationRow?.data["expires_on"]) ?? rec.etDate(new Date(Date.parse(now) + 120 * 86_400_000).toISOString()), du_close_by_date: expiresAt(findings?.payload["close_by_date"]) ?? rec.etDate(new Date(Date.parse(now) + 60 * 86_400_000).toISOString()) };
-  const qm = rec.payload("compliance.qm.determined");
-  const guard: Row = { policy_outcome: findings && ["approve_eligible", "approve_ineligible"].includes(String(findings.payload["recommendation"])) ? "proceed" : "out_of_policy_manual", qm_facts: qm ?? { qm_type: "general_safe_harbor", apr_test_pass: true, pf_pass: true, product_tests_pass: true, consider_verify_complete: true, consider_verify_missing: [], stage: "le", apor_stale: false, blocked_reason: null, computed_from_final_cd: false }, is_hoepa: rec.payload("compliance.hoepa.determined")?.["is_hoepa"] ?? false, is_state_high_cost: false, open_red_flag_investigations: rec.entities("investigations", (d) => d["status"] === "open").length };
+  // the decision's validity is the owners' own expiries: 22.2's report (required), 21.4's lock, 24.2's valuation and DU's close-by when the record carries them — never a duration computed here
+  const creditExpires = expiresAt(report.data["expires_at"]); if (!creditExpires) throw new RecordGap("credit_reports.expires_at", `report ${report.id} carries no expiry (22.2's B1-1-03 four-month rule)`);
+  const closeBy = ((findings?.payload["validation_results"] as Row[] | undefined) ?? []).map((v) => expiresAt(v["close_by_date"])).filter((d): d is string => !!d).sort()[0] ?? null;
+  const validity: Row = { credit_expires_at: creditExpires, lock_expires_at: lock ? String(lock.payload["expires_on"]) : null, valuation_expires_at: expiresAt(rec.payload("valuation.received")?.["age_4m_update_after"]) ?? null, du_close_by_date: expiresAt(findings?.payload["close_by_date"]) ?? closeBy };
+  const qmEv = rec.last("compliance.qm.determined"); const highCost = rec.payload("compliance.high_cost.determined");
+  if (!qmEv) throw new RecordGap("23.4", "no compliance.qm.determined on the record (23.4's LE-stage determination feeds 23.3's approval guard)");
+  const qmP = qmEv.payload as Row;
+  const qm_facts: Row = { qm_type: qmP["qm_type"], apr_test_pass: qmP["apr_test_pass"] === true, pf_pass: qmP["pf_pass"] === true, product_tests_pass: qmP["product_tests_pass"] !== false, consider_verify_complete: qmP["consider_verify_complete"] !== false, consider_verify_missing: (qmP["consider_verify_missing"] as unknown[] | undefined) ?? [], stage: qmP["stage"] ?? "le", apor_stale: qmP["apor_stale"] === true, blocked_reason: qmP["blocked_reason"] ?? null, computed_from_final_cd: qmP["computed_from_final_cd"] === true };
+  const guard: Row = { policy_outcome: findings && ["approve_eligible", "approve_ineligible"].includes(String(findings.payload["recommendation"])) ? "proceed" : "out_of_policy_manual", qm_facts, is_hoepa: highCost?.["is_hoepa"] === true, is_state_high_cost: highCost?.["is_state_high_cost"] === true, open_red_flag_investigations: rec.entities("investigations", (d) => d["status"] === "open").length };
   const address = rec.app.properties[0] ? `${rec.app.properties[0].address_line1}, ${rec.app.properties[0].city}, ${rec.app.properties[0].state} ${rec.app.properties[0].postal_code}` : String(intake["property_address"] ?? "");
+  // each applicant's E-SIGN consent and e-mail are the borrower's own rows (consents{kind: esign} on the party; the party's contact) — a consent is never assumed (E-SIGN §101(c))
+  const contacts = await rec.q.query<{ borrower_id: string | null; ab_id: string; email: string | null; esign: string | null }>(`SELECT ab.borrower_id, ab.id::text AS ab_id, p.contact->>'email' AS email, (SELECT c.id::text FROM consents c WHERE c.party_id = ab.party_id AND c.kind = 'esign' AND c.granted AND (c.status IS NULL OR c.status = 'active') AND (c.application_id IS NULL OR c.application_id = ab.application_id) ORDER BY c.captured_at DESC LIMIT 1) AS esign FROM application_borrowers ab LEFT JOIN parties p ON p.id = ab.party_id WHERE ab.application_id = $1 ORDER BY ab.created_at, ab.id`, [rec.app.id]);
+  const contactOf = (id: string, k: number) => contacts.find((c) => c.borrower_id === id || c.ab_id === id) ?? contacts[k] ?? null;
   const file: Row = { application_id: rec.app.id, partner_name: String(intake["partner_name"] ?? partner?.legal_name ?? "Partner"), partner_address: String(intake["partner_address"] ?? `${partner?.legal_name ?? "Partner"}, ${rec.state()}`), creditor_time_zone: rec.timeZone(), application_date: String(intake["application_date"] ?? rec.app.application_date ?? rec.etDate(now)), property_state: rec.state(),
-    applicants: rec.borrowerIds().map((id, k) => ({ id, name: rec.borrowerName(id), mailing_address: address, email: `${id.toLowerCase()}@borrower.invalid`, esign_consent: rec.entities("consents", (d) => d["kind"] === "esign" && (d["party_id"] === id || d["borrower_id"] === id)).length > 0 || k === 0, primary: k === 0 })) };
+    applicants: rec.borrowerIds().map((id, k) => ({ id, name: rec.borrowerName(id), mailing_address: address, email: contactOf(id, k)?.email ?? null, esign_consent: !!contactOf(id, k)?.esign, primary: k === 0 })) };
   const casefile: Row = { application_id: rec.app.id, seller_number: partner?.servicer_number ?? "123456789", system_id_ref: "SYS-PARTNER-01", tsp_product_ref: "SM-TSP", score_model: String(report.data["score_model"] ?? "classic_fico") };
   return { ulad: derived(ulad, `21.1 applications:${intakeRec.version} six items; ${lock ? `lock.executed:${lock.id}` : quote ? `pricing_quotes:${quote.id}` : "LE pricing"}; credit_reports:${report.id}; ${valuation ? `${valuation.type}:${valuation.id}` : "value estimate"}`, "23.5/23.6"),
     casefile: fromTable(casefile, "parties", rec.app.partner_party_id, "23.1"), reports: derived(reports.map((r) => r.data), `credit_reports:${reports.map((r) => r.id).join(",")}`, "22.2"), borrowers: ids,
@@ -188,7 +204,15 @@ export function ctcFacts(rec: OrchRecord): Record<string, CtcFactItem> {
   const screened = rec.all("party.screened"); const anyHit = screened.some((e) => e.payload["result"] !== "clear");
   const ofac = rec.last("party.screened", (p) => p["all_parties_clear"] === true) ?? (screened.length && !anyHit ? screened.at(-1)! : null); const idv = identitiesVerified(rec);
   const qc = rec.last("qc.review.closed") ?? rec.last("qc.hold.released"); const qcOpen = rec.last("qc.hold.applied") && !qc;
-  const mlo = rec.last("mlo.review.completed") ?? rec.last("lock.executed"); const regb = rec.last("application.received") ?? rec.last("application.trid_received");
+  const mlo = rec.last("mlo.review.completed") ?? rec.last("lock.executed");
+  // Reg B timing is 21.6's clock: REGB_1002_9_DECISION_30 satisfied on the log passes; breached fails; armed with its due after the decision passes (the decision came inside the window)
+  const regbSat = rec.last("timer.satisfied", (p) => p["code"] === "REGB_1002_9_DECISION_30"); const regbBreach = rec.last("timer.breached", (p) => p["code"] === "REGB_1002_9_DECISION_30"); const regbArmed = rec.last("timer.armed", (p) => p["code"] === "REGB_1002_9_DECISION_30");
+  const regbOk = regbSat ? true : regbBreach ? false : regbArmed && decision ? String(regbArmed.payload["due_at"] ?? regbArmed.payload["due_date"] ?? "") >= decision.occurredAt.slice(0, 10) : false;
+  const regb = regbSat ?? regbBreach ?? regbArmed;
+  // compliance is 23.4's determination (or 25.1's gate run) on the record; the project item is 24.3's review, n/a for a detached property the 24.1 order describes
+  const compliance = rec.last("compliance.qm.determined") ?? rec.last("compliance.gate.opened", (p) => p["gate"] === "le" || p["gate"] === "cd");
+  const project = rec.last("project.review.completed"); const subject = rec.app.properties[0]; const propertyType = String(rec.propertyType() ?? "");
+  const detached = /^(sfr|sfr_detached|pud|detached|single_family)$/.test(propertyType);
   const assets = rec.last("funds_to_close.reconciled") ?? rec.last("funds_to_close.computed") ?? rec.entities("application_assets").at(-1) ?? null;
   const assetsEv = assets && "type" in assets ? (assets as DomainEvent) : null; const assetsRow = assets && !("type" in assets) ? (assets as EntityRecord) : null;
   return {
@@ -199,17 +223,17 @@ export function ctcFacts(rec: OrchRecord): Record<string, CtcFactItem> {
     CTC_DU_CLOSE_BY: item(findings ? "pass" : "fail", findings, "22.3", "du close-by unknown"),
     CTC_ASSETS_CASH_TO_CLOSE: assetsEv ? item("pass", assetsEv, "22.4/25.2", "") : assetsRow ? { status: "pass", evidence_ref: assetsRow.id, source: src("entity", `application_assets:${assetsRow.id}`, "22.4") } : { status: "fail", evidence_ref: null, source: src("derived", "no assets on the record", "22.4") },
     CTC_VALUATION: item(val ? "pass" : "fail", val, "24.1/24.2", "no valuation"),
-    CTC_PROPERTY_PROJECT: { status: "pass", evidence_ref: rec.app.properties[0]?.id ?? null, source: src("table", `application_properties:${rec.app.properties[0]?.id ?? ""}`, "24.3") },
+    CTC_PROPERTY_PROJECT: project ? item("pass", project, "24.3", "") : detached && subject ? { status: "n/a", evidence_ref: subject.id, source: src("table", `application_properties:${subject.id}`, "21.1/24.3") } : { status: "fail", evidence_ref: null, source: src("derived", `no project.review.completed and the subject property type is ${propertyType || "unknown"}`, "24.3") },
     CTC_TITLE: item(title ? "pass" : "fail", title, "24.4", "no title order"),
     CTC_INSURANCE_FLOOD: item(ins ? "pass" : "fail", ins, "24.5", "no hazard/flood evidence", ins ? String(ins.payload["policy_id"] ?? ins.payload["determination_id"] ?? ins.id) : null),
     CTC_MI: mi ? item("pass", mi, "24.6", "") : { status: "n/a", evidence_ref: null, source: src("derived", "no MI requirement (du.findings.received.mi_requirement.required = false)", "24.6") },
-    CTC_COMPLIANCE: item(qm ? "pass" : "pass", qm, "23.4/25.1", "23.4 QM determined at the LE stage (guard.qm_facts)"),
+    CTC_COMPLIANCE: item(compliance ? "pass" : "fail", compliance, "23.4/25.1", "no compliance.qm.determined (23.4) and no compliance.gate.opened (25.1) on the record"),
     CTC_EDUCATION: { status: "n/a", evidence_ref: null, source: src("derived", "no homeownership education requirement on the findings", "23.2") },
     CTC_LOCK: item(lock ? "pass" : "fail", lock, "21.4", "no executed lock"),
     CTC_IDENTITY_OFAC: item(idv && ofac ? "pass" : "fail", ofac ?? idv, "22.6", "identity or OFAC missing"),
     CTC_QC_PREFUNDING: { status: qcOpen ? "fail" : "pass", evidence_ref: qc?.id ?? null, source: qc ? src("event", `${qc.type}:${qc.id}`, "28.1") : src("derived", "no prefunding hold on the record", "28.1") },
     CTC_MLO_APPROVALS: item(mlo ? "pass" : "fail", mlo, "21.1/21.4", "no MLO approval"),
-    CTC_REGB_TIMING: item("pass", regb, "21.6", "application received"),
+    CTC_REGB_TIMING: item(regbOk ? "pass" : "fail", regb, "21.6", "REGB_1002_9_DECISION_30 not on the record"),
     CTC_DECISION_VALID: item(decision ? "pass" : "fail", decision, "23.3", "no decision"),
   };
 }

@@ -30,7 +30,7 @@ export class FakeRonSessionFeed {
     signers.forEach((party, k) => out.push({ seq: ++seq, op: "identity", at: at(7 + 4 * k), detail: { party_id: party, method: "credential_analysis_kba", credential_type: "driver_license", credential_analysis_result: "pass", kba_attempts: [{ questions: 5, correct: k === 0 ? 5 : 4, seconds: 71, at: at(7 + 4 * k), notary_party_id: opts.notary_party_id }], notary_party_id: opts.notary_party_id, vendor: FAKE_VENDOR } }));
     out.push({ seq: ++seq, op: "start", at: at(12), detail: {} });
     if (opts.enote) out.push({ seq: ++seq, op: "enote_created", at: at(13), detail: { closing_document_id: documents.enote, min: opts.min, partner_org_id: opts.partner_org_id } });
-    out.push({ seq: ++seq, op: "sign", at: at(18), detail: { closing_document_id: documents.final_1003, kind: "final_1003", signer_party_id: signers[0], signed_at: at(18), signature_method: "esign_ron", required_note_signers: signers } });
+    signers.forEach((party) => out.push({ seq: ++seq, op: "sign", at: at(18), detail: { closing_document_id: documents.final_1003, kind: "final_1003", signer_party_id: party, signed_at: at(18), signature_method: "esign_ron", required_note_signers: signers } }));   // each applicant signs the final 1003 (14:18)
     signers.forEach((party, k) => out.push({ seq: ++seq, op: "sign", at: at(25 + k), detail: { closing_document_id: documents.enote, kind: opts.enote ? "enote" : "note", signer_party_id: party, signed_at: at(25 + k), signature_method: "esign_ron", required_note_signers: signers } }));
     signers.forEach((party) => out.push({ seq: ++seq, op: "sign", at: at(31), detail: { closing_document_id: documents.security_instrument, kind: "security_instrument", signer_party_id: party, signed_at: at(31), signature_method: "esign_ron", required_note_signers: signers } }));
     out.push({ seq: ++seq, op: "notarial_act", at: at(36), detail: { closing_document_id: documents.security_instrument, kind: "security_instrument", act_type: "acknowledgment", completed_at: at(36), certificate_indicates_communication_technology: true, recordable: true, last: true, notary_party_id: opts.notary_party_id } });
@@ -38,19 +38,59 @@ export class FakeRonSessionFeed {
     this.timelines.set(closingId, out);
     return out;
   }
+  /** The platform's sealed Authoritative Copy (the SMART Doc bytes 26.2 validates against the seal) and its audit trail (the recording reference and the trail's hash 26.2 ingests). */
+  authoritativeCopy(min: string | null, amount: string, rate: string): string { return `<SMART_DOCUMENT version="1.02"><DATA min="${min ?? ""}" amount="${amount}" rate="${rate}"/></SMART_DOCUMENT>`; }
+  auditTrail(closingId: string, sessionRef: string | null, events: readonly RonSessionEvent[]): { text: string; recording_ref: string; journal_ref: string } {
+    const text = JSON.stringify({ closing_id: closingId, session_ref: sessionRef, vendor: FAKE_VENDOR, events: events.map((e) => ({ seq: e.seq, op: e.op, at: e.at })) });
+    return { text, recording_ref: `${FAKE_VENDOR}-REC-${closingId.slice(0, 24)}`, journal_ref: `${FAKE_VENDOR}-JOURNAL-${closingId.slice(0, 24)}` };
+  }
   /** The events at or before `now` the pass has not applied yet (idempotent by session + sequence). */
   pending(closingId: string, events: readonly RonSessionEvent[], nowIso: string): readonly RonSessionEvent[] { const c = this.consumed.get(closingId) ?? 0; return events.filter((e) => e.seq > c && e.at <= nowIso); }
   applied(closingId: string, seq: number): void { this.consumed.set(closingId, Math.max(this.consumed.get(closingId) ?? 0, seq)); }
   consumedThrough(closingId: string): number { return this.consumed.get(closingId) ?? 0; }
 }
 
-export interface SettlementStatement { readonly statement_id: string; readonly kind: "requested_net" | "final"; readonly requested_net_cents: bigint; readonly escrow_deposit_cents: bigint; readonly document_id: string; readonly received_at: string }
-/** The settlement agent (FAKE): asked for the requested-net statement once the worksheet exists, the receipt confirmation once the wire is accepted, the final settlement statement after the funds arrive. A test scripts a statement per application (the money-mismatch branch). */
+export interface SettlementStatement { readonly statement_id: string; readonly kind: "requested_net" | "final"; readonly requested_net_cents: bigint; readonly escrow_deposit_cents: bigint; readonly received_at: string }
+export interface SettlementFeeQuote { readonly fees: readonly { fee_code: string; amount_cents: string }[]; readonly quoted_at: string; readonly title_order_id: string }
+/** The settlement agent (FAKE): the title-order fee quote 25.2 records as the settlement_agent figure source; the requested-net statement once the worksheet exists (the CD's net unless a test scripts a different figure — the money-mismatch branch); the funds-received confirmation once the wire is accepted; the final settlement statement after the funds arrive (delayed or withheld by a test — T13). */
 export class FakeSettlementAgent {
   readonly vendorName = FAKE_VENDOR;
   private readonly scripted = new Map<string, SettlementStatement[]>();
+  private readonly withheld = new Map<string, string | null>();
   script(applicationId: string, s: SettlementStatement): void { const l = this.scripted.get(applicationId) ?? []; l.push(s); this.scripted.set(applicationId, l); }
+  /** Withhold the final statement until `untilIso` (null: indefinitely) — the stalled step of T13. */
+  withholdFinal(applicationId: string, untilIso: string | null): void { this.withheld.set(applicationId, untilIso); }
   scripted_for(applicationId: string, kind: SettlementStatement["kind"]): SettlementStatement | null { return (this.scripted.get(applicationId) ?? []).filter((s) => s.kind === kind).at(-1) ?? null; }
+  /** The agent's fee quote against the title order: the worked example's lender's policy, settlement fee and recording (25.2's SRC-SA lines). */
+  feeQuote(titleOrderId: string, quotedAt: string): SettlementFeeQuote { return { title_order_id: titleOrderId, quoted_at: quotedAt, fees: [{ fee_code: "title_lender_policy", amount_cents: "120000" }, { fee_code: "settlement_fee", amount_cents: "60000" }, { fee_code: "recording", amount_cents: "3000" }] }; }
+  /** The statement requesting the net: the scripted one, else the agent's own figures = the CD's (the worksheet's net and escrow deposit). */
+  requestedNet(applicationId: string, cd: { net_wire_cents: bigint; escrow_deposit_cents: bigint }, nowIso: string): SettlementStatement {
+    return this.scripted_for(applicationId, "requested_net") ?? { statement_id: `${FAKE_VENDOR}-SS-${applicationId.slice(0, 8)}-1`, kind: "requested_net", requested_net_cents: cd.net_wire_cents, escrow_deposit_cents: cd.escrow_deposit_cents, received_at: nowIso };
+  }
+  /** The funds-received confirmation: the agent confirms through the portal once the bank accepted the wire. */
+  receiptConfirmation(acceptedAtIso: string): { funds_received_by_agent_at: string; channel: "portal" } { return { funds_received_by_agent_at: acceptedAtIso, channel: "portal" }; }
+  /** The final settlement statement after disbursement (null while withheld). */
+  finalStatement(applicationId: string, cd: { net_wire_cents: bigint; escrow_deposit_cents: bigint }, disbursedAtIso: string, nowIso: string): SettlementStatement | null {
+    if (this.withheld.has(applicationId)) { const until = this.withheld.get(applicationId); if (until === null || until === undefined || nowIso < until) return null; }
+    return this.scripted_for(applicationId, "final") ?? { statement_id: `${FAKE_VENDOR}-FSS-${applicationId.slice(0, 8)}`, kind: "final", requested_net_cents: cd.net_wire_cents, escrow_deposit_cents: cd.escrow_deposit_cents, received_at: disbursedAtIso };
+  }
+}
+/** The funding bank (FAKE, 26.3's wire channel): a released wire is accepted with an IMAD on the next poll; a test may reject one. */
+export class FakeFundingBank {
+  readonly vendorName = FAKE_VENDOR;
+  private readonly rejected = new Map<string, string>();
+  reject(wireId: string, reason: string): void { this.rejected.set(wireId, reason); }
+  poll(wireId: string, releasedAtIso: string, nowIso: string): { status: "accepted"; imad: string; accepted_at: string } | { status: "rejected"; reason: string } | { status: "pending" } {
+    if (this.rejected.has(wireId)) return { status: "rejected", reason: this.rejected.get(wireId)! };
+    if (nowIso < releasedAtIso) return { status: "pending" };
+    const d = releasedAtIso.slice(0, 10).replace(/-/g, "");
+    return { status: "accepted", imad: `${d}B1QGC01R${wireId.replace(/[^0-9A-Za-z]/g, "").slice(-6).toUpperCase().padStart(6, "0")}`, accepted_at: new Date(Date.parse(releasedAtIso) + 60_000).toISOString() };
+  }
+}
+/** The print/mail vendor (FAKE): a CD printed and tendered to USPS the same day → the mailing proof (the USPS acceptance) 25.2's mailbox rule keys on. */
+export class FakePrintMail {
+  readonly vendorName = FAKE_VENDOR;
+  mail(disclosureId: string, consumerId: string, atIso: string): { mailing_proof_id: string; mailed_at: string } { return { mailing_proof_id: `${FAKE_VENDOR}-USPS-${disclosureId.slice(0, 16)}-${consumerId}`, mailed_at: atIso }; }
 }
 export interface OperatorEvidence { readonly fnma_loan_number: string; readonly submitted_at: string; readonly evidence: readonly { kind: string; document_id: string }[] }
 /** The Fannie Mae portal operator (FAKE): submits the frozen package after the delay with the four evidence kinds and the captured Loan Delivery state. */
@@ -78,7 +118,7 @@ export class FakeCarrier {
   }
 }
 
-export interface Fakes35_6 { readonly ron: FakeRonSessionFeed; readonly settlementAgent: FakeSettlementAgent; readonly operator: FakePortalOperator; readonly evault: FakeEvaultCertifier; readonly carrier: FakeCarrier; readonly roles: readonly string[]; readonly delaySeconds: number; fills(role: string): boolean }
+export interface Fakes35_6 { readonly ron: FakeRonSessionFeed; readonly settlementAgent: FakeSettlementAgent; readonly bank: FakeFundingBank; readonly printMail: FakePrintMail; readonly operator: FakePortalOperator; readonly evault: FakeEvaultCertifier; readonly carrier: FakeCarrier; readonly roles: readonly string[]; readonly delaySeconds: number; fills(role: string): boolean }
 const sets = new WeakMap<Runtime, Fakes35_6>();
 /** The runtime's FAKE set (rule 4 / operational prerequisite 35.7): the operator, the settlement agent and the notary, after the delay, as `{kind: human, id: FAKE:<role>, role}`; empty under FAKE_REVIEWERS=off or outside INTEGRATIONS=fake. */
 export function fakesFor(rt: Runtime): Fakes35_6 {
@@ -89,7 +129,7 @@ export function fakesFor(rt: Runtime): Fakes35_6 {
   const off = environment === "production" || environment === "prod" || (env["FAKE_REVIEWERS"] ?? "").trim().toLowerCase() === "off" || (env["INTEGRATIONS"] ?? "fake") !== "fake";
   const delay = Number(env["FAKE_REVIEWER_DELAY_S"] ?? FAKE_35_6_DELAY_S_DEFAULT);
   const roles = off ? [] : FAKE_35_6_ROLES;
-  const f: Fakes35_6 = { ron: new FakeRonSessionFeed(), settlementAgent: new FakeSettlementAgent(), operator: new FakePortalOperator(Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT), evault: new FakeEvaultCertifier(), carrier: new FakeCarrier(), roles, delaySeconds: Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT, fills: (role) => roles.includes(role) };
+  const f: Fakes35_6 = { ron: new FakeRonSessionFeed(), settlementAgent: new FakeSettlementAgent(), bank: new FakeFundingBank(), printMail: new FakePrintMail(), operator: new FakePortalOperator(Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT), evault: new FakeEvaultCertifier(), carrier: new FakeCarrier(), roles, delaySeconds: Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT, fills: (role) => roles.includes(role) };
   sets.set(root, f);
   return f;
 }

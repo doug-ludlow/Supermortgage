@@ -7,7 +7,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Queryable } from "../../infra/db/client.ts";
 
-export interface StoreDocumentInput { readonly kind: string; readonly application_id: string | null; readonly loan_id: string | null; readonly text: string; readonly retention_class: string; readonly source: string; readonly now: string; readonly id?: string }
+export interface StoreDocumentInput { readonly kind: string; readonly application_id: string | null; readonly loan_id: string | null; readonly text: string; readonly retention_class: string; readonly source: string; readonly now: string; readonly id?: string; /** documents.source_channel (22.1's list): agent_generated for the platform's own artifacts, vendor_delivery for a FAKE vendor's bytes. */ readonly source_channel?: "agent_generated" | "vendor_delivery" }
 export interface DocumentsPort35_6 { store(q: Queryable, i: StoreDocumentInput): Promise<string> }
 
 const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex");
@@ -30,8 +30,8 @@ export const pgDocumentsFallback: DocumentsPort35_6 = {
     const fields: Record<string, unknown> = { id };
     const set = (k: string, v: unknown): void => { if (cols.has(k)) fields[k] = v; };
     set("loan_id", i.loan_id); set("application_id", i.application_id); set("kind", i.kind); set("doc_class", i.kind); set("sha256", hash);
-    set("retention_class", i.retention_class); set("source_channel", "system"); set("received_at", i.now); set("created_at", i.now); set("byte_size", Buffer.byteLength(i.text));
-    set("mime_type", "application/json"); set("storage_uri", `mem://35.6/${id}`); set("metadata", JSON.stringify({ source: i.source, process: "35.6" })); set("integrity_status", "verified");
+    set("retention_class", i.retention_class); set("source_channel", i.source_channel ?? "agent_generated"); set("received_at", i.now); set("created_at", i.now); set("byte_size", Buffer.byteLength(i.text));
+    set("mime_type", "application/json"); set("storage_uri", `mem://35.6/${id}`); set("metadata", JSON.stringify({ source: i.source, process: "35.6" })); set("integrity_status", "passed"); set("freshness_basis", "none"); set("freshness_status", "n_a");
     const keys = Object.keys(fields);
     await q.query(`INSERT INTO documents (${keys.join(", ")}) VALUES (${keys.map((_k, n) => `$${n + 1}`).join(", ")})`, keys.map((k) => fields[k]));
     return id;

@@ -103,7 +103,9 @@ const duSubmitted: StepDef = {
     }
     if (String((interpreted!.payload as Row)["policy_outcome"] ?? "proceed") !== "proceed") return { wait: { status: "waiting_human", waiting_on: "underwriting_reviewer" } };
     const decisionId = decisionIdFor(rec);
-    if (!rec.entities("risk_assessments", (d) => d["decision_id"] === decisionId).length) await ctx.run({ process: "23.3", name: "assessRisk", actor: UNDERWRITER, input: { risk_input: f.risk.value, decision_id: decisionId }, detail: { sources: { risk_input: f.risk.source } } });
+    // the risk input is read after 23.2's interpretation (eligibility outside DU's scope is its policy_outcome) — never the facts as they stood before the findings
+    const fr = await duFacts(rec, ctx.now);
+    if (!rec.entities("risk_assessments", (d) => d["decision_id"] === decisionId).length) await ctx.run({ process: "23.3", name: "assessRisk", actor: UNDERWRITER, input: { risk_input: fr.risk.value, decision_id: decisionId }, detail: { sources: { risk_input: fr.risk.source } } });
     const f3 = await duFacts(await ctx.refresh(), ctx.now);
     const file = newDecisionFile(f3.file.value as unknown as Parameters<typeof newDecisionFile>[0]);
     const evidence = rec.entities("documents", (d) => d["doc_class"] !== undefined && d["doc_class"] !== null).map((d) => d.id);
@@ -119,24 +121,10 @@ const conditionsOpen: StepDef = {
   exit: (rec) => rec.last("clear_to_close.issued", (p) => p["passed"] === true),
   clocked: () => false,
   actions: async (ctx) => {
-    let rec = ctx.rec;
-    let open = rec.entities("conditions", (d) => !["cleared", "waived", "superseded", "not_applicable"].includes(String(d["status"])));
-    if (open.length) {
-      // reviewer-only conditions are the underwriting_reviewer's (23.3): the FAKE reviewer clears an item that sits satisfied_pending_review after the delay (rule 4, INTEGRATIONS=fake); borrower-supplied ones are the borrower's through 32.6's cards
-      const reviewer = open.filter((c) => c.data["status"] === "satisfied_pending_review" || c.data["requires_role"] === "underwriting_reviewer");
-      const fake = ctx.rt.reviewers;
-      if (reviewer.length && fake?.fills("underwriting_reviewer")) {
-        const cutoff = Date.parse(ctx.now) - fake.delaySeconds * 1000;
-        for (const c of reviewer.filter((x) => x.data["status"] === "satisfied_pending_review" && Date.parse(x.updatedAt) <= cutoff)) {
-          const ev = rec.entities("clearance_evaluations", (d) => d["condition_id"] === c.id).at(-1);
-          if (!ev) continue;
-          await ctx.run({ process: "23.3", name: "clearCondition", actor: fake.actor("underwriting_reviewer"), input: { condition_id: c.id, evaluation: ev.data, notes: `FAKE reviewer: cleared after ${fake.delaySeconds}s (INTEGRATIONS=fake, DELTA-30)` }, detail: { condition_id: c.id, evaluation: ev.id } });
-        }
-        rec = await ctx.refresh();
-        open = rec.entities("conditions", (d) => !["cleared", "waived", "superseded", "not_applicable"].includes(String(d["status"])));
-      }
-      if (open.length) return open.some((c) => c.data["status"] === "satisfied_pending_review" || c.data["requires_role"] === "underwriting_reviewer") ? { wait: { status: "waiting_human", waiting_on: "underwriting_reviewer" } } : { wait: { status: "waiting_borrower", waiting_on: "borrower", clocked: false } };
-    }
+    const rec = ctx.rec;
+    const open = rec.entities("conditions", (d) => !["cleared", "waived", "superseded", "not_applicable"].includes(String(d["status"])));
+    // rule 4: a reviewer-only item (satisfied_pending_review, requires_role) is the underwriting_reviewer's act — the FAKE reviewer's in reviewers.ts on nonprod — and the pass does nothing on the row until `condition.cleared` arrives; borrower-supplied ones are the borrower's through 32.6's cards
+    if (open.length) return open.some((c) => c.data["status"] === "satisfied_pending_review" || c.data["requires_role"] === "underwriting_reviewer") ? { wait: { status: "waiting_human", waiting_on: "underwriting_reviewer" } } : { wait: { status: "waiting_borrower", waiting_on: "borrower", clocked: false } };
     const facts = ctcFacts(rec);
     const decisionId = decisionIdFor(rec);
     const checklist = await ctx.run<{ passed: boolean; items: { code: string; status: string }[] }>({ process: "23.3", name: "runCtcChecklist", actor: UNDERWRITER, input: { op: "ctc", decision_id: decisionId, facts: ctcFactsInput(facts) }, detail: { sources: ctcFactsSources(facts) } });

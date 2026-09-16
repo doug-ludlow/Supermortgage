@@ -31,7 +31,7 @@ import { EscalationService } from "../../app/escalations.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { daysBetween, plainDate as D } from "../../kernel/calendar/date.ts";
 import { STEPS, stepIndex, type StepDef, type StepOutcome, type Wait } from "./steps-35-6.ts";
-import { loadRecord, type OrchRecord } from "./facts-35-6.ts";
+import { loadRecord, RecordGap, type OrchRecord } from "./facts-35-6.ts";
 import { fakesFor } from "./fakes-35-6.ts";
 import { storeDocument } from "./documents-port-35-6.ts";
 
@@ -76,7 +76,7 @@ export interface OrchRow {
   readonly funded_at: string | null; readonly staged_at: string | null; readonly boarded_at: string | null; readonly package_frozen_at: string | null; readonly delivered_at: string | null; readonly certified_at: string | null; readonly purchased_at: string | null; readonly reconciled_at: string | null; readonly completed_at: string | null;
   readonly funding_id: string | null; readonly warehouse_advance_id: string | null; readonly delivery_id: string | null; readonly purchase_advice_id: string | null;
   readonly funding_snapshot_id: string | null; readonly purchase_reconciliation_id: string | null;
-  readonly last_event_sequence: number; readonly step_attempts: number; readonly lease_holder: string | null; readonly lease_until: string | null;
+  readonly last_event_sequence: number; readonly step_attempts: number; readonly lease_holder: string | null; readonly lease_until: string | null; readonly last_pass_as_of: string | null;
   readonly opened_at: string; readonly updated_at: string;
 }
 type Row = Record<string, unknown>;
@@ -88,9 +88,9 @@ function rowOf(r: Row): OrchRow {
     scheduled_consummation_at: ts(r["scheduled_consummation_at"]), consummation_at: ts(r["consummation_at"]), rescission_expires_at: ts(r["rescission_expires_at"]), earliest_funding_date: s(r["earliest_funding_date"]),
     funded_at: ts(r["funded_at"]), staged_at: ts(r["staged_at"]), boarded_at: ts(r["boarded_at"]), package_frozen_at: ts(r["package_frozen_at"]), delivered_at: ts(r["delivered_at"]), certified_at: ts(r["certified_at"]), purchased_at: ts(r["purchased_at"]), reconciled_at: ts(r["reconciled_at"]), completed_at: ts(r["completed_at"]),
     funding_id: s(r["funding_id"]), warehouse_advance_id: s(r["warehouse_advance_id"]), delivery_id: s(r["delivery_id"]), purchase_advice_id: s(r["purchase_advice_id"]), funding_snapshot_id: s(r["funding_snapshot_id"]), purchase_reconciliation_id: s(r["purchase_reconciliation_id"]),
-    last_event_sequence: Number(r["last_event_sequence"] ?? 0), step_attempts: Number(r["step_attempts"] ?? 0), lease_holder: s(r["lease_holder"]), lease_until: ts(r["lease_until"]), opened_at: ts(r["opened_at"])!, updated_at: ts(r["updated_at"])! };
+    last_event_sequence: Number(r["last_event_sequence"] ?? 0), step_attempts: Number(r["step_attempts"] ?? 0), lease_holder: s(r["lease_holder"]), lease_until: ts(r["lease_until"]), last_pass_as_of: ts(r["last_pass_as_of"]), opened_at: ts(r["opened_at"])!, updated_at: ts(r["updated_at"])! };
 }
-const ORCH_COLS = "id, application_id, loan_id, transaction_type, funding_type, note_form, closing_type, rescindable, step, status, waiting_on, hold_reason, scheduled_consummation_at, consummation_at, rescission_expires_at, earliest_funding_date::text AS earliest_funding_date, funded_at, staged_at, boarded_at, package_frozen_at, delivered_at, certified_at, purchased_at, reconciled_at, completed_at, funding_id, warehouse_advance_id, delivery_id, purchase_advice_id, funding_snapshot_id, purchase_reconciliation_id, last_event_sequence, step_attempts, lease_holder, lease_until, opened_at, updated_at";
+const ORCH_COLS = "id, application_id, loan_id, transaction_type, funding_type, note_form, closing_type, rescindable, step, status, waiting_on, hold_reason, scheduled_consummation_at, consummation_at, rescission_expires_at, earliest_funding_date::text AS earliest_funding_date, funded_at, staged_at, boarded_at, package_frozen_at, delivered_at, certified_at, purchased_at, reconciled_at, completed_at, funding_id, warehouse_advance_id, delivery_id, purchase_advice_id, funding_snapshot_id, purchase_reconciliation_id, last_event_sequence, step_attempts, lease_holder, lease_until, last_pass_as_of, opened_at, updated_at";
 
 export async function orchestrationByApplication(q: Queryable, applicationId: string): Promise<OrchRow | null> {
   const rows = await q.query<Row>(`SELECT ${ORCH_COLS} FROM closing_orchestrations WHERE application_id = $1`, [applicationId]);
@@ -155,7 +155,7 @@ export async function runOrchestrationPass(rt: Runtime, nowIso: string, opts: Pa
   const leased: string[] = [];
   try {
     for (let page = 0; page < 20; page++) {
-      const claimed = await claim(rt, holder, opts.limit ?? CLAIM_LIMIT, opts.applicationId ?? null);
+      const claimed = await claim(rt, holder, opts.limit ?? CLAIM_LIMIT, opts.applicationId ?? null, nowIso);
       if (!claimed.length) break;
       leased.push(...claimed.map((r) => r.id));
       for (const row of claimed) {
@@ -172,14 +172,13 @@ export async function runOrchestrationPass(rt: Runtime, nowIso: string, opts: Pa
 /** Rule 10: the pass pages rows until 60 s of the sweep's budget have elapsed. */
 export const PASS_BUDGET_MS = 60_000;
 
-/** Discovery: an application whose log carries `application.trid_received` and the first step's prerequisites, no `loans` row yet and no orchestration row — one row at `credit_ordered` (T1). The proper `orchestration.opened` is journaled at `clear_to_close` (state machine). */
+/** Discovery: an application whose log carries `application.trid_received` and the first step's prerequisites (the LE received, the borrowers' standing blanket authorization), no `loans` row yet and no orchestration row — one row at `credit_ordered` (T1); an application whose credit the hosted flows already ordered is discovered too (the fold skips what the log already carries). The proper `orchestration.opened` is journaled at `clear_to_close` (state machine). */
 async function discover(rt: Runtime, nowIso: string, limit: number): Promise<number> {
   const rows = await rt.db.query<{ application_id: string }>(
     `SELECT DISTINCT e.application_id::text AS application_id FROM loan_events e JOIN applications a ON a.id = e.application_id LEFT JOIN closing_orchestrations o ON o.application_id = a.id
       WHERE e.type = 'application.trid_received' AND o.id IS NULL AND a.loan_id IS NULL
         AND EXISTS (SELECT 1 FROM loan_events le WHERE le.application_id = a.id AND le.type = 'disclosure.le.received')
         AND EXISTS (SELECT 1 FROM consents c WHERE c.application_id = a.id AND c.kind = 'blanket_verification_authorization' AND c.standing AND (c.status IS NULL OR c.status = 'active'))
-        AND NOT EXISTS (SELECT 1 FROM entity_current ec WHERE ec.kind = 'credit_reports' AND ec.data->>'application_id' = a.id::text)
       ORDER BY 1 LIMIT $1`, [limit]);
   let n = 0;
   for (const r of rows) n += await discoverApplication(rt, r.application_id, nowIso);
@@ -196,26 +195,31 @@ export async function discoverApplication(rt: Runtime, applicationId: string, no
   const first = STEPS[0]!;
   const id = randomUUID();
   const clocked = first.clocked?.(rec) ?? true;
-  await rt.uow.run({ applicationId }, async (ctx) => {
-    ctx.events.append({ type: EV.entered, applicationId, aggregate: { kind: "closing_orchestration", id }, actor: ORCH_ACTOR, payload: { orchestration_id: id, application_id: applicationId, step: first.name, clocked, waiting_on: null, entered_at: ctx.clock.now() } });
-    ctx.decide(decisionOf({ orchestration_id: id, application_id: applicationId, loan_id: null, step: first.name, action: "entered", command: null, trigger_event_id: null, sources_sha256: rec.sourcesHash(), rationale: `application discovered from application.trid_received; entered ${first.name}` }));
-    return id;
-  }, { clock: rt.clock, before: async (q) => {
-    await q.query(`INSERT INTO closing_orchestrations (id, application_id, transaction_type, step, status, last_event_sequence, opened_at, updated_at) VALUES ($1, $2, $3, $4, 'open', 0, $5, $5)`, [id, applicationId, app.transaction_type ?? null, first.name, nowIso]);
+  try {
+    await rt.uow.run({ applicationId }, async (ctx) => {
+      ctx.events.append({ type: EV.entered, applicationId, aggregate: { kind: "closing_orchestration", id }, actor: ORCH_ACTOR, payload: { orchestration_id: id, application_id: applicationId, step: first.name, clocked, waiting_on: null, entered_at: ctx.clock.now() } });
+      ctx.decide(decisionOf({ orchestration_id: id, application_id: applicationId, loan_id: null, step: first.name, action: "entered", command: null, trigger_event_id: null, sources_sha256: rec.sourcesHash(), rationale: `application discovered from application.trid_received; entered ${first.name}` }));
+      return id;
+    }, { clock: rt.clock, before: async (q) => {
+    // a concurrent `orchestration.open` or pass may have inserted the row since the check above: the unique application_id decides, and the loser's event and decision roll back with its unit of work
+    const ins = await q.query<{ id: string }>(`INSERT INTO closing_orchestrations (id, application_id, transaction_type, step, status, last_event_sequence, opened_at, updated_at) VALUES ($1, $2, $3, $4, 'open', 0, $5, $5) ON CONFLICT (application_id) DO NOTHING RETURNING id`, [id, applicationId, app.transaction_type ?? null, first.name, nowIso]);
+    if (!ins.length) throw new AlreadyOpen(applicationId);
     await q.query(`INSERT INTO closing_orchestration_steps (orchestration_id, application_id, step, kind, clocked, actor_kind, actor_id, trigger_event_id, detail, sweep_run_id, created_at) VALUES ($1, $2, $3, 'entered', $4, 'agent', $5, $6, $7::jsonb, $8, clock_timestamp())`,
       [id, applicationId, first.name, clocked, ORCH_AGENT, rec.last("application.trid_received")?.id ?? null, JSON.stringify({ discovered_at: nowIso }), rt.sweepRunId]);
-  } });
+    } });
+  } catch (e) { if (e instanceof AlreadyOpen) return 0; throw e; }
   return 1;
 }
+class AlreadyOpen extends Error { constructor(applicationId: string) { super(`orchestration already open for ${applicationId}`); this.name = "AlreadyOpen"; } }
 
-/** The claim (rule 1, 35.3 rule 6's executor pattern): open rows whose lease is free, `FOR UPDATE SKIP LOCKED`, leased to this holder for five minutes of WALL time (`now()` in SQL, never the demo clock) in one short transaction that commits before the rows are processed. */
-async function claim(rt: Runtime, holder: string, limit: number, applicationId: string | null): Promise<OrchRow[]> {
+/** The claim (rule 1, 35.3 rule 6's executor pattern): open rows whose lease is free and that no pass has claimed at this sweep instant (`last_pass_as_of < as_of` — T12: a row is claimed by exactly one pass per sweep), `FOR UPDATE SKIP LOCKED`, leased to this holder for five minutes of WALL time (`now()` in SQL, never the demo clock) in one short transaction that commits before the rows are processed. */
+async function claim(rt: Runtime, holder: string, limit: number, applicationId: string | null, asOf: string): Promise<OrchRow[]> {
   return rt.db.tx(async (q) => {
     const rows = await q.query<Row>(
-      `SELECT ${ORCH_COLS} FROM closing_orchestrations WHERE status NOT IN ('completed', 'unwound', 'cancelled') AND (lease_until IS NULL OR lease_until < now()) ${applicationId ? "AND application_id = $2" : ""} ORDER BY updated_at FOR UPDATE SKIP LOCKED LIMIT $1`,
-      applicationId ? [limit, applicationId] : [limit]);
+      `SELECT ${ORCH_COLS} FROM closing_orchestrations WHERE status NOT IN ('completed', 'unwound', 'cancelled') AND (lease_until IS NULL OR lease_until < now()) AND (last_pass_as_of IS NULL OR last_pass_as_of < $2::timestamptz) ${applicationId ? "AND application_id = $3" : ""} ORDER BY updated_at FOR UPDATE SKIP LOCKED LIMIT $1`,
+      applicationId ? [limit, asOf, applicationId] : [limit, asOf]);
     if (!rows.length) return [];
-    await q.query(`UPDATE closing_orchestrations SET lease_holder = $2, lease_until = now() + ($3::int * interval '1 millisecond') WHERE id = ANY($1::uuid[])`, [rows.map((r) => String(r["id"])), holder, LEASE_MS]);
+    await q.query(`UPDATE closing_orchestrations SET lease_holder = $2, lease_until = now() + ($3::int * interval '1 millisecond'), last_pass_as_of = $4::timestamptz WHERE id = ANY($1::uuid[])`, [rows.map((r) => String(r["id"])), holder, LEASE_MS, asOf]);
     return rows.map(rowOf);
   });
 }
@@ -227,7 +231,8 @@ interface Pending { step: string; status: OrchStatus; waiting_on: string | null;
 export function rowDue(rt: Runtime, row: OrchRow, newest: number): boolean {
   if (newest > row.last_event_sequence) return true;
   if (row.status === "open" || row.status === "waiting_vendor" || row.status === "waiting_window" || row.status === "unwinding") return true;
-  if (row.status === "waiting_human") return fakesFor(rt).fills(row.waiting_on ?? "") || (rt.reviewers?.fills(row.waiting_on ?? "") ?? false);
+  // a person's wait is due only when THIS process's FAKE fills the role (the settlement agent, the portal operator, the notary); the FAKE reviewers (35.7 / reviewers.ts) act through their own events, which the pass folds
+  if (row.status === "waiting_human") return fakesFor(rt).fills(row.waiting_on ?? "");
   return false;
 }
 
@@ -245,13 +250,18 @@ export async function processRow(rt: Runtime, row: OrchRow, nowIso: string, runI
   let wrote = false;
   let escalations: EscalationService | undefined;
   let recOut: OrchRecord | null = null;
+  let stale = false;
   await rt.uow.run({ applicationId: row.application_id, ...(loanIdAtStart ? { loanId: loanIdAtStart } : {}) }, async (ctx) => {
     const view = rt.commandView(ctx.q!, nested);
+    // the row as it is NOW, locked for this transaction: the claimed snapshot is stale when a person held, released or unwound the row in between (their write wins; this pass skips)
+    const fresh = (await ctx.q!.query<Row>(`SELECT ${ORCH_COLS} FROM closing_orchestrations WHERE id = $1 FOR UPDATE`, [row.id])).map(rowOf)[0];
+    if (!fresh || fresh.status !== row.status || fresh.step !== row.step || fresh.hold_reason !== row.hold_reason || fresh.updated_at !== row.updated_at) { stale = true; recOut = await loadRecord(view, app, loanIdAtStart); return; }
     let rec = await loadRecord(view, app, loanIdAtStart);
-    const hasNew = rec.lastSequence() > row.last_event_sequence;
+    // a substantive new fact: an owner's event, never this process's own bookkeeping or the platform's reactions to it
+    const substantive = rec.after(row.last_event_sequence).some((e) => !NOT_A_FACT.some((prefix) => e.type.startsWith(prefix)));
     p.entered = new Set((await ctx.q!.query<{ step: string }>(`SELECT step FROM closing_orchestration_steps WHERE orchestration_id = $1 AND kind = 'entered'`, [row.id])).map((r) => r.step));
     if (row.status === "held") {
-      if (!(hasNew && row.hold_reason && ["gate_closed", "money_mismatch", "unavailable"].includes(row.hold_reason))) { recOut = rec; return; }
+      if (!(substantive && row.hold_reason && ["gate_closed", "money_mismatch", "unavailable"].includes(row.hold_reason))) { recOut = rec; return; }
       p.status = "open"; p.hold_reason = null; p.waiting_on = null; p.journal.push({ step: row.step, kind: "released", detail: { by: "pass", reason: "new facts after " + row.hold_reason } }); p.events.push({ type: EV.released, payload: { step: row.step, by: "pass", hold_reason: row.hold_reason } });
     }
     const fakes = fakesFor(rt);
@@ -264,13 +274,16 @@ export async function processRow(rt: Runtime, row: OrchRow, nowIso: string, runI
         p.journal.push({ step: p.step, kind: "command_run", command: { process: c.process, name: c.name, op: typeof c.input["op"] === "string" ? c.input["op"] : null }, actor: c.actor, decision_id: r.decisions[0]?.id ?? null, trigger_event_id: r.event?.id ?? null, detail: journalDetail({ ...(c.detail ?? {}), events: r.events.map((e) => e.type) }) });
         return r.output as T;
       } catch (e) {
-        if (e instanceof CommandRefused) { p.journal.push({ step: p.step, kind: "command_refused", command: { process: c.process, name: c.name, op: typeof c.input["op"] === "string" ? c.input["op"] : null }, actor: c.actor, refusal_code: e.code, detail: journalDetail({ ...(c.detail ?? {}), reason: e.message.slice(0, 500) }) }); throw new StepHalt({ hold: { reason: "gate_closed", gate: e.code, detail: { command: `${c.process} ${c.name}`, reason: e.message.slice(0, 500) } } }); }
+        // an owner's refusal (the bus's CommandRefused, or the owner's own gate/refusal class carrying a code — 22.2 CreditGateClosed, 25.1 ComplianceGateBlocked, 25.2 CdRefused, 26.3 FundingRefused …) holds the row on that gate; anything else is a failure the step retries
+        const code = refusalCode(e);
+        if (code) { p.journal.push({ step: p.step, kind: "command_refused", command: { process: c.process, name: c.name, op: typeof c.input["op"] === "string" ? c.input["op"] : null }, actor: c.actor, refusal_code: code, detail: journalDetail({ ...(c.detail ?? {}), reason: (e as Error).message.slice(0, 500) }) }); throw new StepHalt({ hold: { reason: "gate_closed", gate: code, detail: { command: `${c.process} ${c.name}`, reason: (e as Error).message.slice(0, 500) } } }); }
         throw e;
       }
     };
     const sctx: StepContext = { rt: view, rec, row, now: nowIso, runId, journal: p.journal, fakes, run: runCommand, refresh: async () => { rec = await loadRecord(view, app, rec.loanId ?? (await view.applications.get(app.id))?.loan_id ?? loanIdAtStart); (sctx as { rec: OrchRecord }).rec = rec; return rec; }, halt: (o) => { throw new StepHalt(o); } };
-    if (row.status === "unwinding") { await foldUnwind(sctx, p); recOut = rec; return; }
-    for (let i = 0; i < MAX_TRANSITIONS_PER_PASS; i++) {
+    // an unwinding row folds the owners' unwind events (26.3's completion closes it `unwound`) and writes like any other pass
+    if (row.status === "unwinding") await foldUnwind(sctx, p);
+    else for (let i = 0; i < MAX_TRANSITIONS_PER_PASS; i++) {
       const def = stepDef(p.step);
       const off = offPath(rec, p.step);
       if (off) { applyOffPath(p, off); if (off.kind === "unwinding") await foldUnwind(sctx, p); break; }
@@ -288,13 +301,21 @@ export async function processRow(rt: Runtime, row: OrchRow, nowIso: string, runI
       }
       if (!def.actions || p.actions.includes(def.name)) { if (!def.actions && p.status === "open") { const w = def.idleWait?.(rec) ?? null; if (w) setWait(p, w); } break; }
       p.actions.push(def.name);
-      let outcome: StepOutcome;
-      try { outcome = (await def.actions(sctx)) ?? {}; }
+      let outcome: StepOutcome = {};
+      // rule 10: one step's actions are one savepoint on the row's transaction — a command that throws rolls back every command the step ran before it (nothing else of that unit of work is written); a refusal (StepHalt) keeps what ran and holds
+      const mark = { journal: p.journal.length, events: p.events.length, nested: nested.length, commands: p.commands, escalations: p.escalations.length };
+      const actions = def.actions;
+      try { await view.db.tx(async () => { try { outcome = (await actions(sctx)) ?? {}; } catch (e) {
+        if (e instanceof StepHalt) { outcome = e.outcome; return; }
+        // a fact the record does not carry yet (facts-35-6.ts RecordGap): the row waits on the owner named by the gap — open, clocked (the stall clock backstops the owner's own) — and journals the gap once
+        if (e instanceof RecordGap) { if (row.waiting_on !== e.path || row.status !== "open") p.journal.push({ step: p.step, kind: "waiting", waiting_on: e.path, detail: { gap: e.path, reason: e.message.slice(0, 500) } }); outcome = { wait: { status: "open", waiting_on: e.path, clocked: true } }; return; }
+        throw e; } }); }
       catch (e) {
-        if (e instanceof StepHalt) outcome = e.outcome;
-        else {
+        {
+          p.journal.length = mark.journal; p.events.length = mark.events; nested.length = mark.nested; p.commands = mark.commands; p.escalations.length = mark.escalations;
           const cls = e instanceof Error ? e.name || e.constructor.name : typeof e;
           const unavailable = /unavailable|PortUnavailable|ECONN|outage/i.test(cls + " " + (e instanceof Error ? e.message : ""));
+          if (process.env["ORCH_DEBUG"]) console.error("35.6 step failed", { application_id: row.application_id, step: p.step }, e);
           p.journal.push({ step: p.step, kind: "command_failed", error_class: cls, detail: { message: (e instanceof Error ? e.message : String(e)).slice(0, 500) } });
           p.attempts += 1;
           if (unavailable) outcome = { hold: { reason: "unavailable", detail: { error_class: cls } } };
@@ -317,7 +338,12 @@ export async function processRow(rt: Runtime, row: OrchRow, nowIso: string, runI
     const loanId = rec.loanId ?? row.loan_id ?? null;
     escalations = new EscalationService(ctx.events, ctx.clock);
     for (const e of p.events) ctx.events.append({ type: e.type, applicationId: row.application_id, ...(loanId ? { loanId } : {}), aggregate: { kind: "closing_orchestration", id: row.id }, actor: ORCH_ACTOR, payload: { orchestration_id: row.id, application_id: row.application_id, ...(loanId ? { loan_id: loanId } : {}), ...e.payload } });
-    for (const esc of p.escalations) escalations.open({ kind: esc.kind as "officer", ownerRole: esc.ownerRole, applicationId: row.application_id, ...(loanId ? { loanId } : {}), severity: esc.severity, payload: esc.payload }, ORCH_ACTOR);
+    // one open escalation per (step, reason, gate): a hold re-applied on the same gate re-uses the person's open item
+    for (const esc of p.escalations) {
+      const dup = await ctx.q!.query(`SELECT 1 FROM escalations WHERE application_id = $1 AND completed_at IS NULL AND owner_role = $2 AND payload->>'orchestration_step' = $3 AND payload->>'reason' = $4 AND payload->>'gate' IS NOT DISTINCT FROM $5`, [row.application_id, esc.ownerRole, String(esc.payload["orchestration_step"] ?? ""), String(esc.payload["reason"] ?? ""), esc.payload["gate"] === null || esc.payload["gate"] === undefined ? null : String(esc.payload["gate"])]);
+      if (dup.length) continue;
+      escalations.open({ kind: esc.kind as "officer", ownerRole: esc.ownerRole, applicationId: row.application_id, ...(loanId ? { loanId } : {}), severity: esc.severity, payload: esc.payload }, ORCH_ACTOR);
+    }
     const last = p.journal.at(-1);
     // the decision record names every owning command this pass ran and the sources each command's facts were read from (rule 7: the item's source event id or row in the decision record)
     const ran = p.journal.filter((j) => j.kind === "command_run").map((j) => `${j.command!.process} ${j.command!.name}${j.command!.op ? `{${j.command!.op}}` : ""}`);
@@ -334,16 +360,27 @@ export async function processRow(rt: Runtime, row: OrchRow, nowIso: string, runI
         [row.id, row.application_id, loanId, j.step, j.kind, j.clocked ?? false, j.waiting_on ?? null, j.trigger_event_id ?? null, j.command?.process ?? null, j.command?.name ?? null, j.command?.op ?? null, j.actor?.kind ?? "agent", j.actor?.id ?? ORCH_AGENT, j.actor?.role ?? null, j.decision_id ?? (j.kind === "command_run" ? null : decisionId), j.refusal_code ?? null, j.error_class ?? null, JSON.stringify(j.detail ?? {}), runId]);
     }
     for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q);
-    const sets: string[] = ["step = $2", "status = $3", "waiting_on = $4", "hold_reason = $5", "last_event_sequence = $6", "step_attempts = $7", "updated_at = $8"];
-    const params: unknown[] = [row.id, p.step, p.status, p.waiting_on, p.hold_reason, seq, p.attempts, nowIso];
+    const sets: string[] = ["step = $2", "status = $3", "waiting_on = $4", "hold_reason = $5", "last_event_sequence = $6", "step_attempts = $7", "updated_at = date_trunc('milliseconds', clock_timestamp())"];
+    const params: unknown[] = [row.id, p.step, p.status, p.waiting_on, p.hold_reason, seq, p.attempts];
     const patch = { ...p.patch, ...(loanId && !row.loan_id ? { loan_id: loanId } : {}), ...(rec.transactionType() && !row.transaction_type ? { transaction_type: rec.transactionType() } : {}), ...(rec.fundingType() && !row.funding_type ? { funding_type: rec.fundingType() } : {}), ...(rec.noteForm() && !row.note_form ? { note_form: rec.noteForm() } : {}), ...(rec.closingType() && !row.closing_type ? { closing_type: rec.closingType() } : {}) };
     for (const [k, v] of Object.entries(patch)) { if (!/^[a-z_]+$/.test(k)) continue; params.push(v); sets.push(`${k} = $${params.length}`); }
     await q.query(`UPDATE closing_orchestrations SET ${sets.join(", ")} WHERE id = $1`, params);
   } });
   if (nested.length) rt.uow.notifyCommitted(nested);
+  if (stale) rt.logger?.info("35.6 row changed under the claim; skipped", { application_id: row.application_id, step: row.step });
   return report(row, p, wrote);
 }
+/** Event types that are never "a new fact" for a held row: this process's own bookkeeping, the platform's reactions to it and the sweep's clocks. */
+const NOT_A_FACT: readonly string[] = ["orchestration.", "escalation.", "timer.", "command.", "card.", "conversation.", "thread.", "session.", "message."];
 
+/** The gate or refusal code an owner's error carries: the bus's CommandRefused, or a domain class named *Refused / *Closed / *Blocked with a `code` (the gate code the row holds on). */
+export function refusalCode(e: unknown): string | null {
+  if (e instanceof CommandRefused) return e.code;
+  if (!(e instanceof Error)) return null;
+  const code = (e as { code?: unknown }).code; const gate = (e as { gate?: unknown }).gate;
+  if (!/Refused|Closed|Blocked$/.test(e.name)) return null;
+  return typeof gate === "string" && gate ? gate : typeof code === "string" && code ? code : null;
+}
 function stepDef(name: string): StepDef { const d = STEPS.find((x) => x.name === name); if (!d) throw new RangeError(`35.6: unknown step ${name}`); return d; }
 function complete(p: Pending, def: StepDef, ev: DomainEvent, rec: OrchRecord, now: string): void {
   p.journal.push({ step: def.name, kind: "completed", trigger_event_id: ev.id, detail: { trigger: ev.type, sequence: ev.sequence } });
@@ -467,7 +504,7 @@ export async function dailyReceipt(rt: Runtime, nowIso: string): Promise<DailyRe
   if (existing) return { ...(existing as unknown as DailyReceipt), as_of_date: asOf, by_waiting_on: (existing["by_waiting_on"] as Record<string, number>) ?? {}, ran: false };
   const counts = (await rt.db.query<{ status: string; c: string }>(`SELECT status, count(*)::text AS c FROM closing_orchestrations GROUP BY status`)).reduce<Record<string, number>>((m, r) => ({ ...m, [r.status]: Number(r.c) }), {});
   const byWaiting = (await rt.db.query<{ w: string; c: string }>(`SELECT coalesce(waiting_on, '') AS w, count(*)::text AS c FROM closing_orchestrations WHERE status NOT IN ('completed', 'unwound', 'cancelled') AND waiting_on IS NOT NULL GROUP BY 1`)).reduce<Record<string, number>>((m, r) => ({ ...m, [r.w]: Number(r.c) }), {});
-  const dayStart = new Date(Date.parse(`${asOf}T00:00:00-05:00`)).toISOString();
+  const dayStart = etDayStart(asOf);
   const completedToday = Number((await rt.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM closing_orchestrations WHERE status = 'completed' AND completed_at >= $1::timestamptz`, [dayStart]))[0]!.c);
   const unwoundToday = Number((await rt.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM closing_orchestrations WHERE status = 'unwound' AND updated_at >= $1::timestamptz`, [dayStart]))[0]!.c);
   const fixtureToday = Number((await rt.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM funding_snapshots WHERE fixture_used AND built_at >= $1::timestamptz`, [dayStart]))[0]!.c);
@@ -485,11 +522,24 @@ export async function dailyReceipt(rt: Runtime, nowIso: string): Promise<DailyRe
   return { ...receipt, report_document_id: documentId, ran: true };
 }
 /** The daily receipt runs once per platform day at/after 06:00 ET (35.3's `closing_orchestration_daily` cycle; the sweep runs it here until 35.3's registry owns the schedule). */
-export const DAILY_RECEIPT_AT_ET = "06:00";
+/** The receipt is due when the registry's clock says so: SM_ORCH_OPEN_BOOK_DAILY's armed instance (timers-35-6.ts: +1 calendar day, 06:30 ET, re-armed by each `orchestration.daily.run_completed`) has reached its due instant; with no instance yet (the first day) the receipt runs once. Never a time of day in service code. */
 export async function dailyReceiptDue(rt: Runtime, nowIso: string): Promise<boolean> {
   const wc = wallClock(Date.parse(nowIso), "America/New_York");
-  if (`${String(wc.hour).padStart(2, "0")}:${String(wc.minute).padStart(2, "0")}` < DAILY_RECEIPT_AT_ET) return false;
-  return !(await rt.db.query(`SELECT 1 FROM orchestration_daily_receipts WHERE as_of_date = $1`, [wc.date])).length;
+  const armed = (await rt.db.query<{ due_at: string | Date | null }>(`SELECT due_at FROM timers WHERE code = 'SM_ORCH_OPEN_BOOK_DAILY' AND status = 'armed' ORDER BY armed_at DESC LIMIT 1`))[0];
+  if (armed) { const due = armed.due_at === null ? null : new Date(armed.due_at).toISOString(); return due !== null && due <= nowIso && !(await rt.db.query(`SELECT 1 FROM orchestration_daily_receipts WHERE as_of_date = $1`, [wc.date])).length; }
+  return !(await rt.db.query(`SELECT 1 FROM orchestration_daily_receipts LIMIT 1`)).length;
+}
+/** The start of a platform day (ET, the named calendar's zone) as an instant — DST-aware, never a fixed offset. */
+function etDayStart(date: string): string {
+  const guess = Date.parse(`${date}T05:00:00.000Z`);
+  for (const t of [guess, guess - 3_600_000, guess + 3_600_000]) { const wc = wallClock(t, "America/New_York"); if (wc.date === date && wc.hour === 0 && wc.minute === 0) return new Date(t).toISOString(); }
+  return new Date(guess).toISOString();
+}
+/** The breach pass's context for a 35.6 clock (registry: "the escalation names application_id, step, waiting_on"): the row the timer's application is on. */
+export async function orchestrationBreachContext(rt: Runtime, instance: { code: string; applicationId?: string; loanId?: string }): Promise<Record<string, unknown>> {
+  if (!instance.code.startsWith("SM_ORCH_")) return {};
+  const row = instance.applicationId ? await orchestrationByApplication(rt.db, instance.applicationId) : instance.loanId ? (await rt.db.query<Row>(`SELECT ${ORCH_COLS} FROM closing_orchestrations WHERE loan_id = $1`, [instance.loanId])).map(rowOf)[0] ?? null : null;
+  return row ? { application_id: row.application_id, orchestration_id: row.id, step: row.step, waiting_on: row.waiting_on, status: row.status } : {};
 }
 
 export type { OrchRecord, StepDef, StepOutcome, Wait, EntityRecord, EntityStore, ApplicationRecord };

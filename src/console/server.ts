@@ -500,7 +500,10 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
           let input: PartnerBookImportInput;
           try { input = await partnerBookUpload(req); } catch (e) { if (e instanceof RangeError) { action.result = "error"; action.refusal_code = "BAD_REQUEST"; json(res, 400, { error: e.message }); return; } throw e; }
           action.command = "book.import";
-          const rep = await importPartnerBook(rt, input, actor); setSubject({ kind: "partner_book_import", id: rep.import_id });
+          // 35.12 rule 6: `X-Supermortgage-Synthetic: true` marks every party the import writes (a fixture book); production refuses it
+          const syntheticBook = String(req.headers["x-supermortgage-synthetic"] ?? "").trim().toLowerCase() === "true";
+          if (syntheticBook && (rt.environment === "production" || rt.environment === "prod")) { refuse(409, "SYNTHETIC_REFUSED_IN_PRODUCTION", { reason: "a synthetic partner book never loads in production (35.12 rule 6)" }); return; }
+          const rep = await importPartnerBook(rt, syntheticBook ? { ...input, synthetic: true } : input, actor); setSubject({ kind: "partner_book_import", id: rep.import_id });
           json(res, 200, rep); return;
         }
         // 33.1 rule 8: book.resolve{loan_id, resolution, reason} on the bus as the console's human (the bus refuses any role but ops_analyst: 403 role_denied)

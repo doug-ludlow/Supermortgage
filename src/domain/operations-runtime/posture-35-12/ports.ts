@@ -41,8 +41,8 @@ export const defaultOurFigures: OurFiguresPort = {
     const paid = inst.filter((i) => i.satisfied_on !== null && i.satisfied_on <= asOf);
     const open = inst.filter((i) => i.due_date <= asOf && (i.satisfied_on === null || i.satisfied_on > asOf));
     const upb = big(loan.original_upb_cents) - paid.reduce((s, i) => s + big(i.principal_cents), 0n);
-    const [esc] = await q.query<{ bal: string | null }>(`SELECT coalesce(sum(l.amount_cents), 0)::text AS bal FROM ledger_lines l JOIN ledger_entry_sets s ON s.id = l.set_id WHERE l.loan_id = $1 AND l.account LIKE 'escrow%' AND s.effective_date <= $2::date`, [loanId, asOf]).catch(() => [{ bal: "0" }]);
-    const [lc] = await q.query<{ due: string | null }>(`SELECT coalesce(sum(amount_cents - coalesce(collected_cents, 0) - coalesce(waived_cents, 0)), 0)::text AS due FROM fees WHERE loan_id = $1 AND fee_type::text = 'late_charge' AND assessed_on IS NOT NULL AND assessed_on <= $2::date AND state::text NOT IN ('waived', 'reversed', 'suppressed')`, [loanId, asOf]).catch(() => [{ due: "0" }]);
+    const [esc] = await q.query<{ bal: string | null }>(`SELECT coalesce(sum(l.amount_cents), 0)::text AS bal FROM ledger_lines l JOIN ledger_entry_sets s ON s.id = l.set_id WHERE l.loan_id = $1 AND l.account LIKE 'escrow%' AND s.effective_date <= $2::date`, [loanId, asOf]);
+    const [lc] = await q.query<{ due: string | null }>(`SELECT coalesce(sum(amount_cents - coalesce(collected_cents, 0) - coalesce(waived_cents, 0)), 0)::text AS due FROM fees WHERE loan_id = $1 AND fee_type::text = 'late_charge' AND assessed_on IS NOT NULL AND assessed_on <= $2::date AND state::text NOT IN ('waived', 'reversed', 'suppressed')`, [loanId, asOf]);
     const nextDue = inst.find((i) => i.satisfied_on === null || i.satisfied_on > asOf)?.due_date ?? null;
     const oldestOpen = open[0]?.due_date ?? null;
     const daysDelinquent = oldestOpen ? Math.max(0, Math.round((Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${oldestOpen}T00:00:00Z`)) / 86_400_000)) : 0;

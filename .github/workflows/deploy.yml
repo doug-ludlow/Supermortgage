@@ -272,6 +272,8 @@ jobs:
     needs: [terraform, build, build-borrower, migrate]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4   # db/migrations names the migration head the manifest records (35.12 rule 1)
+
       - name: Authenticate to Google Cloud (Workload Identity Federation)
         uses: google-github-actions/auth@v2
         with:
@@ -347,7 +349,7 @@ jobs:
           sql="$(gcloud sql instances describe "${instance}" --project "${PROJECT}" --format json)"
           api="$(gcloud run services describe supermortgage-api --region "${REGION}" --project "${PROJECT}" --format json)"
           digest="$(gcloud artifacts docker images describe "${IMAGE}" --format 'value(image_summary.digest)' 2>/dev/null || echo "${IMAGE##*:}")"
-          migration_head="$(gcloud run jobs describe supermortgage-migrate --region "${REGION}" --project "${PROJECT}" --format 'value(metadata.annotations.supermortgage/migration-head)' 2>/dev/null || true)"
+          migration_head="$(ls db/migrations | sort | tail -n 1 | cut -c1-4)"   # the checkout's head: the image this job deployed was built from this commit
           # the secret names and their latest version's creation instant — never `versions access`
           secrets='[]'
           for name in $(gcloud secrets list --project "${PROJECT}" --filter 'name~supermortgage-' --format 'value(name)'); do
@@ -380,12 +382,14 @@ jobs:
               runtime: {
                 environment: $environment,
                 integrations: (([ ($api.spec.template.spec.containers[0].env // [])[] | select(.name == "INTEGRATIONS") | .value ] | first) // "fake"),
-                fake_reviewers: (([ ($api.spec.template.spec.containers[0].env // [])[] | select(.name == "FAKE_REVIEWERS") | .value ] | first) // "on"),
+                fake_reviewers: (([ ($api.spec.template.spec.containers[0].env // [])[] | select(.name == "FAKE_REVIEWERS") | .value ] | first)
+                  // (if ((([ ($api.spec.template.spec.containers[0].env // [])[] | select(.name == "INTEGRATIONS") | .value ] | first) // "fake") == "fake" and $environment != "production") then "on" else "off" end)),
                 env_names: [ ($api.spec.template.spec.containers[0].env // [])[] | .name ]
               }
             }')"
           # the demo clock's answer from the deployed service (35.12 PST-11): 403 outside nonprod
-          demo_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --resolve "${API_HOSTNAME}:443:${LB_IP}" -X POST "https://${API_HOSTNAME}/v1/demo/clock" -H 'content-type: application/json' --data '{}' || echo 0)"
+          demo_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --resolve "${API_HOSTNAME}:443:${LB_IP}" -X POST "https://${API_HOSTNAME}/v1/demo/clock" -H 'content-type: application/json' --data '{}' || true)"
+          case "${demo_status}" in ''|*[!0-9]*) demo_status=0;; esac
           manifest="$(echo "${manifest}" | jq -c --argjson st "${demo_status}" '.runtime.demo_clock_status = $st')"
           out="$(curl --silent --show-error --write-out '\n%{http_code}' \
             --resolve "${API_HOSTNAME}:443:${LB_IP}" \

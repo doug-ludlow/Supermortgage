@@ -510,7 +510,8 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     if (!contact["email"] && !contact["phone"]) throw new RangeError("contact.email or contact.phone is required");
     const legal_name = str(i, "legal_name") || String(contact["name"] ?? "") || [contact["first_name"], contact["last_name"]].filter((x) => typeof x === "string" && x).join(" ") || "Invited party"; const ab_id = randomUUID(); const party_id = randomUUID(); const now = ctx.now;
     defer(rt, async (q) => {
-      await q.query(`INSERT INTO parties (id, party_type, legal_name, contact) VALUES ($1, 'borrower', $2, $3::jsonb)`, [party_id, legal_name, toJson(contact)]);
+      // 35.12 rule 6: the invitee's party carries the application's own marker (a synthetic applicant invites a synthetic party; a real one never marks)
+      await q.query(`INSERT INTO parties (id, party_type, legal_name, contact, synthetic) VALUES ($1, 'borrower', $2, $3::jsonb, coalesce((SELECT bool_or(p.synthetic) FROM application_borrowers ab JOIN parties p ON p.id = ab.party_id WHERE ab.application_id = $4), false))`, [party_id, legal_name, toJson(contact), application_id]);
       if (role === "co_borrower" || role === "non_borrowing_spouse") await q.query(`INSERT INTO application_borrowers (id, application_id, borrower_role, legal_name, contact, party_id, created_at) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`, [ab_id, application_id, role, legal_name, toJson(contact), party_id, now]);
       await q.query(`INSERT INTO conversations (party_id, retention_class) VALUES ($1, 'fnma_loan_file_life_plus_4y') ON CONFLICT (party_id) DO NOTHING`, [party_id]);
     });

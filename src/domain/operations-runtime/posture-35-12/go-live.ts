@@ -65,7 +65,7 @@ export async function computeItems(rt: Runtime, q: Queryable, environment: strin
   const canaries = new Set((await q.query<{ vendor: string }>(`SELECT DISTINCT payload->>'vendor' AS vendor FROM loan_events WHERE type = 'integration.canary' AND payload->>'environment' = $1 AND (payload->>'ok')::boolean = true AND occurred_at >= $2::timestamptz`, [environment, dayAgo])).map((r) => r.vendor));
   const notReal = GO_LIVE_VENDORS.filter((v) => { const r = inForce.get(v); return !r || r.mode !== "real" || r.endpoint_class !== "live"; }); const noCanary = GO_LIVE_VENDORS.filter((v) => !notReal.includes(v) && !canaries.has(v));
   const integrationsReal = rt.env["INTEGRATIONS"] === "real";
-  item("GL-05", integrationsReal && notReal.length === 0 && noCanary.length === 0, notReal.length === 0 && integrationsReal ? GO_LIVE_VENDORS.map((v) => inForce.get(v)!.id).join(",") : null, { integrations: rt.env["INTEGRATIONS"] ?? "fake", not_real_live: notReal, no_canary_24h: noCanary });
+  item("GL-05", integrationsReal && notReal.length === 0 && noCanary.length === 0, integrationsReal && notReal.length === 0 && noCanary.length === 0 ? GO_LIVE_VENDORS.map((v) => inForce.get(v)!.id).join(",") : null, { integrations: rt.env["INTEGRATIONS"] ?? "fake", not_real_live: notReal, no_canary_24h: noCanary });
   // GL-06 the parallel run closed passed
   const pr = await latestRunOf(q, environment);
   item("GL-06", !!pr && pr.action === "closed" && pr.outcome === "passed", pr?.parallel_run_id ?? null, { status: pr ? (pr.action === "closed" ? `closed:${pr.outcome}` : "open") : "none" });

@@ -17,12 +17,11 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Queryable } from "../../../infra/db/client.ts";
-import { toJson } from "../../../infra/db/client.ts";
 import { wallClock } from "../../../kernel/calendar/zoned.ts";
 import { byOf } from "./decision.ts";
 import { decisionFor, hashedDocument, personId, refuse, requireRole, requireRoleOrService, writeDocument, type PostureDeps } from "./deps.ts";
 import { posturePortsOf, type OurFigures } from "./ports.ts";
-import { CLEAN_WEEK_DAYS, DISPOSITIONS, ET, MONEY_FIELDS, P, PARALLEL_RUN_DAYS, RECONCILE_FIELDS, addCalendarDays, daysBetween, environmentOf, isUuid, obj, s, type Row } from "./types.ts";
+import { CLEAN_WEEK_DAYS, DISPOSITIONS, ET, MONEY_FIELDS, P, PARALLEL_RUN_DAYS, RECONCILE_FIELDS, addCalendarDays, daysBetween, environmentOf, isUuid, s, type Row } from "./types.ts";
 
 export interface RunRow { readonly id: string; readonly parallel_run_id: string; readonly environment: string; readonly incumbent_servicer: string; readonly opened_on: string; readonly planned_end_on: string; readonly loan_count: number; readonly action: string; readonly as_of_date: string | null; readonly outcome: string | null; readonly loan_ids: string[]; readonly created_at: string }
 const RUN_COLS = `id::text AS id, parallel_run_id::text AS parallel_run_id, environment, incumbent_servicer, opened_on::text AS opened_on, planned_end_on::text AS planned_end_on, loan_count, action, as_of_date::text AS as_of_date, outcome, loan_ids::text[] AS loan_ids, created_at::text AS created_at`;
@@ -61,7 +60,7 @@ export async function openRun(d: PostureDeps, i: OpenInput): Promise<OpenResult>
     if (!run || run.action === "closed") refuse(404, "RUN_NOT_OPEN", `no open parallel run ${s(i.parallel_run_id) || "(none)"}`, { parallel_run_id: i.parallel_run_id ?? null });
     const planned = s(i.planned_end_on); if (!/^\d{4}-\d{2}-\d{2}$/.test(planned) || planned <= run!.planned_end_on) throw new RangeError("planned_end_on moves forward (YYYY-MM-DD)");
     const reason = s(i.reason).trim(); if (!reason) throw new RangeError("an extension needs a reason");
-    d.deferWrite(async (q) => { const decision_id = await decisionFor(q, "parallel_run", run!.parallel_run_id); await q.query(`INSERT INTO parallel_runs (parallel_run_id, environment, incumbent_servicer, opened_on, planned_end_on, loan_count, action, reason, by, decision_id, loan_ids) VALUES ($1, $2, $3, $4::date, $5::date, $6, 'extended', $7, $8, $9, $10::uuid[])`, [run!.parallel_run_id, environment, run!.incumbent_servicer, run!.opened_on, planned, run!.loan_count, reason, by, decision_id, run!.loan_ids]); });
+    d.deferWrite(async (q) => { const decision_id = await decisionFor(q, "parallel_run", run!.parallel_run_id); await q.query(`INSERT INTO parallel_runs (parallel_run_id, environment, incumbent_servicer, opened_on, planned_end_on, loan_count, action, as_of_date, reason, by, decision_id, loan_ids) VALUES ($1, $2, $3, $4::date, $5::date, $6, 'extended', $7::date, $8, $9, $10, $11::uuid[])`, [run!.parallel_run_id, environment, run!.incumbent_servicer, run!.opened_on, planned, run!.loan_count, wallClock(Date.parse(now), ET).date, reason, by, decision_id, run!.loan_ids]); });
     cancelGate(d, `parallel run ${run!.parallel_run_id} extended to ${planned} (35.12 rule 9)`);
     d.events.append({ type: "parallel_run.opened", aggregate: runAggregate(run!.parallel_run_id), actor: d.actor, payload: P({ parallel_run_id: run!.parallel_run_id, environment, incumbent_servicer: run!.incumbent_servicer, opened_on: run!.opened_on, planned_end_on: planned, loan_count: run!.loan_count, extended: true, reason, by: officer.id }) });
     return { parallel_run_id: run!.parallel_run_id, environment, incumbent_servicer: run!.incumbent_servicer, opened_on: run!.opened_on, planned_end_on: planned, loan_count: run!.loan_count, action: "extended", by: byOf(d.actor) };
@@ -123,6 +122,7 @@ async function fileDocument(d: PostureDeps, run: RunRow, asOf: string, i: Reconc
     const [doc] = await d.db.query<{ id: string; kind: string; metadata: Row }>(`SELECT id::text AS id, kind, metadata FROM documents WHERE id = $1`, [i.incumbent_file_document_id]);
     if (!doc || doc.kind !== "incumbent_trial_balance") refuse(404, "FILE_NOT_FOUND", `no incumbent_trial_balance document ${i.incumbent_file_document_id}`, { document_id: i.incumbent_file_document_id });
     const csv = s(doc!.metadata["content"]); if (!csv) refuse(409, "FILE_EMPTY", `document ${doc!.id} carries no file content in the FAKE blob store`, { document_id: doc!.id });
+    if (s(doc!.metadata["parallel_run_id"]) !== run.parallel_run_id || s(doc!.metadata["as_of_date"]) !== asOf) refuse(409, "FILE_MISMATCH", `document ${doc!.id} is the file of run ${s(doc!.metadata["parallel_run_id"]) || "?"} for ${s(doc!.metadata["as_of_date"]) || "?"}, not of ${run.parallel_run_id} for ${asOf}`, { document_id: doc!.id, parallel_run_id: run.parallel_run_id, as_of_date: asOf });
     return { id: doc!.id, csv };
   }
   const csv = s(i.incumbent_file_csv); if (!csv.trim()) throw new RangeError("incumbent_file_document_id or incumbent_file_csv is required");
@@ -161,8 +161,9 @@ export async function reconcileDay(d: PostureDeps, i: ReconcileInput): Promise<R
     }
     perLoan.push(row);
   }
-  for (const t of theirs) { const key = t.loan_id ?? ourLoans.find((l) => l.servicer_loan_number === t.servicer_loan_number)?.id; if (!key || !ourLoans.some((l) => l.id === key)) { mismatched += 1; if (!open.some((o) => o.loan_id === null && o.field === "upb_cents" && o.theirs === t.upb_cents.toString() && o.ours === "absent")) opened.push({ diff_id: randomUUID(), loan_id: "", field: "upb_cents", ours: "absent", theirs: t.upb_cents.toString(), delta_cents: "0", as_of_date: asOf }); else alreadyOpen++; } }
-  const comparisons = ourLoans.length * RECONCILE_FIELDS.length;
+  let theirsOnly = 0;
+  for (const t of theirs) { const key = t.loan_id ?? ourLoans.find((l) => l.servicer_loan_number === t.servicer_loan_number)?.id; if (!key || !ourLoans.some((l) => l.id === key)) { mismatched += 1; theirsOnly += 1; if (!open.some((o) => o.loan_id === null && o.field === "upb_cents" && o.theirs === t.upb_cents.toString() && o.ours === "absent")) opened.push({ diff_id: randomUUID(), loan_id: "", field: "upb_cents", ours: "absent", theirs: t.upb_cents.toString(), delta_cents: "0", as_of_date: asOf }); else alreadyOpen++; } }
+  const comparisons = ourLoans.length * RECONCILE_FIELDS.length + theirsOnly;
   const report = hashedDocument("parallel-run-day", { parallel_run_id: r.parallel_run_id, environment: r.environment, as_of_date: asOf, incumbent_file_document_id: file.id, loans: ourLoans.length, comparisons, matched, mismatched, mismatch_cents: mismatchCents.toString(), diffs_opened: opened.map((o) => ({ diff_id: o.diff_id, loan_id: o.loan_id || null, field: o.field, ours: o.ours, theirs: o.theirs, delta_cents: o.delta_cents })), per_loan: perLoan });
   d.deferWrite(async (q) => {
     await writeDocument(q, report, { kind: "parallel_run_daily_report", retention: "corporate_7y", metadata: { parallel_run_id: r.parallel_run_id, as_of_date: asOf, comparisons, matched, mismatched, mismatch_cents: mismatchCents.toString() }, created_at: now });
@@ -200,19 +201,25 @@ export async function dispositionDiff(d: PostureDeps, i: DispositionInput): Prom
   const officer = await requireRole(d, ["officer"], "parallel_run.disposition", x.environment);
   if (x.action !== "opened" && x.action !== "reopened") refuse(409, "DIFF_NOT_OPEN", `diff ${x.diff_id} is ${x.action}`, { diff_id: x.diff_id, action: x.action });
   const reason = s(i.reason).trim(); if (!reason) throw new RangeError("a disposition needs a reason (35.12 rule 8)");
-  const now = d.now; const by = personId(d.actor);
+  const by = personId(d.actor);
   d.deferWrite(async (q) => { const decision_id = await decisionFor(q, "diff", x.diff_id); await q.query(`INSERT INTO parallel_run_diffs (diff_id, parallel_run_id, as_of_date, loan_id, field, ours, theirs, delta_cents, action, disposition, reason, by, decision_id) SELECT diff_id, parallel_run_id, as_of_date, loan_id, field, ours, theirs, delta_cents, 'dispositioned', $2, $3, $4, $5 FROM parallel_run_diffs WHERE diff_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`, [x.diff_id, disposition, reason, by, decision_id]); });
   d.events.append({ type: "parallel_run.diff.dispositioned", aggregate: { kind: "parallel_run_diff", id: x.diff_id }, actor: d.actor, ...(x.loan_id ? { loanId: x.loan_id } : {}), payload: P({ diff_id: x.diff_id, parallel_run_id: x.parallel_run_id, loan_id: x.loan_id, field: x.field, disposition, reason, by: officer.id }) });
   return { diff_id: x.diff_id, parallel_run_id: x.parallel_run_id, environment: x.environment, loan_id: x.loan_id, field: x.field, disposition, proposed: false, confidence: null, reason, by: byOf(d.actor) };
 }
 
 // ---- the close and the board ---------------------------------------------------------------------------------------
-/** The clean-week count as of `asOf`: consecutive reconciled days ending at asOf whose reconciliation found no money-field mismatch (mismatch_cents sums the money fields; a persisting open diff dirties every day it persists; a missing day breaks the run). */
+/**
+ * The clean-week count as of `asOf`: consecutive reconciled days ending at asOf whose reconciliation found no money-field mismatch — a day is dirty
+ * when its mismatch_cents > 0 or a money-field diff opened that day (a loan absent from one side opens a upb_cents diff at delta 0); a persisting
+ * open diff dirties every day it persists; a missing day breaks the run; an `extended` row resets the count from its day (rule 9's state machine).
+ */
 export async function daysClean(q: Queryable, parallelRunId: string, asOf: string): Promise<number> {
   const days = new Set((await q.query<{ d: string }>(`SELECT as_of_date::text AS d FROM parallel_runs WHERE parallel_run_id = $1 AND action = 'day_reconciled'`, [parallelRunId])).map((r) => r.d));
-  const dirty = new Set((await q.query<{ d: string }>(`SELECT DISTINCT as_of_date::text AS d FROM parallel_runs WHERE parallel_run_id = $1 AND action = 'day_reconciled' AND mismatch_cents > 0`, [parallelRunId])).map((r) => r.d));
+  const dirty = new Set((await q.query<{ d: string }>(`SELECT DISTINCT p.as_of_date::text AS d FROM parallel_runs p WHERE p.parallel_run_id = $1 AND p.action = 'day_reconciled' AND (p.mismatch_cents > 0 OR EXISTS (SELECT 1 FROM parallel_run_diffs x WHERE x.parallel_run_id = p.parallel_run_id AND x.as_of_date = p.as_of_date AND x.action = 'opened' AND x.field = ANY($2::text[])))`, [parallelRunId, MONEY_FIELDS])).map((r) => r.d));
+  const [ext] = await q.query<{ d: string | null }>(`SELECT max(as_of_date)::text AS d FROM parallel_runs WHERE parallel_run_id = $1 AND action = 'extended'`, [parallelRunId]);
+  const resetFrom = ext?.d ?? null;
   let n = 0; let day = asOf;
-  while (days.has(day) && !dirty.has(day)) { n++; day = addCalendarDays(day, -1); }
+  while (days.has(day) && !dirty.has(day) && (resetFrom === null || day >= resetFrom)) { n++; day = addCalendarDays(day, -1); }
   return n;
 }
 export interface CloseInput { readonly parallel_run_id: string; readonly outcome?: string | null; readonly reason?: string | null }
@@ -248,4 +255,4 @@ export async function parallelRunBoard(q: Queryable, parallelRunId: string, nowI
 }
 export const diffsOf = openDiffs;
 export const runRowsOf = (q: Queryable, id: string): Promise<Row[]> => q.query<Row>(`SELECT action, as_of_date::text AS as_of_date, outcome, comparisons, matched, mismatched, mismatch_cents::text AS mismatch_cents FROM parallel_runs WHERE parallel_run_id = $1 ORDER BY created_at, id`, [id]);
-void obj;
+

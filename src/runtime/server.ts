@@ -372,7 +372,10 @@ export function createApiServer(opts: ServerOptions): Server {
       if (method === "POST" && path === "/v1/partner-book/imports") {
         action.command = "book.import"; v1.scopeCheck(principal!, { process: "33.1" });
         const actorHeader = principal!.person?.id ?? String(req.headers["x-actor-id"] ?? "");
-        const input = await partnerBookInput(req);
+        // 35.12 rule 6: `X-Supermortgage-Synthetic: true` marks every party the import writes (a fixture book); production refuses it
+        const syntheticBook = String(req.headers["x-supermortgage-synthetic"] ?? "").trim().toLowerCase() === "true";
+        if (syntheticBook && (runtime.environment === "production" || runtime.environment === "prod")) { done(409, { error: "synthetic_refused_in_production", code: "SYNTHETIC_REFUSED_IN_PRODUCTION", reason: "a synthetic partner book never loads in production (35.12 rule 6)" }); return; }
+        const input = { ...(await partnerBookInput(req)), ...(syntheticBook ? { synthetic: true } : {}) };
         const r = await importPartnerBook(runtime, input, { kind: "human", id: actorHeader || "ops", ...(req.headers["x-actor-role"] ? { role: String(req.headers["x-actor-role"]) } : { role: "ops_analyst" }) });
         done(200, r, { import: r.import_id, status: r.status, rows_total: r.rows_total, rows_loaded: r.rows_loaded, loans_created: r.loans_created, invitations_sent: r.invitations_sent }); return;
       }

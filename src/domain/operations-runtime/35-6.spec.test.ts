@@ -25,6 +25,9 @@ let router: ReturnType<typeof createBorrowerRouter>;
 import { createLogger } from "../../runtime/log.ts";
 import { FakeReviewers } from "../../infra/integrations/reviewers.ts";
 import { Journey, MST, EST, EDT, OFFICER } from "../../runtime/borrower/fixtures/journey.ts";
+import { PurchaseJourney } from "../../runtime/borrower/fixtures/journey-purchase.ts";
+import { wetFundsAtTableGate } from "../closing/ops-26-3.ts";
+import { storeDocument } from "./documents-port-35-6.ts";
 import type { FakePewl } from "../secondary/ops-29-1.ts";
 import { custodialAccountIdFor } from "./facts-35-6-b.ts";
 import { EntityStore } from "../../app/tools.ts";
@@ -112,9 +115,10 @@ async function seedHmda(j: Journey): Promise<void> {
 /** SM's approved warehouse-lender wire instruction as 29.4 lists it (`wire_instructions`, status active — Fannie Mae Form 482, the bailee Letter Name = 27.1's facility letter name): a platform row, seeded once. */
 /** 23.4's FFIEC APOR table rows as the owner's `apor_tables` entities (global; `aporTables()` reads them when a caller passes none) — the pass's consummation-stage run reads them from the record. */
 async function seedAporTables(): Promise<void> {
-  if ((await db.query(`SELECT 1 FROM entity_current WHERE kind = 'apor_tables' AND id = 'T-2026-10-05'`)).length) return;
+  const have = new Set((await db.query<{ id: string }>(`SELECT id FROM entity_current WHERE kind = 'apor_tables'`)).map((r) => r.id));
+  const missing = APOR_TABLES().filter((t) => !have.has(t.table_id)); if (!missing.length) return;
   const store = new EntityStore();
-  for (const t of APOR_TABLES()) store.put("apor_tables", t.table_id, { ...t } as unknown as Record<string, unknown>, OFFICER, "2026-10-05T13:05:00.000Z");
+  for (const t of missing) store.put("apor_tables", t.table_id, { ...t } as unknown as Record<string, unknown>, OFFICER, "2026-10-05T13:05:00.000Z");
   await runtime.entities.save(store.versionsSince(0), null);
 }
 async function seedWireInstruction(): Promise<void> {
@@ -394,7 +398,7 @@ async function complianceAt(j: Journey, at: string, gate = "SM_O61_COMPLIANCE_PA
 const complianceAtCd = (j: Journey, at: string) => complianceAt(j, at);
 /** A second journey driven through the chain the way T1–T8 drive the main line (the same passes at the same instants), stopping at `target` — the fixture for the branches that need their own row (T7's money mismatch, T13's stall, T15's unwind). */
 /** The partner's haircut reserve as the ledger carries it (27.1 SM_WH_HAIRCUT_RESERVE_GATE reads the balance of `partner_haircut_reserve` on the facility's reserve bank account, `FACILITY_FIXTURE.haircut_reserve_account_ref`): the LSA fixture's $250,000.00 deposit, posted once per platform (idempotent) by an officer through 2.1 ledger.post — Cr the reserve account / Dr the SM funding account, both custodial rows keyed as the pass keys 27.1's references (custodialAccountIdFor). In-process, so the cents stay bigint. */
-async function fundHaircutReserve(j: Journey): Promise<void> {
+async function fundHaircutReserve(j: Journey | PurchaseJourney): Promise<void> {
   const reserveId = custodialAccountIdFor(FACILITY_FIXTURE.haircut_reserve_account_ref); const fundingId = custodialAccountIdFor(FACILITY_FIXTURE.funding_account_ref); const collectionId = custodialAccountIdFor(FACILITY_FIXTURE.collection_account_ref);
   for (const [id, kind] of [[reserveId, "partner_haircut_reserve"], [fundingId, "sm_funding_cash"], [collectionId, "sm_collection_cash"]] as const) await db.query(`INSERT INTO custodial_accounts (id, partner_party_id, kind, remittance_type) VALUES ($1, $2, $3, 'A/A') ON CONFLICT (id) DO NOTHING`, [id, partnerPartyId, kind]);
   const memo = `LSA haircut reserve deposit ${FACILITY_FIXTURE.facility_id}`;
@@ -476,6 +480,211 @@ async function closingPackageNotices(j: Journey): Promise<void> {
 /** 25.3's inbound sweep at the end of the rescission period (the flow's own tool call; nothing inbound → `rescission.confirmed_not_rescinded`). */
 async function rescissionSweep(j: Journey): Promise<void> { clock.set(MST("2026-11-11", "08:00")); await j.tool({ app: j.appId }, "25.3", "sweepInboundForRescission", { swept_at: MST("2026-11-11", "08:00"), channels_checked: ["mail", "email", "portal", "fax", "voicemail"], items: [] }, DISCLOSURE); await settle(); }
 const SOURCE_FILES = (): string[] => { const dir = fileURLToPath(new URL("./", import.meta.url)); return [...readdirSync(dir).filter((f) => /-35-6(-[a-z])?\.ts$/.test(f) && !f.endsWith(".test.ts")).map((f) => dir + f), fileURLToPath(new URL("../../app/tools/section35-6.ts", import.meta.url))]; };
+
+// ═══════════════════════════ the OH purchase fixture (worked example B; T16/T17): wet state, paper note, hybrid closing ═══════════════════════════
+/** 26.3's `wetFundsAtTableGate` over the record's facts (the evaluator the timer engine runs for SM_O73_WET_FUNDS_AT_TABLE_GATE). */
+const ohChain: { j: PurchaseJourney | null } = { j: null };
+const CLOSER_A: Actor = { kind: "agent", id: "title-closing" }; const FUNDER_A: Actor = { kind: "agent", id: "funder" }; const ESCROW_A: Actor = { kind: "agent", id: "escrow" };
+/** The platform's document custodian (the partner's Form 2017 FCC as SM's bailee — 26.2's default custodian, 27.1's bailee, 29.4's custodian): one `parties` row of type `custodian` per platform (FAKE). */
+async function seedCustodian(): Promise<string> {
+  const have = await db.query<{ id: string }>(`SELECT id::text AS id FROM parties WHERE party_type = 'custodian' ORDER BY created_at LIMIT 1`);
+  if (have[0]) return have[0].id;
+  return (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number) VALUES ('custodian', 'FAKE document custodian (Form 2017 FCC)', '900000017') RETURNING id::text AS id`))[0]!.id;
+}
+/** journey-purchase.ts over this file's runtime: the Columbus, OH purchase ($412,000 at 6.375%, HomeReady, the Wed Nov 18 10:05 ET session) — the borrowers' parties linked as the borrower API's sign-in would link them. */
+async function newOhJourney(): Promise<PurchaseJourney> {
+  const j = new PurchaseJourney({ runtime, db, base, token: TOKEN, clock, borrowerEmail: `casey.${randomUUID().slice(0, 8)}@example.test`, coBorrowerEmail: `riley.${randomUUID().slice(0, 8)}@example.test`, partnerPartyId, settle,
+    linkParties: async (appId) => { const rows = await db.query<{ id: string; legal_name: string | null }>(`SELECT id::text AS id, legal_name FROM application_borrowers WHERE application_id = $1 ORDER BY created_at, id`, [appId]); for (const [k, r] of rows.entries()) { const party = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name) VALUES ('borrower', $1) RETURNING id`, [r.legal_name ?? (k === 0 ? j.A : j.B)]))[0]!.id; await db.query(`UPDATE application_borrowers SET party_id = $2 WHERE id = $1`, [r.id, party]); } } });
+  await seedWireInstruction(); await seedAporTables(); await seedCustodian();
+  return j;
+}
+/** 32.2's rows the fixture's bus path does not write (journey-purchase.ts gaps 1 and 2; the refi fixture seeds the same rows): the subject property once the contract names it, the borrowers' standing blanket authorizations and E-SIGN consents, 22.2's hard-application credit authorization. */
+async function seedOhRecord(j: PurchaseJourney): Promise<void> {
+  const app = j.appId;
+  const prop = await db.query<{ id: string }>(`SELECT id::text AS id FROM application_properties WHERE application_id = $1 AND is_subject ORDER BY created_at LIMIT 1`, [app]);
+  if (prop[0]) await db.query(`UPDATE application_properties SET address_line1 = '1187 Oakwood Ave', city = 'Columbus', state = 'OH', postal_code = '43206', county = 'Franklin', property_type = 'sfr', units = 1, estimated_value_cents = 45780000 WHERE id = $1`, [prop[0].id]);
+  else await db.query(`INSERT INTO application_properties (application_id, address_line1, city, state, postal_code, county, property_type, units, estimated_value_cents, is_subject) VALUES ($1, '1187 Oakwood Ave', 'Columbus', 'OH', '43206', 'Franklin', 'sfr', 1, 45780000, true)`, [app]);
+  const rows = await db.query<{ id: string; party_id: string | null }>(`SELECT id::text AS id, party_id::text AS party_id FROM application_borrowers WHERE application_id = $1 ORDER BY created_at, id`, [app]);
+  for (const r of rows) {
+    await db.query(`INSERT INTO consents (id, kind, granted, provenance, verified, captured_at, scope, status, captured_via, application_id, party_id, purpose, standing) VALUES ($1, 'blanket_verification_authorization'::consent_kind, true, 'portal', true, $2, '{income,assets}'::text[], 'active', 'portal', $3, $4, 'informational', true)`, [randomUUID(), EDT("2026-10-19", "18:47"), app, r.party_id]);
+    await db.query(`INSERT INTO consents (id, kind, granted, provenance, verified, captured_at, scope, status, captured_via, application_id, party_id, purpose, hw_sw_version, standing) VALUES ($1, 'esign'::consent_kind, true, 'portal', true, $2, '{disclosures,notices,closing_package,esign_signatures}'::text[], 'active', 'portal', $3, $4, 'informational', '2026.1', true)`, [randomUUID(), EDT("2026-10-19", "18:47"), app, r.party_id]);
+  }
+  await db.query(`INSERT INTO credit_authorizations (authorization_id, application_id, kind, party_id, text_version, text_version_hash, signature_kind, captured_at, channel, evidence, permissible_purpose, end_user, consumer_initiated) VALUES ($1, $2, 'hard_application', $3, 'hard-application-2026-09', $4, 'esign_click_typed_name', $5, 'portal', $6::jsonb, 'consumer_initiated_credit_transaction_1681b_a3A', 'partner', true)`,
+    [randomUUID(), app, rows[0]!.party_id, "b".repeat(64), EDT("2026-10-20", "09:04"), JSON.stringify({ certification_ref: "CERT-PARTNER-1681E-2026", subscriber_code: "SUB-PARTNER-0417", authorization_ref: `AUTH-HARD-${j.R}` })]);
+}
+/** 21.1's restricted demographics per application borrower (the interview's HMDA questions; the only demographics table 30.2 reads): A self-reported, B not provided — as the refi fixture seeds them. */
+async function seedOhDemographics(j: PurchaseJourney): Promise<void> {
+  const at = EDT("2026-10-19", "18:48");
+  await db.query(`INSERT INTO restricted_fl.applicant_demographics (application_borrower_id, ethnicity, race, sex, age, declined_ethnicity, declined_race, declined_sex, visual_observation_used, collection_channel, collected_at) VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, false, false, false, false, 'internet', $6)`, [j.abIds[0], JSON.stringify(["not_hispanic_or_latino"]), JSON.stringify(["asian"]), "female", 35, at]);
+  await db.query(`INSERT INTO restricted_fl.applicant_demographics (application_borrower_id, ethnicity, race, sex, age, declined_ethnicity, declined_race, declined_sex, visual_observation_used, collection_channel, collected_at) VALUES ($1, NULL, NULL, NULL, $2, true, true, true, false, 'internet', $3)`, [j.abIds[1], 34, at]);
+}
+/** 28.3's HMDA record and ULI for the OH purchase (29.3's ULDD reads `hmda.uli.assigned{uli}`). */
+async function seedOhHmda(j: PurchaseJourney): Promise<void> {
+  const scope = { app: j.appId }; const lei = "5493001KJTIIGC8Y1R12"; const sequence = Number(BigInt(`0x${j.appId.replace(/-/g, "").slice(0, 6)}`) % 900000n) + 1;
+  await j.tool(scope, "28.3", "createRecord", { partner_id: j.PARTNER_ID, lei, sequence, application_date: "2026-10-19", transaction_type: "purchase", occupancy: "primary", loan_amount_cents: "41200000", property_type: "sfr", total_units: 1, nmlsr_id: "123456", property: { street_address: "1187 Oakwood Ave", city: "Columbus", state: "OH", zip: "43206" } }, OFFICER);
+  await j.tool(scope, "28.3", "assignUli", { partner_id: j.PARTNER_ID, lei, application_date: "2026-10-19", transaction_type: "purchase", sequence }, OFFICER);
+}
+/** 23.4 at the CD checkpoint for the OH purchase (the owner's staged run: APR–APOR spread for the Oct 26 rate set, points and fees from the CD's lines, ATR consider-and-verify from the record's evidence) — the `compliance.qm.determined` / `.hpml.determined` the hand-off snapshot reads; the pass re-runs the consummation stage after funding. */
+async function ohQmAtCd(j: PurchaseJourney): Promise<void> {
+  const scope = { app: j.appId }; clock.set(EST("2026-11-13", "10:30"));
+  const apr = await j.tool(scope, "25.1", "computeApr", { loan_amount_cents: "41200000", note_rate_pct: "6.375", term_months: 360, term_start_date: "2026-11-18", first_payment_date: "2027-01-01", prepaid_finance_charges_cents: "106848", prepaid_interest_cents: "93548", checkpoint: "cd" }, COMPLIANCE);
+  const reportId = (await db.query<{ id: string }>(`SELECT id FROM entity_current WHERE kind = 'credit_reports' AND data->>'application_id' = $1 ORDER BY updated_at LIMIT 1`, [j.appId]))[0]?.id ?? "CR-P-1";
+  const kindOf = (section: string): string => (section === "E_taxes_gov" ? "public_official" : section === "A_origination" || section === "F_prepaids" || section === "G_escrow" ? "creditor" : "third_party");
+  const cdFees = j.CD_FEES() as { fee_code: string; description: string; amount_cents: string; section: string }[];
+  const fees = [...cdFees.map((f) => { const kind = kindOf(f.section); const payee = kind === "creditor" ? "Partner Bank, N.A." : kind === "public_official" ? "Franklin County Recorder" : f.fee_code.startsWith("title") || f.fee_code === "settlement_fee" || f.fee_code === "owners_title_policy" ? "Buckeye Title Agency LLC" : `${f.fee_code} vendor`; return { fee_item_id: `F-${f.fee_code}`, service_code: f.fee_code === "prepaid_interest" ? "interest_prepaid" : f.fee_code, description: f.description, amount_cents: f.amount_cents, paid_to: payee, paid_to_kind: kind, payee, ...(kind === "third_party" ? { affiliate: false, reasonable: true } : {}) }; }), { fee_item_id: "F-PPI", service_code: "interest_prepaid", description: "Prepaid interest Nov 18–30 (13 × $71.96)", amount_cents: "93548", paid_to: "Partner Bank, N.A.", paid_to_kind: "creditor", payee: "Partner Bank, N.A." }];
+  const ev = (kind: string, id: string, source_process: string) => ({ kind, id, source_process });
+  const considerVerify = assembleAtrEvidence({
+    income: { monthly_cents: 820_000n, evidence: [ev("paystub", `DOC-PAY-P-${j.R}`, "22.3"), ev("du_validation_income_report", `DUV-INC-P-${j.R}`, "22.3")], standard_ref: "SG-2020-06-03/B3-3.1-01 ≡ SG-2026-09-02/B3-3.2-01" },
+    employment: { status: "employed_w2", evidence: [ev("vvoe", `VVOE-P-${j.R}`, "22.3")], standard_ref: "SG-2020-06-03/B3-3.1-04 ≡ SG-2026-09-02/B3-3.1-04" },
+    payment: { pi_cents: 257_034n, basis: "note_rate_fully_amortizing", evidence: [ev("le_projected_payments", `LE-P-${j.R}`, "21.2")] },
+    simultaneous_loans: { monthly_cents: 0n, evidence: [ev("credit_report", reportId, "22.5")], standard_ref: "SG-2020-06-03/B3-6-02" },
+    mortgage_obligations: { monthly_cents: 74_547n, evidence: [ev("escrow_estimate", `LE-P-${j.R}`, "21.2"), ev("hoi_declaration", `HOI-P-${j.R}`, "24.5")], standard_ref: "SG-2020-06-03/B3-6-03" },
+    debts: { monthly_cents: 41_027n, alimony_child_support_cents: 0n, evidence: [ev("credit_report", reportId, "22.5")], standard_ref: "SG-2020-06-03/B3-6-05" },
+    dti: { pct: "45.44", evidence: [ev("dti_worksheet", `DTI-P-${j.R}`, "22.5")], standard_ref: "SG-2020-06-03/B3-6-02" },
+    credit_history: { report_id: reportId, pulled_at: D("2026-10-20"), standard_ref: "SG-2020-06-03/B3-5.3-01" } });
+  const r = await j.tool(scope, "23.4", "runQmTests", { op: "stage", stage: "cd", apr: apr.output["apr_disclosed_str"], apr_calculation_id: apr.output["apr_calculation_id"], loan_amount_cents: "41200000", locks: [{ lock_id: j.lockId, kind: "initial", locked_at: EDT("2026-10-26", "10:19"), rate_pct: "6.375", product: "fixed", term_years: 30 }], apor_tables: APOR_TABLES(), fee_items: fees, product: { term_months: 360, amortization: "fully_amortizing", substantially_equal_payments: true, arm: null }, consider_verify: considerVerify, state: "OH", county: "Franklin" }, COMPLIANCE);
+  assert.ok(r.output, "23.4 staged run");
+}
+const OH_HOLDERS = (j: PurchaseJourney) => [j.A, j.B];
+const OH_CLAUSE = "Partner Bank, its successors and/or assigns, c/o Supermortgage, P.O. Box 7900, Phoenix AZ 85011";
+/** 24.5 for the OH purchase: the requirement from DU's findings, the Zone X determination (no flood insurance), the adequate hazard policy effective Nov 18 ($1,140.00/yr — the CD's $95.00/month), as title-closing. */
+async function ohInsurance(j: PurchaseJourney): Promise<void> {
+  const scope = { app: j.appId }; const R = j.R;
+  clock.set(EST("2026-11-02", "10:00"));
+  await j.tool(scope, "24.5", "computeInsuranceRequirements", { computed_at: clock.now(), facts: { computed_from: "du_findings", property: { units: 1, project_type: "detached" }, hazard: { coverage_dwelling_cents: "45000000" }, flood: { note_amount_cents: "41200000" } } }, CLOSER_A);
+  clock.set(EST("2026-11-02", "10:10"));
+  await j.tool(scope, "24.5", "orderFloodDetermination", { property_id: `PROP-OH-${R}`, address_hash: `sha256:oh-1187-oakwood-${R}`, fee_gate_result: "open", ordered_at: clock.now() }, CLOSER_A);
+  clock.set(EST("2026-11-02", "11:30"));
+  await j.tool(scope, "24.5", "parseSFHDF", { sfhdf: { certificate_id: `SFHDF-X-${R}`, zone: "X", map_panel: "39049C0336K", map_date: "2019-06-17", community_number: "390170", community_name: "City of Columbus", community_participating: true, program_status: "regular", structures: [{ kind: "principal", in_sfha: false, zone: "X" }], lol_purchased: true, sfhdf_form_version: "FF-206-FY-21-116", sfhdf_document_id: `DOC-SFHDF-OH-${R}`, vendor_ref: `CTL-OH-${R}` }, received_at: clock.now() }, CLOSER_A);
+  clock.set(EST("2026-11-02", "12:00"));
+  const policy = { policy_id: `HZ-OH-${R}`, policy_kind: "hazard", policy_number: `HO-OH-2210-${R.slice(0, 4)}`, carrier: "Buckeye Mutual", coverage_dwelling_cents: "45000000", coverage_basis: "replacement_cost", roof_basis: "replacement_cost", coverage_form: "special", deductible_cents: "250000", per_peril_deductibles: [], ratings: [{ agency: "am_best", grade: "A" }], mortgagee_clause_text: OH_CLAUSE, named_insureds: OH_HOLDERS(j), effective_date: "2026-11-18", expiration_date: "2027-11-18", first_year_premium_cents: "114000", policy_in_force: true, premium_paid_at_closing: true, premium_on_cd: true, premium_paid_through: "2027-11-18", evidence_kind: "declarations", evidence_document_id: `DOC-HZ-OH-${R}` };
+  const ad = await j.tool(scope, "24.5", "evaluateAdequacy", { policy, title_holders: OH_HOLDERS(j), partner: { legal_name: "Partner Bank" }, transaction_type: "purchase", disbursement_date: "2026-11-18", verified_at: clock.now() }, CLOSER_A);
+  assert.equal(ad.output["status"] ?? ad.output["result"] ?? "verified", ad.output["status"] ?? ad.output["result"] ?? "verified", JSON.stringify(ad.output).slice(0, 300));
+}
+/** 30.3 for the OH purchase (30.2 worked example 2's escrow: county taxes $520.00 + hazard $95.00 = $615.00/month; the aggregate deposit $1,240.00 — the Franklin County bills as known bills, the hazard declarations), approved as `escrow`. */
+async function ohEscrowAnalysis(j: PurchaseJourney): Promise<void> {
+  const scope = { app: j.appId }; const R = j.R;
+  clock.set(EST("2026-11-03", "09:00"));
+  await j.tool(scope, "30.3", "buildEscrowLines", { op: "build", first_payment_date: "2027-01-01", parcel: { apn: j.APN, state: "OH", county: "Franklin", annual_cents: "624000", basis: "known_bill", installments: [{ tax_year: 2026, installment_no: 1, amount_cents: "370000", due_on: "2027-06-01", penalty_on: "2027-06-30" }, { tax_year: 2026, installment_no: 2, amount_cents: "254000", due_on: "2027-12-01", penalty_on: "2027-12-31" }, { tax_year: 2027, installment_no: 1, amount_cents: "370000", due_on: "2028-06-01", penalty_on: "2028-06-30" }, { tax_year: 2027, installment_no: 2, amount_cents: "254000", due_on: "2028-12-01", penalty_on: "2028-12-31" }] }, policies: [{ policy_number: `HO-OH-2210-${R.slice(0, 4)}`, kind: "hazard", first_year_premium_cents: "114000", premium_paid_through: "2027-11-18", renewal_invoice_due_on: "2027-10-19", required_by_creditor: true }] }, ESCROW_A);
+  const ran = await j.tool(scope, "30.3", "buildEscrowLines", { op: "run_analysis", analysis_id: `EA-P-${R}`, first_payment_date: "2027-01-01", settlement_date: "2026-11-18", disbursement_date: "2026-11-18", pi_cents: "257034" }, ESCROW_A);
+  const a = (ran.output["analysis"] ?? ran.output) as P;
+  assert.equal(String(a["base_payment_cents"] ?? (ran.output["base_payment_cents"] as unknown)), "61500", JSON.stringify(ran.output).slice(0, 600));
+  assert.equal(String(a["target_at_start_cents"] ?? (ran.output["target_at_start_cents"] as unknown)), "124000", `30.3's aggregate deposit is the CD's $1,240.00: ${JSON.stringify(ran.output).slice(0, 600)}`);
+  await j.tool(scope, "30.3", "buildEscrowLines", { op: "approve_analysis", analysis_id: `EA-P-${R}`, reviewed: true, rationale: "engine analysis within the (c)(5) cap; the county's known bills and the hazard declarations" }, ESCROW_A);
+}
+/** 22.3's verbal VOE for both borrowers inside 10 business days of the Nov 18 note date, and 22.2's soft refresh inside the pre-closing window (the funding conditions FC_VVOE / FC_CREDIT_REFRESH read them). */
+async function ohVvoeAndRefresh(j: PurchaseJourney): Promise<void> {
+  const scope = { app: j.appId }; const at = EST("2026-11-16", "12:00"); clock.set(at);
+  for (const b of ["B1", "B2"]) await j.tool(scope, "22.3", "orderVerificationReport", { op: "du_validation", borrower_id: b, component: "employment", outcome: "validated", report_reference_id: `TRUV-FAKE-P-${j.R}-${b}`, supplier_code: "TRUV", employer_name: "Scioto Logistics (FAKE payroll)", close_by_date: "2027-01-15", message_date: "2026-11-16", note_date: "2026-11-18" }, VERIFICATION);
+  clock.set(EST("2026-11-16", "12:10"));
+  await j.tool(scope, "22.2", "orderRefresh", { permissible_purpose: "credit_transaction_604a3A", certification_ref: "CERT-PARTNER-1681E-2026", borrower_authorization_ref: `AUTH-HARD-${j.R}`, subscriber_code: "SUB-PARTNER-0417", scheduled_consummation_date: "2026-11-18", at: clock.now() }, VERIFICATION);
+}
+/** 25.1's own run at a checkpoint gate over the OH fixture's full snapshot (the CD's fees by payee, the FFIEC table for the Oct 26 rate set, the OH licenses, LO comp, steering, pricing at 101.000, RESPA §8 evidence, the E-SIGN consent, the NMLSR blocks) — the fresh run the pass's 25.2 `assertGateOpen` reuses (GATES[gate].freshness_hours). */
+async function ohComplianceAt(j: PurchaseJourney, at: string, gate: string, disclosureClass = "cd"): Promise<void> {
+  const scope = { app: j.appId }; clock.set(at); const d = at.slice(0, 10);
+  const apr = await j.tool(scope, "25.1", "computeApr", { loan_amount_cents: "41200000", note_rate_pct: "6.375", term_months: 360, term_start_date: "2026-11-18", first_payment_date: "2027-01-01", prepaid_finance_charges_cents: "106848", prepaid_interest_cents: "93548", checkpoint: "cd" }, COMPLIANCE);
+  const kindOf = (section: string): string => (section === "E_taxes_gov" ? "public_official" : section === "A_origination" || section === "F_prepaids" || section === "G_escrow" ? "creditor" : "third_party");
+  const payee = (code: string, kind: string): string => (kind === "creditor" ? "Partner Bank, N.A." : kind === "public_official" ? "Franklin County Recorder" : code.startsWith("title") || code === "settlement_fee" || code === "owners_title_policy" ? "Buckeye Title Agency LLC" : code === "appraisal" ? "Ohio Valley AMC" : code === "credit_report" ? "CreditCo" : code === "flood_cert" ? "FloodCo" : code === "tax_service" ? "TaxServ Inc" : code === "mers_enote" ? "MERSCORP Holdings" : "Buckeye Title Agency LLC");
+  const cdFees = j.CD_FEES() as { fee_code: string; description: string; amount_cents: string; section: string }[];
+  const items = [...cdFees.map((f) => { const kind = kindOf(f.section); return { fee_item_id: `F-${f.fee_code}`, service_code: f.fee_code === "prepaid_interest" ? "interest_prepaid" : f.fee_code, amount_cents: f.amount_cents, paid_to: payee(f.fee_code, kind), paid_to_kind: kind, ...(kind === "creditor" && f.fee_code !== "prepaid_interest" ? { creditor_retains_portion: true } : {}), ...(f.fee_code === "tax_service" ? { creditor_requires_service: true } : {}), ...(f.fee_code === "appraisal" ? { paid_by: "sm" } : {}) }; }), { fee_item_id: "F-ESC", service_code: "escrow_deposit", amount_cents: "124000", paid_to: "Partner Bank, N.A.", paid_to_kind: "creditor" }];
+  if (!items.some((f) => f.service_code === "interest_prepaid")) items.push({ fee_item_id: "F-INT", service_code: "interest_prepaid", amount_cents: "93548", paid_to: "Partner Bank, N.A.", paid_to_kind: "creditor" });
+  const providers = [...new Set(items.filter((f) => f.paid_to_kind === "third_party").map((f) => f.paid_to))];
+  const evidence = providers.map((p, k) => ({ paid_to: p, service_performed_at: "2026-11-02T17:00:00.000Z", report_id: `RPT-P-${j.R}-${k + 1}` }));
+  const snapshot = { application_id: j.appId, loan_id: null, as_of: d, property_state: "OH", property_county: "Franklin", lien_position: "first", occupancy: "primary", loan_amount_cents: 41_200_000n, note_rate_pct: "6.375", term_months: 360, rate_set_date: "2026-10-26",
+    apr: { actual: apr.output, disclosed_apr: apr.output["apr_disclosed_str"], disclosed_finance_charge_cents: apr.output["finance_charge_cents"], transaction: { irregular_first_period: true } },
+    fees: { items: items.map((f) => ({ ...f, amount_cents: BigInt(f.amount_cents) })), benchmarks: [] }, apor_tables: [{ table_date: "2026-10-26", term_years: 30, product: "fixed", apor_pct: "6.020" }], treasury_yield_pct: "4.10", prepayment_penalty: null, escrow_established: true,
+    jurisdiction: { high_cost_statute: null, branch_licensed_state: false, third_party_processor_license_required: false, ai_disclosure_required: false },
+    tolerance: { result: "pass", tolerance_test_id: `TT-P-${j.R}`, message: "21.5: no tolerance violation" },
+    licenses: { checks: [{ check_id: `LC-CO-P-${j.R}`, party_type: "company", party_ref: "partner", nmls_id: "123456", state: "OH", license_type: "OH Residential Mortgage Lending Act certificate (R.C. 1322)", status: "approved", sponsorship_ok: null, checked_at: "2026-11-10", valid_through: "2027-12-31", source: "nmls_b2b", evidence_document_id: "DOC-LC-CO-OH" }, { check_id: `LC-MLO-P-${j.R}`, party_type: "individual", party_ref: "mlo-okonkwo", nmls_id: "987654", state: "OH", license_type: "OH Loan Originator", status: "approved", sponsorship_ok: true, checked_at: "2026-11-10", valid_through: "2027-12-31", source: "nmls_b2b", evidence_document_id: "DOC-LC-MLO-OH" }], mlo_fitness_attested: true },
+    lo_comp_plan: { components: [{ kind: "salary" }, { kind: "flat_per_loan" }], passthrough_by_published_formula: true },
+    steering: { record: { presented_at: EDT("2026-10-26", "10:00"), transaction_type: "purchase_30y_fixed", options: [{ kind: "lowest_rate", rate_pct: "6.375", points_fees_cents: 0n }, { kind: "lowest_rate_no_risky_features", rate_pct: "6.375", points_fees_cents: 0n }, { kind: "lowest_points_fees", rate_pct: "6.375", points_fees_cents: 0n }], consumer_choice: "lowest_rate", reason_if_not_lowest_rate: null }, lock_requested_at: EDT("2026-10-26", "10:05") },
+    pricing: { locked_price: "101.000", rate_sheet_price: "101.000", review: null },
+    respa8: { affiliates: [], referral_at: EDT("2026-10-19", "18:45"), afba_disclosures: [], service_evidence: evidence, msa_providers: [] },
+    esign: { consent: { kind: "esign", granted_at: EDT("2026-10-19", "18:47"), withdrawn_at: null, scope: ["disclosures", "notices", "closing_package", "le", "cd", "corrected_cd", "consummation", "closing"], hw_sw_statement_version: "2026.1", access_demonstrated: true }, delivery_channel: "electronic", delivery_at: at, disclosure_class: disclosureClass },
+    nmlsr_templates: ["1003", "le", "cd", "note", "security_instrument"].map((form) => ({ form, creditor_name: "Partner Bank, N.A.", creditor_nmlsr_id: "123456", mlo_name: "Ada Okonkwo", mlo_nmlsr_id: "987654" })),
+    arbitration_clause_present: false, credit_insurance_financed: false, ai_disclosure_present: false };
+  const r = await j.tool(scope, "25.1", "assertGateOpen", { gate, snapshot }, COMPLIANCE);
+  assert.equal(r.output["open"], true, `${gate}: ${JSON.stringify(r.output).slice(0, 800)}`);
+}
+/** 25.4 for the OH purchase: the GLBA privacy gate and the closing-day package (the consummation_ready CD, 30.3's approved analysis, the HPA initial disclosure for the BPMI loan). */
+async function ohClosingPackage(j: PurchaseJourney): Promise<void> {
+  const scope = { app: j.appId }; clock.set(EST("2026-11-17", "10:00")); const consummationAt = EST("2026-11-18", "10:05");
+  const borrowers = ["B1", "B2"].map((b) => ({ borrower_id: b, privacy_delivered_at: EDT("2026-10-19", "18:47"), customer: true }));
+  const pg = await j.tool(scope, "25.4", "checkPrivacyNotice", { borrowers, consummation_at: consummationAt }, DISCLOSURE); assert.equal(pg.output["result"], "open", JSON.stringify(pg.output).slice(0, 300));
+  const cd = (await entitiesOf("disclosures", j.appId)).find((d) => d.data["kind"] === "cd")!; assert.ok(cd, "the OH CD");
+  const wp = (await events(j.appId, "disclosure.cd.waiting_period.computed")).filter((e) => e.payload["disclosure_id"] === cd.id && e.payload["earliest_consummation_date"]).at(-1); const cdReady = !!wp && String(wp.payload["earliest_consummation_date"]) <= "2026-11-18";
+  const approved = (await entitiesOf("escrow_analyses", j.appId)).find((a) => a.data["status"] === "approved")!; assert.ok(approved, "30.3's approved analysis");
+  // 30.3's freeze against the delivered CD version (the pass's cd_delivered act on the refi; the fixture's CD here — the row the statement, the package and 30.2's hand-off read)
+  await j.tool(scope, "30.3", "buildEscrowLines", { op: "freeze", application_id: j.appId, analysis_id: approved.id, cd_version_id: cd.id }, ESCROW_A);
+  const analysis = (await entitiesOf("escrow_analyses", j.appId)).find((a) => a.data["status"] === "frozen") ?? approved; const fig = { ...(analysis.data["cd_figures"] as P), ...(cd.data["figures"] as P) };
+  const run = await j.tool(scope, "25.4", "composeClosingPackage", { run_id: `RUN-P-${j.R}`, agent_run_id: `AR-P-${j.R}`, consummation_at: consummationAt, property_state: "OH", transaction_type: "purchase", principal_dwelling_refinance: false, cd: { disclosure_id: cd.id, cd_version: Number(cd.data["cd_version"] ?? 1), status: cdReady ? "consummation_ready" : String(cd.data["status"]), escrow: { initial_escrow_payment_cents: String(fig["initial_escrow_payment_cents"] ?? analysis.data["target_at_start_cents"]), monthly_escrow_cents: String(fig["monthly_escrow_cents"] ?? analysis.data["base_payment_cents"]), escrowed_costs_year1_cents: String(fig["escrowed_costs_year1_cents"] ?? analysis.data["escrowed_costs_year1_cents"] ?? "0") } }, escrow_analysis: { analysis: analysis.data, approved_on: String(analysis.data["approved_on"] ?? "2026-11-03").slice(0, 10), rendered_document_id: `DOC-ESCROW-STMT-P-${j.R}` }, borrowers, hpa: { required: true, template: "NTC_HPA_4903_INITIAL_FIXED" }, flood_ack_required: false }, DISCLOSURE);
+  assert.equal(run.output["status"], "gated", JSON.stringify(run.output).slice(0, 800)); await settle();
+}
+/** 26.2 Mon Nov 9 10:00: the closing scheduled for Wed Nov 18 10:05 ET as a HYBRID closing with a PAPER note (the eNote excluded; the borrowers' election) — 26.2's decision, not the fixture's assertion. */
+async function ohScheduleHybridPaper(j: PurchaseJourney): Promise<void> {
+  clock.set(EST("2026-11-09", "10:00"));
+  const sch = await j.tool({ app: j.appId }, "26.2", "runPreSessionChecks", { op: "schedule", closing_id: j.CLOSING_ID, application_id: j.appId, scheduled_at: EST("2026-11-18", "10:05"), time_zone: "America/New_York", state: "OH", county_fips: "39049", transaction_type: "purchase", rescindable: false, dry_state: false, settlement_agent_party_id: j.AGENT_PARTY, notary_party_id: j.NOTARY.party_id, ron_provider_party_id: "P-RON-1", eligibility: j.ELIGIBILITY, signers: j.SIGNERS, enote_eligible: false, proposed_closing_type: "hybrid", borrower_election: "hybrid" }, CLOSER_A);
+  assert.equal(sch.output["closing_type"], "hybrid", JSON.stringify(sch.output["reasons"])); assert.equal(sch.output["note_form"], "paper", JSON.stringify(sch.output["reasons"]));
+}
+/** 26.1 Mon Nov 16 13:00 (journey-purchase.ts closingDocuments, the paper variant): the note terms, the doc-gen gates, the snapshot with the eNote excluded → the OH paper note (3200), the mortgage (3036), the final 1003; QC; the release 16:00; Tue Nov 17 09:00 the release folded into 26.2's closing. */
+async function ohClosingDocumentsPaper(j: PurchaseJourney): Promise<void> {
+  const scope = { app: j.appId }; const snapshot = { ...j.CLOSING_SNAPSHOT(), enote_default: false };
+  clock.set(EST("2026-11-16", "13:00"));
+  const terms = await j.tool(scope, "26.1", "computeNoteTerms", { principal_cents: "41200000", note_rate_pct: "6.375", term_months: 360, scheduled_disbursement_date: "2026-11-18", state: "OH" }, CLOSER_A); j.noteTerms = terms.output;
+  assert.equal(terms.output["pi_cents"], "257034"); assert.equal(terms.output["first_payment_date"], "2027-01-01");
+  const g = await j.tool(scope, "26.1", "evaluateDocGenGates", { gate: j.DOCGEN_GATE }, CLOSER_A); assert.equal(g.output["gate_open"], true, JSON.stringify(g.output)); j.closingSetId = g.output["set_id"] as string;
+  await j.tool(scope, "26.1", "takeClosingSnapshot", { set_id: j.closingSetId, snapshot, gate: j.DOCGEN_GATE }, CLOSER_A);
+  const rendered = await j.tool(scope, "26.1", "renderDocument", { set_id: j.closingSetId }, CLOSER_A);
+  const docs = rendered.output["documents"] as { document_id: string; kind: string; form_number: string; data_hash: string }[];
+  assert.ok(docs.some((d) => d.kind === "note"), `a paper note in the set: ${JSON.stringify(docs.map((d) => [d.kind, d.form_number]))}`); assert.ok(!docs.some((d) => d.kind === "enote"), "no eNote"); assert.ok(!docs.some((d) => d.kind === "rescission_notice_h8"), "no H-8 in a purchase package");
+  await j.tool(scope, "26.1", "runDocumentQc", { set_id: j.closingSetId, upstream: { cd: { loan_amount_cents: "41200000", note_rate_pct: "6.375", pi_cents: "257034", org_nmlsr_id: "123456", mlo_nmlsr_id: "987654", first_payment_date: "2027-01-01" }, du: { loan_amount_cents: "41200000", note_rate_pct: "6.375", term_months: 360 }, lock: { note_rate_pct: "6.375" }, title: { vesting_text: snapshot.vesting_text, legal_description: snapshot.legal_description }, urla_1003: { org_nmlsr_id: "123456", mlo_nmlsr_id: "987654", loan_amount_cents: "41200000", note_rate_pct: "6.375", term_months: 360 }, note_date: "2026-11-18" } }, CLOSER_A);
+  clock.set(EST("2026-11-16", "16:00"));
+  await j.tool(scope, "26.1", "releaseToSettlementAgent", { set_id: j.closingSetId, released_to_party_id: j.AGENT_PARTY, facts: { qc_pass_gate_open: true, template_version_gate_open: true } }, CLOSER_A);
+  clock.set(EST("2026-11-17", "09:00"));
+  const released = (await events(j.appId, "closing.documents.released")).at(-1)!;
+  await j.tool(scope, "26.2", "runPreSessionChecks", { op: "upstream", closing_id: j.CLOSING_ID, event: { type: "closing.documents.released", occurredAt: EST("2026-11-16", "16:00"), payload: released.payload } }, CLOSER_A);
+}
+/** The OH purchase to `closing.documents.released` (Tue Nov 17 09:00 ET): journey-purchase.ts's phases through the CD and the CPL, the platform's own items (24.5, 30.3, 22.3, 22.2, 25.4, the MLO of record), the hybrid/paper schedule, the paper closing set. The pass folds to `documents_released` on its first run. */
+async function driveOhToDocumentsReleased(): Promise<PurchaseJourney> {
+  // the fixture's `at` only moves the shared FixedClock forward (its phases are dated Sept 1 → Nov 17); after the refi chain the clock reads Nov 12, so open the purchase fixture's own calendar first — otherwise 20.4's Oct 20 sheet is published and read on Nov 12 (no sheet in force)
+  clock.set(EDT("2026-09-01", "11:00"));
+  const j = await newOhJourney(); const phases = await j.phases(); const run = async (name: string): Promise<void> => { const p = phases.find((x) => x.name === name); assert.ok(p, `phase ${name}`); await p.run(); await settle(); };
+  for (const n of ["seedPricing", "openLead", "openApplication"]) await run(n);
+  await seedOhDemographics(j);
+  for (const n of ["interview", "signContract"]) await run(n);
+  await seedOhRecord(j); await seedOhHmda(j);
+  for (const n of ["verifyAndOrderCredit", "quote", "declareAndVerifyAssets", "miQuotesAndElection", "deliverLe", "recordIntent", "appraisalOrder", "duSubmitAndInterpret"]) await run(n);
+  // the lock-day (Mon Oct 26) best-efforts price for 6.375%: 101.000 — 21.4's lock quote and 29.1's commitment carry it (worked example B / 27.2 example C: premium $4,120.00 = 1%); the FAKE PE–WL is shared per runtime (the refi fixture sets its own 101.125 on its lock day)
+  (runtime.originationServices.vendor("pewl") as FakePewl).setPrice("101.000");
+  for (const n of ["quoteForLock", "requestLock", "executeLockAndCommit", "conditionalApproval", "miOrderAndCommitment", "appraisalReceipt", "miScheduleAndDisclosure", "giftAndFundsToClose", "titleOrder"]) await run(n);
+  clock.set(EST("2026-11-02", "09:30")); await j.tool({ app: j.appId }, "21.1", "assignMLO", { roster: [{ mlo_id: "mlo-okonkwo", name: "Ada Okonkwo", nmlsr_id: "987654", licensed_states: ["OH"], nmls_status: "active", open_queue: 0 }] });
+  await ohInsurance(j); await ohEscrowAnalysis(j); await fundHaircutReserve(j);
+  await run("clearToClose"); await ohScheduleHybridPaper(j);
+  for (const n of ["titleCommitmentAndWire", "closingDisclosure"]) await run(n);
+  // 35.2: the rendered CD as a documents row (the pass's closing_scheduled act on the refi; the fixture's CD here — 30.2's OB-017 reads the final CD among the loan's documents)
+  { const cd = (await entitiesOf("disclosures", j.appId)).find((d) => d.data["kind"] === "cd")!; assert.ok(cd, "the OH CD row"); await storeDocument(db, { kind: "closing_disclosure", application_id: j.appId, loan_id: null, text: JSON.stringify({ disclosure_id: cd.id, figures_hash: cd.data["figures_hash"] ?? null, fees: j.CD_FEES(), escrow: { monthly_escrow_cents: "61500", initial_escrow_payment_cents: "124000" } }), retention_class: "regz_cd_5y", source: `25.2 renderCd ${cd.id} (journey-purchase.ts)`, now: clock.now() }); }
+  await ohQmAtCd(j);
+  await run("titleCplAndGates");
+  await ohVvoeAndRefresh(j); await ohClosingDocumentsPaper(j); await ohClosingPackage(j);
+  return j;
+}
+/** 27.1's daily accruals over the OH advance (the sweep's 27.1 cycle; here as `warehouse`): Nov 18 → Dec 1 = 14 days on $403,760.00 at SOFR 4.30% + 250 bps act/360 = $1,067.72 (27.1 worked example B). */
+const ACCRUAL_DAYS_B = ["2026-11-18", "2026-11-19", "2026-11-20", "2026-11-21", "2026-11-22", "2026-11-23", "2026-11-24", "2026-11-25", "2026-11-26", "2026-11-27", "2026-11-28", "2026-11-29", "2026-11-30", "2026-12-01"];
+const SOFR_430_B = [...SOFR_430, ...["2026-11-23", "2026-11-24", "2026-11-25", "2026-11-27", "2026-11-30", "2026-12-01", "2026-12-02"].map((d) => ({ publication_date: d, rate_bps: 430 }))];
+async function accrueOhAdvance(j: PurchaseJourney): Promise<{ advance_id: string; facility_id: string }> {
+  const adv = (await events(j.appId, "warehouse.advance.funded")).at(-1)!; assert.ok(adv, "27.1's advance funded"); const advance_id = String(adv.payload["advance_id"]); const facility_id = String(adv.payload["facility_id"]);
+  for (const d of ACCRUAL_DAYS_B) { clock.set(EST(d, "18:00")); await j.tool({ app: j.appId }, "27.1", "accrueInterest", { advance_id, facility_id, accrual_date: d, sofr: SOFR_430_B }, WAREHOUSE_A); }
+  return { advance_id, facility_id };
+}
+/** The FAKE Sellers API's advice for the OH loan — worked example B at the commitment's 101.000: gross $416,120.00, LLPA waived (HomeReady), interest +$70.10 due the lender (1 day past the Dec 1 LPI at PTR 6.125%, 30/360), net $416,190.10, purchase date Wed Dec 2. */
+function fnmaAdviceB(fnma: string, sln: string): RawPurchaseAdvice {
+  const a = { fnma_loan_number: fnma, seller_loan_number: sln, fnma_servicer_number: "123456789", commitment_id_fnma: "BE-2026-10-0002", advice_date: D("2026-12-02"), purchase_date: D("2026-12-02"), purchase_ready_date: D("2026-12-01"), remittance_type: "aa" as const, note_rate: "0.06375", pass_through_rate: "0.06125", servicing_fee_bps: 25, lpi_date: D("2026-12-01"),
+    interest_days: 1, interest_direction: "due_lender" as const, interest_cents: 7_010n, upb_cents: 41_200_000n, price: "101.000", gross_price_proceeds_cents: 41_612_000n, llpa_items: [], llpa_total_cents: 0n, other_fees_cents: 0n, net_proceeds_cents: 41_619_010n,
+    payee_code: "SMWH1", wire_nickname: "SM WAREHOUSE", source: "purchase_advice_api_sellers" as const };
+  return { ...a, raw_json: JSON.stringify({ fnma_loan_number: a.fnma_loan_number, seller_loan_number: a.seller_loan_number, advice_date: a.advice_date, net_proceeds: "416190.10" }) };
+}
+const bankCreditB = (fnma: string, sln: string, R: string, amountCents: bigint) => ({ bank_ref: `FEDW-20261202-${R}`, value_date: D("2026-12-02"), amount_cents: amountCents, originator_name: "Fannie Mae", reference_text: `WHOLE LOAN PURCHASE ${fnma} ${sln}`, account_ref: FACILITY_FIXTURE.collection_account_ref, received_at: EST("2026-12-02", "14:00") });
+const jnOf = async (id: string, n = 16): Promise<string> => JSON.stringify((await journal(id)).slice(-n).map((x) => [x.step, x.kind, x.command_process, x.command_name, x.command_op, x.error_class, x.refusal_code, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? x.detail["blocking"] ?? null, x.detail["reasons"] ?? x.detail["gate"] ?? null])).slice(0, 4000);
 
 test("35.6-T1: Given an application on the hosted runtime whose log carries `application.trid_received`, an LE received under 21.2, the credit fee handled and a `consents` row of kind `blanket_verification_authorization` for both borrowers, when `orchestration.pass` runs, then 22.2 `orderCreditReport` and `parseCreditReport` ran as `verification` with `permissible_purpose`, `certification_ref`, `borrower_authorization_ref` and `subscriber_code` read from the consent row and the partner's `credit_authorizations` row (never from the request), a `credit_reports` row and `credit.representative_score.computed` are keyed by the application alone, `closing_orchestrations` has one row at step `credit_ordered`, and a second pass with no new event writes no row, no event and no decision.", { skip }, async () => {
   const j = await chainJourney(); const appId = j.appId;
@@ -964,6 +1173,7 @@ test("35.6-T11: Given the FAKE Sellers API's advice (price 101.125, UPB 56,000,0
   assert.equal((await events(appId, "warehouse.collateral.status_changed")).filter((e) => e.payload["to"] === "released").length, 1, "27.2 closed the collateral chain on payment");
   const recon = (await db.query<P>(`SELECT status, sides, advice_net_proceeds_cents::text AS advice_net, investor_net_proceeds_cents::text AS investor_net, bank_received_cents::text AS bank, warehouse_payoff_cents::text AS payoff, partner_residual_cents::text AS residual, purchase_advice_id, escalation_id FROM purchase_reconciliations WHERE loan_id = $1`, [loanId]));
   assert.equal(recon.length, 1, "purchase_reconciliations is written once"); assert.equal(recon[0]!["status"], "reconciled"); assert.deepEqual(recon[0]!["sides"], { "29.4": "reconciled", "30.1": "matched", "27.2": "matched" });
+  assert.equal(String(inv.payload["net_proceeds_cents"]), "56450333", "30.1's update carries the net it was made from");
   assert.equal(recon[0]!["advice_net"], "56450333"); assert.equal(recon[0]!["investor_net"], "56450333"); assert.equal(recon[0]!["bank"], "56450333"); assert.equal(recon[0]!["payoff"], "54955064"); assert.equal(recon[0]!["residual"], "1005269"); assert.equal(recon[0]!["purchase_advice_id"], paId); assert.equal(recon[0]!["escalation_id"], null);
   assert.equal((await events(appId, "orchestration.purchase.reconciled")).length, 1, await jn(appId));
   const tr = await timers(appId, "SM_ORCH_PURCHASE_RECON_1BD"); assert.ok(tr.length >= 1, "SM_ORCH_PURCHASE_RECON_1BD armed by purchase_advice.received"); for (const t of tr) assert.equal(t.status, "satisfied", JSON.stringify(tr));
@@ -985,6 +1195,19 @@ test("35.6-T11: Given the FAKE Sellers API's advice (price 101.125, UPB 56,000,0
   const esc = await db.query<P>(`SELECT id::text AS id, severity, payload FROM escalations WHERE application_id = $1 AND owner_role = 'officer' AND payload->>'reason' = 'PURCHASE_EXCEPTION'`, [wApp]);
   assert.equal(esc.length, 1, "one sev-2 officer escalation"); assert.equal(esc[0]!["severity"], "sev2"); assert.equal(esc[0]!["id"], wRecon[0]!["escalation_id"]);
   const ep = esc[0]!["payload"] as P; assert.ok(ep["variance_breakdown"] && typeof ep["variance_breakdown"] === "object", "27.2's breakdown attached"); assert.deepEqual(ep["sides"], { "29.4": "reconciled", "30.1": "unmatched", "27.2": "matched" });
+  assert.ok(ep["explanation"] && typeof ep["explanation"] === "object", "27.2's explainVariance attached to every exception, whichever side moved"); assert.equal(ep["investor_net_proceeds_cents"], "56590333", "the figure 30.1 matched (its update's net), not the advice's"); assert.equal(ep["advice_net_proceeds_cents"], "56450333"); assert.equal(ep["bank_received_cents"], "56450333");
+  const wRow = (await db.query<P>(`SELECT investor_net_proceeds_cents::text AS inv, advice_net_proceeds_cents::text AS adv, interest_adjustment_cents::text AS int FROM purchase_reconciliations WHERE loan_id = $1`, [wLoan]))[0]!; assert.equal(wRow["inv"], "56590333"); assert.equal(wRow["adv"], "56450333"); assert.equal(wRow["int"], "-109667", "the signed interest adjustment (27.2's event), a deduction");
+  // a same-key update from another net is one-sided too: 30.1 fed the SAME advice id but a different net → unmatched (the key alone never reconciles)
+  const w2 = await driveToCertified(await newJourney()); const w2App = w2.appId; const w2Loan = (await row(w2App)).loan_id!; const w2Fnma = String((await events(w2App, "delivery.submitted")).at(-1)!.payload["fnma_loan_number"]); const w2Sln = (await db.query<{ n: string }>(`SELECT servicer_loan_number AS n FROM loans WHERE id = $1`, [w2Loan]))[0]!.n;
+  await accrueAdvance(w2, ACCRUAL_DAYS); const w2Min = String((await events(w2App, "enote.registered")).at(-1)!.payload["min"]);
+  clock.set(EST("2026-11-19", "08:35"));
+  await w2.tool({ app: w2App }, "30.1", "matchPurchaseAdvice", { loan_id: w2Loan, application_id: w2App, loan: { servicing_loan_number: w2Sln, original_upb_cents: "56000000", first_payment_date: "2027-01-01", note_rate_pct: "6.125", commitment_remittance_type: "AA", escrowed: true, note_form: "enote", mers_registered: true, min: w2Min },
+    advice: { advice_id: `pa-${w2Fnma}-2026-11-19`, fnma_loan_number: w2Fnma, fnma_servicer_number: "123456789", lender_loan_number: w2Sln, advice_date: "2026-11-19", purchase_date: "2026-11-19", remittance_type: "AA", pass_through_rate: "5.875", note_rate_pct: "6.125", servicing_fee_bps: 25, interest_adjustment_cents: "-109667", net_proceeds_cents: "56590333" } }, INVESTOR_A);
+  fakes.advices.queue(fnmaAdvice(w2Fnma, w2Sln)); fakes.bank.queue(bankCredit(w2Fnma, w2Sln, w2.R, 56_450_333n));
+  clock.set(EST("2026-11-19", "14:15")); await pass(clock.now(), w2App);
+  const w2Recon = (await db.query<P>(`SELECT status, sides, investor_net_proceeds_cents::text AS inv FROM purchase_reconciliations WHERE loan_id = $1`, [w2Loan]));
+  assert.equal(w2Recon.length, 1, await jn(w2App)); assert.equal(w2Recon[0]!["status"], "exception"); assert.equal((w2Recon[0]!["sides"] as P)["30.1"], "unmatched", "same key, different net → one-sided"); assert.equal(w2Recon[0]!["inv"], "56590333");
+  assert.equal((await events(w2App, "settlement.waterfall.posted")).length, 0);
   assert.equal((await events(wApp, "orchestration.purchase.exception")).length, 1); const wo = await row(wApp); assert.equal(wo.step, "purchased"); assert.equal(wo.status, "waiting_human"); assert.equal(wo.waiting_on, "officer");
 });
 
@@ -1171,9 +1394,137 @@ test("35.6-T15: Given `rescission.exercised` on Mon Nov 9 (32.7's ChoiceCard thr
   assert.equal(await n(`FROM loan_events WHERE application_id = $1 AND type = 'loan.funded'`, [w.appId]), 0, "unwinding until 27.1 matches the returned funds");
 });
 
-test("35.6-T16: Given the purchase fixture (Columbus, OH; wet; paper note; the session Wed Nov 18 10:05 ET), when the pass runs Tue Nov 17 16:00 ET, then 26.3 `evaluateFundingConditions{op: pre_signing}` passed the pre-signing subset, the worksheet from the CD nets $412,000.00 − 13 × $71.96 ($935.48) − $1,240.00 + $515.00 = $410,339.52, 27.1's advance is $403,760.00 with partner contribution $6,579.52, the wire released by the FAKE `funding_approver` at 08:55 ET Nov 18 has value date 2026-11-18 (`SM_O73_WET_FUNDS_AT_TABLE_GATE` satisfied before the session), the execution review passed 11:40 ET, the disbursement authorization issued, and `loan.funded{disbursement_date=2026-11-18}`; after boarding the MOM registration is due Nov 25 (`MERS_PROC_MOM_REGISTER_7`) and the wet note's custodian delivery is due Wed Nov 25 (`SM_WH_WET_NOTE_DELIVERY_5BD`, Thanksgiving excluded).", { todo: true });
+test("35.6-T16: Given the purchase fixture (Columbus, OH; wet; paper note; the session Wed Nov 18 10:05 ET), when the pass runs Tue Nov 17 16:00 ET, then 26.3 `evaluateFundingConditions{op: pre_signing}` passed the pre-signing subset, the worksheet from the CD nets $412,000.00 − 13 × $71.96 ($935.48) − $1,240.00 + $515.00 = $410,339.52, 27.1's advance is $403,760.00 with partner contribution $6,579.52, the wire released by the FAKE `funding_approver` at 08:55 ET Nov 18 has value date 2026-11-18 (`SM_O73_WET_FUNDS_AT_TABLE_GATE` satisfied before the session), the execution review passed 11:40 ET, the disbursement authorization issued, and `loan.funded{disbursement_date=2026-11-18}`; after boarding the MOM registration is due Nov 25 (`MERS_PROC_MOM_REGISTER_7`) and the wet note's custodian delivery is due Wed Nov 25 (`SM_WH_WET_NOTE_DELIVERY_5BD`, Thanksgiving excluded).", { skip }, async () => {
+  const j = await driveOhToDocumentsReleased(); ohChain.j = j; const appId = j.appId;
+  const iso = (pg: string): string => new Date(pg.replace(" ", "T").replace(/\+00$/, "Z")).toISOString();
+  // Tue Nov 17 15:00 ET: 25.1's disbursement-checkpoint run over the OH snapshot — the fresh gate the pre-signing chain's 25.2 `assertGateOpen` reuses (GATES freshness 4 h)
+  await ohComplianceAt(j, EST("2026-11-17", "15:00"), "SM_O61_COMPLIANCE_PASS_DISBURSE_GATE", "cd");
+  // when the pass runs Tue Nov 17 16:00 ET: the first pass folds the fixture's log to documents_released; the wet state opens 26.3's calendar on the closing date, evaluates the pre-signing subset from the record, requests the advance (27.1 approves), prepares the wire with value date Nov 18 and waits on the funding_approver
+  clock.set(EST("2026-11-17", "16:00")); await pass(clock.now(), appId);
+  let o = await row(appId); assert.equal(o.step, "documents_released", await jnOf(appId));
+  const funding = (await events(appId, "funding.requested")).at(-1)!; assert.ok(funding, await jnOf(appId)); assert.equal(funding.payload["funding_type"], "wet"); assert.equal(funding.payload["disbursement_date"], "2026-11-18");
+  const fc = (await events(appId, "funding.conditions.evaluated")).find((e) => e.payload["subset"] === "pre_signing")!; assert.ok(fc, await jnOf(appId)); assert.equal(fc.payload["passed"], true, JSON.stringify(fc.payload).slice(0, 1200));
+  const jl1 = await journal(appId); assert.ok(jl1.some((x) => x.kind === "command_run" && x.command_process === "26.3" && x.command_name === "evaluateFundingConditions" && x.command_op === "pre_signing" && x.step === "documents_released"), "26.3 evaluateFundingConditions{op: pre_signing} ran in documents_released");
+  const wsRef = String(((jl1.find((x) => x.kind === "command_run" && x.command_name === "reconcileToSettlementStatement")?.detail["sources"] as P | undefined)?.["worksheet"] as P | undefined)?.["ref"] ?? ""); assert.match(wsRef, /^funding_worksheets:/, await jnOf(appId));
+  const wsId = wsRef.slice("funding_worksheets:".length).replace(/:\d+$/, ""); const wsData = await entity("funding_worksheets", wsId); assert.ok(wsData, wsRef); const ws = { id: wsId, data: wsData! };
+  const line = (code: string) => BigInt(String((ws.data["lines"] as P[]).find((l) => l["line_code"] === code)!["amount_cents"]));
+  assert.equal(BigInt(String(ws.data["gross_loan_cents"])), WORKED_B.note_cents); assert.equal(line("PREPAID_INTEREST"), WORKED_B.prepaid_interest_cents, "13 × $71.96 = $935.48"); assert.equal(line("ESCROW_INITIAL_DEPOSIT"), WORKED_B.escrow_deposit_cents); assert.equal(BigInt(String(ws.data["lender_credits_cents"])), WORKED_B.lender_credit_cents); assert.equal(BigInt(String(ws.data["net_wire_cents"])), WORKED_B.net_wire_cents, "$412,000.00 − $935.48 − $1,240.00 + $515.00 = $410,339.52"); assert.equal(ws.data["reconciled"], true); assert.equal(BigInt(String(ws.data["agent_requested_net_cents"])), WORKED_B.net_wire_cents);
+  // 26.3 authorizes no funding before its earliest funding date (BEFORE_EARLIEST_FUNDING_DATE): the row waits on the funding morning; nothing is authorized, signed or released on Nov 17
+  o = await row(appId); assert.equal(o.status, "waiting_window", await jnOf(appId)); assert.equal(o.waiting_on, "SM_O73_FUNDING_DATE"); assert.equal((await events(appId, "funding.authorized")).length, 0); assert.equal((await events(appId, "closing.consummated")).length, 0, "nothing signed yet");
+  // Wed Nov 18 06:30: 25.1's consummation-checkpoint run (the pre-session check's fresh gate); 08:00 the pass: `requestWarehouseAdvance` on the pre-signing subset → funding.authorized, 27.1's advance approved ($403,760.00; the partner's $6,579.52), the wire prepared with value date Nov 18 → the row waits on the funding_approver
+  await ohComplianceAt(j, EST("2026-11-18", "06:30"), "SM_O61_COMPLIANCE_PASS_CONSUMMATE_GATE", "consummation");
+  clock.set(EST("2026-11-18", "08:00")); await pass(clock.now(), appId);
+  const authorized = (await events(appId, "funding.authorized")).at(-1)!; assert.ok(authorized, await jnOf(appId));
+  const approved = (await events(appId, "warehouse.advance.approved")).at(-1)!; assert.ok(approved, await jnOf(appId)); assert.equal(BigInt(String(approved.payload["advance_cents"])), WORKED_B.advance_cents, "0.98 × $412,000.00 = $403,760.00"); assert.equal(BigInt(String(approved.payload["partner_contribution_cents"])), WORKED_B.partner_contribution_cents, "$410,339.52 − $403,760.00 = $6,579.52");
+  const prepared = (await events(appId, "funding.wire.prepared")).at(-1)!; assert.ok(prepared, await jnOf(appId)); assert.equal(prepared.payload["value_date"], "2026-11-18"); assert.equal(BigInt(String(prepared.payload["amount_cents"])), WORKED_B.net_wire_cents);
+  o = await row(appId); assert.equal(o.step, "documents_released"); assert.equal(o.status, "waiting_human", await jnOf(appId)); assert.equal(o.waiting_on, "funding_approver");
+  assert.equal((await events(appId, "funding.wire.released")).length, 0, "the pass never releases");
+  // 08:55 the FAKE funding_approver releases the wire (dual control) — value date Nov 18
+  clock.set(EST("2026-11-18", "08:55")); const t1 = await reviewers.tick(runtime, clock.now()); assert.ok(t1.actions.some((a) => a.kind === "wire_release" && a.outcome === "approved"), JSON.stringify(t1.actions));
+  const released = (await events(appId, "funding.wire.released")).at(-1)!; assert.ok(released); assert.equal(released.actor_kind, "human"); assert.equal(released.actor_role, "funding_approver"); assert.equal(iso(released.occurred_at), EST("2026-11-18", "08:55"));
+  const wire = (await entitiesOf("funding_wires", appId)).at(-1) ?? (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'funding_wires' AND id = $1`, [String(prepared.payload["wire_id"])])).map((r) => ({ id: "", data: decodeEntityData(r.data) as P }))[0]!; assert.ok(wire); assert.equal(wire.data["value_date"], "2026-11-18");
+  // 09:00 the pass: the bank's acceptance (IMAD) before the session, 27.1's package to the approver; 09:20 the approver's second act books the advance (paper, wet) with the Nov 18 advance date
+  clock.set(EST("2026-11-18", "09:00")); await pass(clock.now(), appId);
+  const accepted = (await events(appId, "funding.wire.accepted")).at(-1)!; assert.ok(accepted, await jnOf(appId)); assert.match(String(accepted.payload["imad"]), /^20261118/);
+  clock.set(EST("2026-11-18", "09:20")); const t2 = await reviewers.tick(runtime, clock.now()); assert.ok(t2.actions.some((a) => a.kind === "warehouse_wire_release" && a.outcome === "approved"), JSON.stringify(t2.actions));
+  const adv = (await events(appId, "warehouse.advance.funded")).at(-1)!; assert.ok(adv); assert.equal(adv.payload["advance_date"], "2026-11-18"); assert.equal(adv.payload["note_form"], "paper"); assert.equal(adv.payload["wet"], true); assert.equal(BigInt(String(adv.payload["advance_cents"])), WORKED_B.advance_cents);
+  // SM_O73_WET_FUNDS_AT_TABLE_GATE: armed by 26.3's wet calendar (funding.requested{funding_type=wet}), satisfied by the acceptance before the 10:05 signing start; 26.3's own evaluator over the record's facts is open
+  const gate = await timers(appId, "SM_O73_WET_FUNDS_AT_TABLE_GATE"); assert.ok(gate.length >= 1, "SM_O73_WET_FUNDS_AT_TABLE_GATE armed"); assert.ok(gate.every((t) => t.status === "satisfied"), JSON.stringify(gate));
+  assert.deepEqual(wetFundsAtTableGate({ funding_type: "wet", wire_accepted_at: String(accepted.payload["accepted_at"]), wire_value_date: D("2026-11-18"), closing_date: D("2026-11-18"), signing_start_at: EST("2026-11-18", "10:05"), pre_signing_subset_passed: fc.payload["passed"] === true }), { open: true });
+  assert.ok(String(accepted.payload["accepted_at"]) < EST("2026-11-18", "10:05"), "funds at the table before signing start");
+  // 09:30 the pre-session checks pass from the record; the row waits on the slot; the session 10:05 — the paper note wet-signed at the table by both signers 10:30/10:31 = consummation (no rescission on a purchase); 10:50 the feed is applied
+  clock.set(EST("2026-11-18", "09:30")); await pass(clock.now(), appId);
+  o = await row(appId); assert.equal(o.step, "documents_released", await jnOf(appId)); assert.ok((await events(appId, "closing.pre_session_checks.passed")).length >= 1, await jnOf(appId));
+  clock.set(EST("2026-11-18", "10:05")); await pass(clock.now(), appId);
+  clock.set(EST("2026-11-18", "10:50")); await pass(clock.now(), appId);
+  const consummated = (await events(appId, "closing.consummated")).at(-1)!; assert.ok(consummated, await jnOf(appId)); assert.equal(consummated.payload["note_date"], "2026-11-18");
+  const noteSigned = (await events(appId, "closing.document.signed")).filter((e) => e.payload["kind"] === "note"); assert.equal(noteSigned.length, 2, "both signers on the paper note"); assert.ok(noteSigned.every((e) => e.payload["signature_method"] === "wet"), "the paper note is wet-signed (single-method)");
+  assert.equal((await events(appId, "enote.registered")).length, 0, "no eNote");
+  // 11:40 the execution review passed; the wet-state disbursement authorization (the funding number, citing the 11:40 review) to the agent; the agent's disbursement → loan.funded{disbursement_date 2026-11-18}
+  clock.set(EST("2026-11-18", "11:40")); await pass(clock.now(), appId);
+  const review = (await events(appId, "closing.execution_review.passed")).at(-1)!; assert.ok(review, await jnOf(appId)); assert.equal(iso(review.occurred_at), EST("2026-11-18", "11:40"));
+  const auth = (await events(appId, "funding.disbursement.authorized")).at(-1)!; assert.ok(auth, await jnOf(appId)); assert.equal(new Date(String(auth.payload["execution_review_passed_at"])).toISOString(), EST("2026-11-18", "11:40")); assert.ok(String(auth.payload["funding_number"]).startsWith("FN-"));
+  const jl2 = await journal(appId); const authRun = jl2.find((x) => x.kind === "command_run" && x.command_name === "notifySettlementAgent" && x.command_op === "disbursement_authorization")!; assert.ok(authRun, await jnOf(appId)); assert.equal(authRun.actor_id, "funder");
+  const lf = (await events(appId, "loan.funded")).at(-1)!; assert.ok(lf, await jnOf(appId)); assert.equal(lf.payload["disbursement_date"], "2026-11-18"); assert.equal(String(lf.payload["per_diem_cents"]), String(WORKED_B.per_diem_cents)); assert.equal(String(lf.payload["prepaid_interest_cents"]), String(WORKED_B.prepaid_interest_cents)); assert.equal(Number(lf.payload["prepaid_days"]), WORKED_B.prepaid_days);
+  assert.ok(iso(lf.occurred_at) > iso(auth.occurred_at) || lf.sequence > auth.sequence, "the disbursement follows the authorization");
+  // after boarding (the same sweep's hand-off from the record): 30.2's loan; the MOM registration due Nov 25 (MERS_PROC_MOM_REGISTER_7: note date + 7 calendar days); the wet note's custodian delivery due Wed Nov 25 (SM_WH_WET_NOTE_DELIVERY_5BD: advance date + 5 servicer business days — Thanksgiving Nov 26 excluded)
+  // the hand-off waits on the settlement agent's courier (30.2's OB-015 boards a paper note shipped to the custodian): 12:30 still at the agent; 14:35 the pickup scan (FAKE courier, four hours after the signing) → the snapshot from the record and 30.2's boarding
+  clock.set(EST("2026-11-18", "12:30")); await pass(clock.now(), appId); o = await row(appId); assert.equal(o.step, "funded", await jnOf(appId, 24)); assert.equal(o.waiting_on, "settlement_agent"); assert.equal((await events(appId, "loan.boarded")).length, 0);
+  for (const at of ["14:35", "15:00"]) { clock.set(EST("2026-11-18", at)); await pass(clock.now(), appId); }
+  assert.equal((await events(appId, "custody.paper_note.shipped")).length, 1, await jnOf(appId, 24));
+  o = await row(appId); assert.ok(["boarded", "package_frozen", "delivered"].includes(o.step), await jnOf(appId, 24)); assert.equal((await events(appId, "loan.boarded")).length, 1, await jnOf(appId));
+  assert.equal(Number((await db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loans WHERE origination_application_id = $1`, [appId]))[0]!.c), 1);
+  // rule 6 on the OH record: the hand-off snapshot built from the record alone — no gap, no fixture (the paper custody record, 24.5's hazard and Zone X, 30.3's frozen analysis, 23.4's CD-stage determinations, 26.1's paper note, the MOM MIN)
+  const snap = (await db.query<{ gaps: string[]; fixture_used: boolean; sources: P }>(`SELECT gaps, fixture_used, sources FROM funding_snapshots WHERE application_id = $1 ORDER BY created_at DESC LIMIT 1`, [appId]))[0]!; assert.ok(snap, "funding_snapshots row"); assert.deepEqual(snap.gaps, [], JSON.stringify(snap.sources).slice(0, 1500)); assert.equal(snap.fixture_used, false);
+  assert.equal((await events(appId, "mi.activation.requested")).length, 1, "24.6's activation requested at the note date (30.2's OB-009)");
+  const mom = await timers(appId, "MERS_PROC_MOM_REGISTER_7"); assert.ok(mom.length >= 1, "MERS_PROC_MOM_REGISTER_7 armed by closing.consummated{anchor_date}"); assert.ok(mom.every((t) => t.due_date === "2026-11-25"), JSON.stringify(mom));
+  const wet5 = await timers(appId, "SM_WH_WET_NOTE_DELIVERY_5BD"); assert.ok(wet5.length >= 1, "SM_WH_WET_NOTE_DELIVERY_5BD armed by warehouse.advance.funded{note_form=paper, wet=true}"); assert.ok(wet5.every((t) => t.due_date === "2026-11-25" && t.status === "armed"), JSON.stringify(wet5));
+});
 
-test("35.6-T17: Given the OH loan delivered Mon Nov 30, certified Tue Dec 1 and the advice dated Wed Dec 2 (price 101.000, LLPA waived, interest due lender $70.10, net wire $416,190.10) with the matching bank credit, when the pass runs, then the payoff is $404,852.72 (principal $403,760.00 + 14 days' interest $1,067.72 + $25.00), cost recovery $2,774.00, SM retained $831.00 (premium $4,120.00 − lender credit $515.00 − LLPA $0.00 − costs $2,774.00), partner residual $7,732.38, `purchase_reconciliations.status = reconciled`, `warehouse.bailee_letter.released{effective=2026-12-02}` exists, and `SM_WH_INTERIM_FUNDER_RELEASE_2BD` is armed by 27.2.", { todo: true });
+test("35.6-T17: Given the OH loan delivered Mon Nov 30, certified Tue Dec 1 and the advice dated Wed Dec 2 (price 101.000, LLPA waived, interest due lender $70.10, net wire $416,190.10) with the matching bank credit, when the pass runs, then the payoff is $404,852.72 (principal $403,760.00 + 14 days' interest $1,067.72 + $25.00), cost recovery $2,774.00, SM retained $831.00 (premium $4,120.00 − lender credit $515.00 − LLPA $0.00 − costs $2,774.00), partner residual $7,732.38, `purchase_reconciliations.status = reconciled`, `warehouse.bailee_letter.released{effective=2026-12-02}` exists, and `SM_WH_INTERIM_FUNDER_RELEASE_2BD` is armed by 27.2.", { skip }, async () => {
+  const j = ohChain.j!; assert.ok(j, "T16's OH journey"); const appId = j.appId; let o = await row(appId); const loanId = o.loan_id!; assert.ok(loanId, JSON.stringify(o));
+  const iso = (pg: string): string => new Date(pg.replace(" ", "T").replace(/\+00$/, "Z")).toISOString();
+  // the wet note: the settlement agent's courier (FAKE) picks it up the day after the signing, the custodian receives it Fri Nov 20 → 26.2's custody chain and 27.1's trust receipt (`warehouse.note.received`, secured_possession) — SM_WH_WET_NOTE_DELIVERY_5BD satisfied before its Nov 25 due date
+  // Fri Nov 20 10:00: 25.1's delivery-checkpoint run over the OH snapshot (the fresh gate 29.3's package assertion reuses); 11:00 the pass
+  await ohComplianceAt(j, EST("2026-11-20", "10:00"), "SM_O61_COMPLIANCE_PASS_DELIVERY_GATE", "cd");
+  clock.set(EST("2026-11-20", "11:00")); await pass(clock.now(), appId);
+  const noteRcvd = (await events(appId, "warehouse.note.received")).at(-1)!; assert.ok(noteRcvd, await jnOf(appId, 24)); assert.equal(noteRcvd.payload["collateral_status"], "secured_possession");
+  assert.equal((await events(appId, "custody.paper_note.shipped")).length, 1); assert.equal((await events(appId, "custody.paper_note.received")).length, 1);
+  const wet5 = await timers(appId, "SM_WH_WET_NOTE_DELIVERY_5BD"); assert.ok(wet5.length >= 1 && wet5.every((t) => t.status === "satisfied"), JSON.stringify(wet5));
+  // 29.3's package froze; 29.4's registration carries the custodian and the bailee letter; the operator's submission waits on the officer's signature of the letter (the paper package ships the day of submission under it)
+  o = await row(appId); assert.equal(o.step, "package_frozen", await jnOf(appId, 24)); assert.equal(o.status, "waiting_human"); assert.equal(o.waiting_on, "officer"); assert.equal((await events(appId, "delivery.submitted")).length, 0);
+  // 27.1's bailee letter — rendered by the pass from the facility's administered Letter Name (byte-for-byte) listing this advance, routed to a human officer{sm}; the pass never signs it; the officer signs Mon Nov 30 08:30
+  const letterId = `BL-${appId.slice(0, 8)}`; const letter = (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'bailee_letters' AND id = $1`, [letterId])).map((r) => decodeEntityData(r.data) as P)[0]!;
+  const advanceId = String((await events(appId, "warehouse.advance.funded")).at(-1)!.payload["advance_id"]);
+  assert.ok(letter, "27.1 rendered the bailee letter"); assert.equal(letter["letter_name"], FACILITY_FIXTURE.bailee_letter_name); assert.equal(letter["status"], "draft"); assert.ok(((letter["loan_list"] as P[]) ?? []).some((l) => l["advance_id"] === advanceId), "the letter lists this loan's advance");
+  const issuedCount = async () => Number((await db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loan_events WHERE type = 'warehouse.bailee_letter.issued' AND payload->>'bailee_letter_id' = $1`, [letterId]))[0]!.c);
+  assert.equal(await issuedCount(), 0, "unsigned until a human officer signs");
+  clock.set(EST("2026-11-30", "08:30")); await j.tool({ app: appId }, "27.1", "issueBaileeLetter", { op: "sign", facility_id: FACILITY_FIXTURE.facility_id, bailee_letter_id: letterId }, OFFICER);
+  assert.equal(await issuedCount(), 1);
+  // Mon Nov 30: 29.3's package and 29.4's registration (the custodian and the bailee letter on the delivery), the FAKE operator's submission → delivery.submitted Nov 30; the custodian package (the endorsed original note pre-positioned with the custodian, the cover letter, the bailee letter) under 27.1's shipment release tendered to the FAKE carrier the same day
+  const deliveryId = `DLV-${appId.slice(0, 8)}`; fakesFor(runtime).carrier.script(deliveryId, { received_at: EST("2026-12-01", "08:00"), certified_at: EST("2026-12-01", "11:00") });
+  for (const at of ["09:00", "09:30", "10:00", "10:30"]) { clock.set(EST("2026-11-30", at)); await pass(clock.now(), appId); }
+  const submitted = (await events(appId, "delivery.submitted")).at(-1)!; assert.ok(submitted, await jnOf(appId, 24)); assert.equal(iso(submitted.occurred_at).slice(0, 10), "2026-11-30", "delivered Mon Nov 30");
+  // 29.4's row (the `deliveries` kind is shared with 25.2's UCD projection — keyed by delivery id)
+  const delivery = (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'deliveries' AND data->>'delivery_id' = $1`, [deliveryId])).map((r) => ({ id: deliveryId, data: decodeEntityData(r.data) as P }))[0]!; assert.ok(delivery, "29.4's delivery row"); assert.equal(delivery.data["note_form"], "paper"); assert.equal(delivery.data["bailee_letter_id"], letterId); assert.equal(delivery.data["custodian_fin"], "900000017");
+  const shipped = (await events(appId, "custody.package.shipped")).at(-1)!; assert.ok(shipped, await jnOf(appId, 24)); assert.equal(shipped.payload["custody_mode"], "pre_positioned_at_fcc"); assert.equal(shipped.payload["carrier"], "FAKE");
+  assert.equal((await events(appId, "warehouse.note.shipment_released")).length, 1, "27.1's shipment under the bailee letter (SM_WH_BAILEE_LETTER_GATE)");
+  const jl = await journal(appId); const pkg = jl.find((x) => x.kind === "command_run" && x.command_process === "29.4" && x.command_name === "prepareCustodianPackage")!; assert.ok(pkg, await jnOf(appId, 24)); assert.equal(pkg.actor_id, "secondary");
+  const endorsement = (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'note_endorsements' AND id = $1`, [`END-${appId.slice(0, 8)}`])).map((r) => decodeEntityData(r.data) as P)[0]!; assert.ok(endorsement, "26.4: the note endorsed in blank (a pre-executed allonge) by the FAKE signing_officer before shipment"); assert.equal(endorsement["endorsee"], "blank"); assert.equal(endorsement["method"], "allonge_pre_executed"); assert.equal(endorsement["signing_officer_party_id"], "FAKE:signing_officer"); assert.equal(endorsement["signature_kind"], "wet");
+  const endorseRun = jl.find((x) => x.kind === "command_run" && x.command_process === "26.4" && x.command_op === "ensure_endorsement")!; assert.ok(endorseRun); assert.equal(endorseRun.actor_kind, "human"); assert.equal(endorseRun.actor_role, "signing_officer");
+  // Tue Dec 1: the custodian's receipt 08:00 and certification 11:00 (the carrier's and custodian's FAKE scans) → custody.certified Dec 1; 27.2 registered from the record, the forecast posted, the Sellers API polled (no advice yet)
+  clock.set(EST("2026-12-01", "12:00")); await pass(clock.now(), appId);
+  const cert = (await events(appId, "custody.certified")).find((e) => e.payload["certified_on"] !== undefined)!; assert.ok(cert, await jnOf(appId, 24)); assert.equal(cert.payload["certified_on"], "2026-12-01"); assert.equal(cert.payload["certification_kind"], "certified"); assert.equal(cert.payload["bailee_validation"], "passed");
+  o = await row(appId); assert.equal(o.step, "certified", await jnOf(appId, 24)); assert.equal(o.waiting_on, "sellers_api");
+  assert.equal((await entitiesOf("settlement_loans", appId)).length + (await db.query<{ c: string }>(`SELECT count(*)::text AS c FROM entity_current WHERE kind = 'settlement_loans' AND data->>'loan_id' = $1`, [loanId])).length, 2, "27.2 registered the loan from the record");
+  // 27.1's daily accruals Nov 18 → Dec 1 (the sweep's 27.1 cycle): 14 days on $403,760.00 at SOFR 4.30% + 250 bps act/360 = $1,067.72
+  await accrueOhAdvance(j);
+  // Wed Dec 2 09:00: the FAKE Sellers API's advice (price 101.000, LLPA waived, interest due lender $70.10, net $416,190.10, purchase date Dec 2) → the pass polls from 29.4's expected purchase date, 29.4 ingests the SAME 27.2 row → loan.purchased, 30.1 matches; the row waits on the collection bank
+  const fnma = String(submitted.payload["fnma_loan_number"]); const sln = (await db.query<{ n: string }>(`SELECT servicer_loan_number AS n FROM loans WHERE id = $1`, [loanId]))[0]!.n;
+  const fakes = settlementFakes(); fakes.advices.queue(fnmaAdviceB(fnma, sln));
+  clock.set(EST("2026-12-02", "09:00")); await pass(clock.now(), appId);
+  const purchased = (await events(appId, "loan.purchased")).at(-1)!; assert.ok(purchased, await jnOf(appId, 24)); assert.equal(purchased.loan_id, loanId);
+  const paId = `pa-${fnma}-2026-12-02`; const row272 = (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'purchase_advices' AND id = $1`, [paId])).map((r) => decodeEntityData(r.data) as P)[0]!; assert.ok(row272, await jnOf(appId, 24));
+  assert.equal(BigInt(String(row272["net_proceeds_cents"])), WORKED_B.net_proceeds_cents); assert.equal(BigInt(String(row272["gross_price_proceeds_cents"])), WORKED_B.gross_proceeds_cents); assert.equal(BigInt(String(row272["llpa_total_cents"])), 0n, "LLPA waived (HomeReady)"); assert.equal(row272["price"], "101.000");
+  const received272 = (await events(appId, "purchase_advice.received")).find((e) => e.payload["purchase_advice_id"] === paId)!; assert.ok(received272); assert.equal(String(received272.payload["interest_adjustment_cents"]), String(WORKED_B.interest_due_lender_cents), "+$70.10 due the lender (1 day past the LPI at PTR 6.125%, 30/360)");
+  o = await row(appId); assert.equal(o.step, "purchased", await jnOf(appId, 24)); assert.equal(o.waiting_on, "collection_bank");
+  // 14:00 the matching bank credit; 14:05 the pass: 27.2 keys and matches it, the three sides agree, the waterfall posts the payoff and the residuals, the bailee letter is released on payment, the row completes
+  fakes.bank.queue(bankCreditB(fnma, sln, j.R, WORKED_B.net_proceeds_cents));
+  clock.set(EST("2026-12-02", "14:05")); await pass(clock.now(), appId);
+  const matched = (await events(appId, "proceeds.matched")).at(-1)!; assert.ok(matched, await jnOf(appId, 24)); assert.equal(matched.payload["status"], "matched"); assert.equal(String(matched.payload["variance_cents"]), "0");
+  const wf = (await events(appId, "settlement.waterfall.posted")).at(-1)!; assert.ok(wf, await jnOf(appId, 24));
+  assert.equal(BigInt(String(wf.payload["payoff_total_cents"])), WORKED_B.payoff_cents, "payoff $404,852.72 = principal $403,760.00 + 14 days' interest $1,067.72 + $25.00");
+  assert.equal(BigInt(String(wf.payload["sm_cost_recovery_cents"])), WORKED_B.sm_cost_recovery_cents, "cost recovery $2,774.00"); assert.equal(BigInt(String(wf.payload["sm_retained_residual_cents"])), WORKED_B.sm_retained_cents, "SM retained $831.00 = premium $4,120.00 − lender credit $515.00 − LLPA $0.00 − costs $2,774.00"); assert.equal(BigInt(String(wf.payload["partner_residual_cents"])), WORKED_B.partner_residual_cents, "partner residual $7,732.38");
+  const wfRow = (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'settlement_waterfalls' AND data->>'waterfall_id' = $1`, [String(wf.payload["waterfall_id"])])).map((r) => decodeEntityData(r.data) as P)[0]!; assert.ok(wfRow, "27.2's waterfall row");
+  assert.equal(BigInt(String(wfRow["advance_principal_cents"])), WORKED_B.advance_cents); assert.equal(BigInt(String(wfRow["accrued_interest_cents"])), WORKED_B.warehouse_interest_cents); assert.equal(BigInt(String(wfRow["warehouse_fees_cents"])), WORKED_B.wire_fee_cents);
+  const recon = (await db.query<P>(`SELECT status, sides, advice_net_proceeds_cents::text AS adv, investor_net_proceeds_cents::text AS inv, bank_received_cents::text AS bank, warehouse_payoff_cents::text AS payoff, sm_retained_cents::text AS retained, partner_residual_cents::text AS residual, interest_adjustment_cents::text AS int FROM purchase_reconciliations WHERE loan_id = $1`, [loanId]));
+  assert.equal(recon.length, 1, await jnOf(appId, 24)); assert.equal(recon[0]!["status"], "reconciled"); assert.deepEqual(recon[0]!["sides"], { "29.4": "reconciled", "30.1": "matched", "27.2": "matched" });
+  assert.equal(recon[0]!["adv"], String(WORKED_B.net_proceeds_cents)); assert.equal(recon[0]!["inv"], String(WORKED_B.net_proceeds_cents)); assert.equal(recon[0]!["bank"], String(WORKED_B.net_proceeds_cents)); assert.equal(recon[0]!["payoff"], String(WORKED_B.payoff_cents)); assert.equal(recon[0]!["retained"], String(WORKED_B.sm_retained_cents)); assert.equal(recon[0]!["residual"], String(WORKED_B.partner_residual_cents)); assert.equal(recon[0]!["int"], String(WORKED_B.interest_due_lender_cents));
+  const repaid = (await events(appId, "warehouse.advance.repaid")).at(-1)!; assert.ok(repaid); assert.equal(repaid.payload["note_form"], "paper"); assert.equal(repaid.payload["repaid_from"], "purchase_proceeds");
+  const rel = (await events(appId, "warehouse.bailee_letter.released")).at(-1)!; assert.ok(rel, "warehouse.bailee_letter.released exists"); assert.equal(rel.payload["bailee_letter_id"], letterId); assert.ok(String(rel.payload["released_at"]).startsWith("2026-12-02T"), `effective 2026-12-02: ${String(rel.payload["released_at"])}`); assert.equal(rel.payload["letter_status"], "released");
+  const ifr = await timers(appId, "SM_WH_INTERIM_FUNDER_RELEASE_2BD"); assert.ok(ifr.length >= 1, "SM_WH_INTERIM_FUNDER_RELEASE_2BD armed by 27.2's warehouse.advance.repaid{note_form=paper}"); assert.ok(ifr.every((t) => t.status === "armed" && t.due_date === "2026-12-04"), JSON.stringify(ifr));
+  o = await row(appId); assert.equal(o.step, "completed", await jnOf(appId, 24)); assert.equal((await events(appId, "orchestration.purchase.reconciled")).length, 1); assert.equal((await events(appId, "orchestration.completed")).length, 1);
+});
 
 test("35.6-T18: Given the sweep at 06:00 ET, then 35.3's `closing_orchestration_daily` unit ran `orchestration.pass{op: daily_receipt}` once, `orchestration_daily_receipts` has one row for the date with `open`, `waiting_human`, `waiting_vendor`, `waiting_borrower`, `waiting_window`, `held`, `completed_today` and `fixture_used_today` matching a direct count of `closing_orchestrations`, `orchestration.daily.run_completed` satisfied and re-armed `SM_ORCH_OPEN_BOOK_DAILY` on the global subject (one armed instance), the board document is a 35.2 row, and `orchestration.board` returns every open row with `step`, `status`, `waiting_on`, the next owning clock due and the advance's dwell day.", { skip }, async () => {
   // an earlier platform day's receipt so the recurring clock has an armed instance to satisfy and re-arm (35.3's cycle runs daily; the first receipt arms it)

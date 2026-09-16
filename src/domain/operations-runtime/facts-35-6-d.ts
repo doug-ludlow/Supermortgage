@@ -6,7 +6,7 @@
  */
 import type { DomainEvent } from "../../kernel/events/index.ts";
 import type { EntityRecord } from "../../app/tools.ts";
-import { type OrchRecord, type Source, src, RecordGap } from "./facts-35-6.ts";
+import { type OrchRecord, type Source, src, RecordGap, cents } from "./facts-35-6.ts";
 import { partyFacts, loanTerms, escrowFacts, cdRow, productFacts, ltvPct, type ClosingFacts } from "./facts-35-6-b.ts";
 import { commitmentFacts } from "./facts-35-6-c.ts";
 import { addMonths, plainDate } from "../../kernel/calendar/date.ts";
@@ -73,7 +73,8 @@ export async function settlementRegistration(rec: OrchRecord, i: { loan_id: stri
   const sfc = rec.last("delivery.sfc.assigned"); if (!sfc) throw new RecordGap("delivery.sfc.assigned", "29.3 assigned no SFCs");
   const registered = rec.last("enote.registered"); const noteDoc = rec.entities("closing_documents", (d) => d["kind"] === "enote" || d["kind"] === "note").at(-1) ?? null;
   const facilityId = String(advance.payload["facility_id"]); const facilityRow = rec.entities("warehouse_facilities", (d) => d["facility_id"] === facilityId).at(-1) ?? null;
-  const bailee = i.closing.note_form === "paper" ? rec.entities("bailee_letters", (d) => d["advance_id"] === advance.payload["advance_id"]).at(-1) ?? null : null;
+  // 27.1's letter lists its advances (`loan_list[].advance_id`); the letter covering this advance is the one 27.2 releases on payment
+  const bailee = i.closing.note_form === "paper" ? rec.entities("bailee_letters", (d) => Array.isArray(d["loan_list"]) && (d["loan_list"] as Row[]).some((l) => l["advance_id"] === advance.payload["advance_id"])).at(-1) ?? null : null;
   const custodianParty = i.closing.note_form === "paper" ? S(rec.entities("custodian_certifications").at(-1)?.data["custodian_party_id"]) : null;
   // third-party costs actually invoiced: 27.2's invoice documents when the record carries them; otherwise the quote's forecast stands as the actual (the cap check is then vacuous) — the source says which
   const invoices = rec.entities("vendor_invoices", (d) => d["loan_id"] === i.loan_id || d["application_id"] === rec.app.id);
@@ -87,7 +88,7 @@ export async function settlementRegistration(rec: OrchRecord, i: { loan_id: stri
     price: c.price, llpa_items: llpaItems, fees_cents: "0", expected_purchase_date: String(certified.payload["expected_purchase_date"]), matrix_version: String(quote["matrix_version"]),
     quote: { quote_id: quoteId, price: c.price, llpa_total_pct: String(quote["llpa_total_pct"]), third_party_costs_cents: String(quote["third_party_costs_cents"]), lender_credit_cents: String(quote["lender_credit_cents"]), sm_retained_cents: String(quote["sm_retained_cents"]), matrix_version: String(quote["matrix_version"]), solve_trace_document_id: S(quote["solve_trace_document_id"]) ?? `pricing_quotes:${quoteId}:solve_trace`, quoted_note_rate: asFraction(String(quote["note_rate_pct"] ?? quote["note_rate"] ?? terms.note_rate_pct.value)) },
     lock_id: lockId, evidence: { quote_solve_trace_document_id: S(quote["solve_trace_document_id"]) ?? `pricing_quotes:${quoteId}:solve_trace`, lock_confirmation_document_id: S(lockRow?.data["confirmation_document_id"]) ?? `locks:${lockId}:confirmation`, final_cd_document_id: S(cd.data["document_id"]) ?? cd.id, note_document_id: S(noteDoc?.data["document_id"]) ?? noteDoc?.id ?? "", purchase_advice_document_id: "", invoice_document_ids: invoices.map((r) => r.id) },
-    disclosure_id_cd_final: cd.id, cd_lender_credit_cents: String(terms.lender_credit_cents.value), prepaid_interest_collected_cents: String(funded.payload["prepaid_interest_cents"] ?? "0"), third_party_costs_actual_cents: String(actualCosts),
+    disclosure_id_cd_final: cd.id, cd_lender_credit_cents: String(cents((cd.data["figures"] as Row | undefined)?.["lender_credits_cents"] ?? terms.lender_credit_cents.value)), prepaid_interest_collected_cents: String(funded.payload["prepaid_interest_cents"] ?? "0"), third_party_costs_actual_cents: String(actualCosts),
     note_form: i.closing.note_form, bailee_letter_id: bailee?.id ?? null, custodian_party_id: custodianParty, min: S(registered?.payload["min"]) ?? null,
   };
   const sources: Record<string, Source> = { lock: terms.loan_amount_cents.source, quote: src("entity", `pricing_quotes:${quoteRow.id}:${quoteRow.version}`, "20.4"), commitment: c.source, product: product.source, advance: src("event", `warehouse.advance.funded:${advance.id}`, "27.1"),

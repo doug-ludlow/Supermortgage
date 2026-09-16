@@ -70,6 +70,11 @@ export class FakeSettlementAgent {
   }
   /** The funds-received confirmation: the agent confirms through the portal once the bank accepted the wire. */
   receiptConfirmation(acceptedAtIso: string): { funds_received_by_agent_at: string; channel: "portal" } { return { funds_received_by_agent_at: acceptedAtIso, channel: "portal" }; }
+  /** A paper (wet) note: the executed package the agent returns to the closer for 26.2's post-signing review — scanned and returned one hour after the signing (null before). */
+  executedPackage(closingId: string, consummatedAtIso: string, nowIso: string): { returned_at: string; package_ref: string } | null {
+    const returned_at = new Date(Date.parse(consummatedAtIso) + 60 * 60_000).toISOString();
+    return nowIso >= returned_at ? { returned_at, package_ref: `${FAKE_VENDOR}-EXEC-${closingId.slice(0, 24)}` } : null;
+  }
   /** The final settlement statement after disbursement (null while withheld). */
   finalStatement(applicationId: string, cd: { net_wire_cents: bigint; escrow_deposit_cents: bigint }, disbursedAtIso: string, nowIso: string): SettlementStatement | null {
     if (this.withheld.has(applicationId)) { const until = this.withheld.get(applicationId); if (until === null || until === undefined || nowIso < until) return null; }
@@ -110,8 +115,32 @@ export class FakePortalOperator {
 export class FakeUcdCollection { readonly vendorName = FAKE_VENDOR; respond(ucdSubmissionId: string, duCasefileId: string): { status: "accepted"; casefile_id_ucd: string; critical_edit_failures: number; feedback_messages: string[] } { void ucdSubmissionId; return { status: "accepted", casefile_id_ucd: duCasefileId, critical_edit_failures: 0, feedback_messages: [] }; } }
 export class FakeEvaultCertifier { readonly vendorName = FAKE_VENDOR; certifies(submittedAt: string, nowIso: string): boolean { return Date.parse(nowIso) >= Date.parse(submittedAt); } }
 /** The carrier (FAKE): a paper package tendered on day D is scanned received the next business morning and certified by the custodian the morning after; a test may script the two instants per delivery. */
+/** The settlement agent's courier for the wet note (FAKE): the agent's afternoon pickup four hours after the signing, the custodian's receipt the next morning (26.2's `custody.paper_note.shipped` / `.received`; 26.4's SM_O72_PAPER_NOTE_HANDOFF_1BD inside the window; 30.2's OB-015 boards on the shipment); a test scripts other instants. */
+export class FakeCourier {
+  readonly vendorName = FAKE_VENDOR;
+  readonly partyId = `${FAKE_VENDOR}:courier`;
+  private readonly scripted = new Map<string, { shipped_at: string; received_at: string }>();
+  script(closingId: string, s: { shipped_at: string; received_at: string }): void { this.scripted.set(closingId, s); }
+  scans(closingId: string, consummatedAt: string): { shipped_at: string; received_at: string; tracking_ref: string } {
+    const tracking_ref = `${FAKE_VENDOR}-NOTE-${closingId.slice(0, 24)}`;
+    const s = this.scripted.get(closingId); if (s) return { ...s, tracking_ref };
+    const hour = 3_600_000; const t = Date.parse(consummatedAt);
+    return { shipped_at: new Date(t + 4 * hour).toISOString(), received_at: new Date(t + 22 * hour).toISOString(), tracking_ref };
+  }
+}
+/** The MI insurer (FAKE): 24.6's activation request is acknowledged and the activation confirmed effective the note date ninety minutes later (24.6 R10 / SM_MI_ACTIVATE_1BD; journey-purchase.ts confirms 15:05 for a 13:30 request) — the runtime wires no `mi_origination` port, so this process's FAKE stands in for the insurer's answer. */
+export class FakeMiInsurer {
+  readonly vendorName = FAKE_VENDOR;
+  confirmation(certificateId: string, requestedAtIso: string, noteDate: string, nowIso: string): { activation_effective_date: string; confirmed_at: string } | null {
+    const confirmed_at = new Date(Date.parse(requestedAtIso) + 90 * 60_000).toISOString();
+    void certificateId;
+    return nowIso >= confirmed_at ? { activation_effective_date: noteDate, confirmed_at } : null;
+  }
+}
 export class FakeCarrier {
   readonly vendorName = FAKE_VENDOR;
+  /** The document custodian whose scans the carrier's tracking and the custodian's notices report (FAKE). */
+  readonly custodianName = `${FAKE_VENDOR} document custodian`;
   private readonly scripted = new Map<string, { received_at: string; certified_at: string }>();
   script(deliveryId: string, s: { received_at: string; certified_at: string }): void { this.scripted.set(deliveryId, s); }
   scans(deliveryId: string, tenderedAt: string): { received_at: string; certified_at: string } {
@@ -121,7 +150,7 @@ export class FakeCarrier {
   }
 }
 
-export interface Fakes35_6 { readonly ron: FakeRonSessionFeed; readonly settlementAgent: FakeSettlementAgent; readonly bank: FakeFundingBank; readonly printMail: FakePrintMail; readonly operator: FakePortalOperator; readonly evault: FakeEvaultCertifier; readonly ucd: FakeUcdCollection; readonly carrier: FakeCarrier; readonly roles: readonly string[]; readonly delaySeconds: number; fills(role: string): boolean }
+export interface Fakes35_6 { readonly ron: FakeRonSessionFeed; readonly settlementAgent: FakeSettlementAgent; readonly bank: FakeFundingBank; readonly printMail: FakePrintMail; readonly operator: FakePortalOperator; readonly evault: FakeEvaultCertifier; readonly ucd: FakeUcdCollection; readonly carrier: FakeCarrier; readonly courier: FakeCourier; readonly insurer: FakeMiInsurer; readonly roles: readonly string[]; readonly delaySeconds: number; fills(role: string): boolean }
 const sets = new WeakMap<Runtime, Fakes35_6>();
 /** The build stage as the runtime states it (`root.environment`) or ENVIRONMENT names it; `nonprod` when neither does. Read fresh on every call (rule 6's production refusal is decided per hand-off). */
 export function environmentOf(rt: Runtime): string {
@@ -137,7 +166,7 @@ export function fakesFor(rt: Runtime): Fakes35_6 {
   const off = environment === "production" || environment === "prod" || (env["FAKE_REVIEWERS"] ?? "").trim().toLowerCase() === "off" || (env["INTEGRATIONS"] ?? "fake") !== "fake";
   const delay = Number(env["FAKE_REVIEWER_DELAY_S"] ?? FAKE_35_6_DELAY_S_DEFAULT);
   const roles = off ? [] : FAKE_35_6_ROLES;
-  const f: Fakes35_6 = { ron: new FakeRonSessionFeed(), settlementAgent: new FakeSettlementAgent(), bank: new FakeFundingBank(), printMail: new FakePrintMail(), operator: new FakePortalOperator(Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT), evault: new FakeEvaultCertifier(), ucd: new FakeUcdCollection(), carrier: new FakeCarrier(), roles, delaySeconds: Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT, fills: (role) => roles.includes(role) };
+  const f: Fakes35_6 = { ron: new FakeRonSessionFeed(), settlementAgent: new FakeSettlementAgent(), bank: new FakeFundingBank(), printMail: new FakePrintMail(), operator: new FakePortalOperator(Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT), evault: new FakeEvaultCertifier(), ucd: new FakeUcdCollection(), carrier: new FakeCarrier(), courier: new FakeCourier(), insurer: new FakeMiInsurer(), roles, delaySeconds: Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT, fills: (role) => roles.includes(role) };
   sets.set(root, f);
   return f;
 }

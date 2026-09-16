@@ -235,7 +235,12 @@ export async function buildFundingSnapshot(rt: Runtime, applicationId: string, o
   let custody: OriginationSnapshot["custody"] | null = null;
   const seeded = rec.last("custody.record.seeded");
   if (custodyKind === "enote" && registered) { custody = { kind: "enote", enote_registered_at: String(registered.payload["registered_at"] ?? registered.occurredAt), controller: registered.payload["controller"] === "partner" ? app.partner_party_id : S(registered.payload["controller_org_id"]), status: "registered", custodian: S(registered.payload["location"]) }; prov.event("custody", registered, "26.2"); }
-  else if (seeded) { custody = { kind: "paper", custodian: S(seeded.payload["custodian_party_id"]), status: String(seeded.payload["note_location"] ?? "settlement_agent") }; prov.event("custody", seeded, "26.2"); }
+  else if (seeded) {
+    // 26.2's paper chain: the seed at the settlement agent, the courier's pickup (`custody.paper_note.shipped`), the custodian's receipt (`custody.paper_note.received`) — 30.2's OB-015 boards a shipped or received note
+    const shipped = rec.last("custody.paper_note.shipped"); const received = rec.last("custody.paper_note.received");
+    custody = { kind: "paper", custodian: S(received?.payload["custodian_party_id"]) ?? S(seeded.payload["custodian_party_id"]), status: received ? "received" : shipped ? "shipped" : String(seeded.payload["note_location"] ?? "settlement_agent") };
+    prov.event("custody", received ?? shipped ?? seeded, "26.2");
+  }
   else prov.gap("custody", `no ${custodyKind === "enote" ? "enote.registered" : "custody.record.seeded"} (26.2)`);
   void enoteRow;
   // ── warehouse advance

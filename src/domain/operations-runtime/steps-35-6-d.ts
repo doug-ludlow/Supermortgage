@@ -12,18 +12,12 @@ import { exitOn, fundingIdOf, WAREHOUSE, S } from "./steps-35-6-b.ts";
 import { needClosing, servicingLoanNumber, loanIdOf, deliveryIdOf, SECONDARY } from "./steps-35-6-c.ts";
 import { settlementAdvice, settlementRegistration, adviceFor294, investorMatchInput, pricingQuoteRow } from "./facts-35-6-d.ts";
 import { EV, ORCH_ACTOR } from "./orchestration-35-6.ts";
-import type { SettlementServices, BankCredit } from "../warehouse/ops-27-2.ts";
-import type { Runtime } from "../../runtime/app.ts";
+import { addDays, plainDate } from "../../kernel/calendar/date.ts";
 
 type Row = Record<string, unknown>;
 const INVESTOR = { kind: "agent", id: "investor-reporting" } as const;
 
 /** 27.2's ports (the Purchase Advice Sellers API, the collection bank) — the runtime-wide FAKEs the fixtures queue on; the pass reads the bank's feed and hands this loan's credits to 27.2 unchanged. */
-function settlementPort(rt: Runtime): SettlementServices {
-  const v = rt.originationServices.vendor("settlement") as SettlementServices | undefined;
-  if (!v) throw new RangeError("unavailable: the settlement vendor port (27.2 Sellers API / collection bank) is not configured on this runtime");
-  return v;
-}
 /** 20.4's LLPA total in cents from the lock-day quote — 29.4 R3's `llpa_expected_cents`. */
 function quoteLlpaCents(rec: OrchRecord): { value: string; source: ReturnType<typeof src> } {
   const row = pricingQuoteRow(rec, loanTerms(rec));
@@ -52,10 +46,14 @@ export const certifiedStep: StepDef = {
       await ctx.run({ process: "27.2", name: "forecastProceeds", actor: WAREHOUSE, scope: { loanId }, input: { op: "certified", loan_id: loanId, certification_date: String(cert.payload["certified_on"]) }, detail: { sources: { certified: src("event", `custody.certified:${cert.id}`, "29.4") } } });
       rec = await ctx.refresh();
     }
-    // the Purchase Advice Sellers API, polled once per pass for today's advices (27.2 keys them by the seller loan number; duplicates are skipped by the owner)
+    // the Purchase Advice Sellers API, polled once per pass for every advice date from 29.4's expected purchase date (the certification's `expected_purchase_date`) through today — an advice dated D that is first visible on D+1 is still found; 27.2 keys them by the seller loan number and skips the dates it already holds (idempotent by fnma loan number + advice date)
     let advice = settlementAdvice(rec, loanId);
     if (!advice) {
-      await ctx.run({ process: "27.2", name: "pollPurchaseAdvices", actor: WAREHOUSE, scope: { loanId }, input: { op: "sellers", advice_date: rec.etDate(now) }, detail: { port: "purchase_advice_api_sellers", advice_date: rec.etDate(now) } });
+      const today = rec.etDate(now); const cert = rec.last("custody.certified", (p) => p["certified_on"] !== undefined);
+      const from = S(cert?.payload["expected_purchase_date"]) ?? S(cert?.payload["certified_on"]) ?? today;
+      const polled = (await ctx.rt.db.query<{ d: string }>(`SELECT DISTINCT detail->>'advice_date' AS d FROM closing_orchestration_steps WHERE application_id = $1 AND command_process = '27.2' AND command_name = 'pollPurchaseAdvices' AND kind = 'command_run' AND detail->>'advice_date' < $2`, [rec.app.id, today])).map((r) => r.d);
+      const dates: string[] = []; for (let d = from < today ? from : today; d <= today && dates.length < 14; d = addDays(plainDate(d), 1)) if (d === today || !polled.includes(d)) dates.push(d);
+      for (const d of dates) await ctx.run({ process: "27.2", name: "pollPurchaseAdvices", actor: WAREHOUSE, scope: { loanId }, input: { op: "sellers", advice_date: d }, detail: { port: "purchase_advice_api_sellers", advice_date: d, expected_purchase_date: from } });
       rec = await ctx.refresh(); advice = settlementAdvice(rec, loanId);
       if (!advice) return { wait: { status: "waiting_vendor", waiting_on: "sellers_api", clocked: true } };
     }
@@ -95,14 +93,20 @@ export const purchasedStep: StepDef = {
         rec = await ctx.refresh();
       }
     }
-    // the collection bank's credits: the pass reads the port and hands this loan's new credits to 27.2 unchanged (`proceeds.received`); nothing yet → wait on the bank
-    if (!rec.has("proceeds.received")) {
-      const since = rec.last("custody.certified")?.occurredAt ?? rec.last("loan.purchased")!.occurredAt; const fnma = S(rec.last("delivery.submitted")?.payload["fnma_loan_number"]);
-      const known = new Set(rec.entities("proceeds_receipts").map((r) => String(r.data["bank_ref"])));
-      const credits = (await settlementPort(ctx.rt).collectionBank.credits(since)).filter((c: BankCredit) => !known.has(c.bank_ref) && (c.reference_text.includes(sln) || (fnma !== null && c.reference_text.includes(fnma))));
-      if (!credits.length) return { wait: { status: "waiting_vendor", waiting_on: "collection_bank", clocked: true } };
-      await ctx.run({ process: "27.2", name: "ingestReceipts", actor: WAREHOUSE, scope: { loanId }, input: { receipts: credits.map((c) => ({ bank_ref: c.bank_ref, value_date: c.value_date, amount_cents: String(c.amount_cents), originator_name: c.originator_name, reference_text: c.reference_text, account_ref: c.account_ref, received_at: c.received_at, loan_id: loanId })) }, detail: { port: "collection_bank", since, bank_refs: credits.map((c) => c.bank_ref) } });
+    // 30.1: Fannie Mae's position read back (the FAKE LSDU port) against the seeded position — `loan.fnma_established` or 30.1's own variance/portal package; once per advice
+    const updated = rec.last("loan.investor_updated");
+    if (updated && !rec.entities("fnma_establishment_checks", (d) => d["loan_id"] === loanId).length) {
+      const pos = (updated.payload["investor_loan_position"] as Row | undefined) ?? null;
+      if (pos) await ctx.run({ process: "30.1", name: "checkFnmaEstablishment", actor: INVESTOR, scope: { loanId }, input: { loan_id: loanId, application_id: rec.app.id, fnma_loan_number: String(updated.payload["fnma_loan_number"]), purchase_date: String(updated.payload["purchase_date"]), expected: pos, source: "lsdu_position" }, detail: { sources: { update: src("event", `loan.investor_updated:${updated.id}`, "30.1") } } });
       rec = await ctx.refresh();
+    }
+    // the collection bank's credits since the certification: 27.2 polls its own port and keys every credit from the reference text (rule 3 — attribution is the owner's; the pass hands it nothing); a credit for this loan → `proceeds.received`, else wait on the bank
+    if (!rec.has("proceeds.received")) {
+      const since = rec.last("custody.certified")?.occurredAt ?? rec.last("loan.purchased")!.occurredAt;
+      const known = rec.entities("proceeds_receipts").length;
+      const r = await ctx.run<Row>({ process: "27.2", name: "ingestReceipts", actor: WAREHOUSE, scope: { loanId }, input: { since }, detail: { port: "collection_bank", since, keyed_by: "27.2 reference text" } });
+      rec = await ctx.refresh();
+      if (!rec.has("proceeds.received")) { ctx.journal.push({ step: "purchased", kind: "waiting", waiting_on: "collection_bank", detail: { credits_seen: Array.isArray(r["receipts"]) ? r["receipts"].length : null, known_before: known } }); return { wait: { status: "waiting_vendor", waiting_on: "collection_bank", clocked: true } }; }
     }
     // 27.2 rule 2: the three-way match (advice vs forecast vs bank) on the SAME advice — as `warehouse`
     let match = rec.entities("proceeds_matches", (d) => d["loan_id"] === loanId).at(-1) ?? null;
@@ -111,9 +115,10 @@ export const purchasedStep: StepDef = {
       rec = await ctx.refresh(); match = rec.entities("proceeds_matches", (d) => d["loan_id"] === loanId).at(-1) ?? null;
       if (!match) return { wait: { status: "waiting_vendor", waiting_on: "collection_bank", clocked: true } };
     }
-    // rule 8: the three sides, decided by this process's own tool (the decision record); an exception carries 27.2's explanation to the officer and holds here
-    const explanation = match.data["status"] === "matched" ? null : await ctx.run<Row>({ process: "27.2", name: "explainVariance", actor: WAREHOUSE, scope: { loanId }, input: { match_id: String(match.data["match_id"]) }, detail: { match_id: match.data["match_id"] } });
-    const decided = await ctx.run<Row>({ process: "35.6", name: "orchestration.reconcile", actor: ORCH_ACTOR, input: { at: now, ...(explanation ? { explanation } : {}) }, detail: { purchase_advice_id: advice.id, match_id: match.data["match_id"] } });
+    // rule 8: the three sides read first (no write); when any side disagrees the `secondary`/`warehouse` explanation of the variance is attached to the officer's escalation — always, whichever side moved; then this process's own tool decides (the decision record) and an exception holds here
+    const looked = await ctx.run<Row>({ process: "35.6", name: "orchestration.reconcile", actor: ORCH_ACTOR, input: { op: "evaluate", at: now }, detail: { purchase_advice_id: advice.id, match_id: match.data["match_id"], read: true } });
+    const explanation = looked["status"] === "reconciled" ? null : await ctx.run<Row>({ process: "27.2", name: "explainVariance", actor: WAREHOUSE, scope: { loanId }, input: { match_id: String(match.data["match_id"]) }, detail: { match_id: match.data["match_id"], sides: looked["sides"] } });
+    const decided = await ctx.run<Row>({ process: "35.6", name: "orchestration.reconcile", actor: ORCH_ACTOR, input: { at: now, ...(explanation ? { explanation: { ...explanation, sides: looked["sides"], investor_net_proceeds_cents: looked["investor_net_proceeds_cents"], advice_net_proceeds_cents: looked["advice_net_proceeds_cents"], bank_received_cents: looked["bank_received_cents"] } } : {}) }, detail: { purchase_advice_id: advice.id, match_id: match.data["match_id"] } });
     if (decided["status"] === "exception") return { wait: { status: "waiting_human", waiting_on: "officer", clocked: false } };
     if (decided["status"] !== "reconciled") return { wait: { status: "waiting_vendor", waiting_on: String(decided["waiting_on"] ?? "collection_bank"), clocked: true } };
     // reconciled: the money moves through 27.2 — the LSA waterfall (27.1's payoff; `warehouse.advance.repaid`, `settlement.waterfall.posted`) and the collateral release — as `warehouse`

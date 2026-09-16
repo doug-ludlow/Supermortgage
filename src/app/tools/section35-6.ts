@@ -93,7 +93,7 @@ export const TOOLS_35_6: readonly ToolDef[] = defineTools(ORCH_PROCESS, ORCH_AGE
     decision: decision("funded") },
   { name: "orchestration.reconcile", kind: "act", ruleSetVersion: ORCH_RULE_SET_VERSION, guardrails: [...ALL, THREE_SIDES_ONE_ADVICE], handler: compute(async (i, ctx, rt) => {
       const runtime = runtimeOf(rt); const applicationId = appOf(i, ctx);
-      return reconcilePurchase(runtime, applicationId, { now: str(i, "at") || ctx.now, actor: ctx.actor, op: str(i, "op") === "complete" ? "complete" : "reconcile", explanation: i.explanation && typeof i.explanation === "object" ? (i.explanation as Record<string, unknown>) : null, escalations: rt.escalations }); }),
+      return reconcilePurchase(runtime, applicationId, { now: str(i, "at") || ctx.now, actor: ctx.actor, op: str(i, "op") === "complete" ? "complete" : str(i, "op") === "evaluate" ? "evaluate" : "reconcile", explanation: i.explanation && typeof i.explanation === "object" ? (i.explanation as Record<string, unknown>) : null, escalations: rt.escalations }); }),
     decision: decision("reconciled") },
   { name: "orchestration.hold", kind: "act", ruleSetVersion: ORCH_RULE_SET_VERSION, humanRoles: ["ops_analyst", "officer"], guardrails: [...ALL, needsRole("HOLD_IS_HUMAN", "35.6 Inputs: `orchestration.hold{reason}` and `orchestration.release` (`ops_analyst`)", () => true, ["ops_analyst", "officer"], "a hold is an ops_analyst's act from 35.8's screen")], handler: compute(async (i, ctx, rt) => {
       const runtime = runtimeOf(rt); const applicationId = appOf(i, ctx); if (!str(i, "reason")) throw new RangeError("orchestration.hold needs reason");

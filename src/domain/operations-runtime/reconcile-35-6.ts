@@ -18,11 +18,11 @@ import { plainDate } from "../../kernel/calendar/date.ts";
 import { purchaseIdempotencyKey, type PurchaseAdvice } from "../orig-boarding/ops-30-1.ts";
 import { loadRecord, RecordGap, type OrchRecord } from "./facts-35-6.ts";
 import { closingFacts } from "./facts-35-6-b.ts";
-import { settlementAdvice, investorMatchInput } from "./facts-35-6-d.ts";
+import { settlementAdvice, settlementAdviceEvent, investorMatchInput } from "./facts-35-6-d.ts";
 import { EV, ORCH_ACTOR } from "./orchestration-35-6.ts";
 
 type Row = Record<string, unknown>;
-export type ReconcileOp = "reconcile" | "complete";
+export type ReconcileOp = "reconcile" | "complete" | "evaluate";
 export interface ReconcileOptions { readonly now: string; readonly actor: Actor; readonly op?: ReconcileOp; readonly explanation?: Row | null; readonly escalations?: EscalationService }
 export type Side294 = "reconciled" | "variance" | "missing";
 export type Side301 = "matched" | "unmatched" | "missing";
@@ -36,7 +36,7 @@ const CONVENTIONS = new Set(["a_30_360", "b_act_365", "unresolved"]);
 
 interface Evaluation {
   readonly loanId: string; readonly orchestrationId: string | null; readonly adviceId: string; readonly advice: Row; readonly sides: Sides; readonly reconciled: boolean;
-  readonly variance294: bigint | null; readonly match: Row | null; readonly bankReceived: bigint | null; readonly investorNet: bigint | null; readonly expectedNet: bigint | null; readonly deliveryId: string | null;
+  readonly interestAdjustment: bigint | null; readonly variance294: bigint | null; readonly match: Row | null; readonly bankReceived: bigint | null; readonly investorNet: bigint | null; readonly expectedNet: bigint | null; readonly deliveryId: string | null;
 }
 
 async function evaluate(rt: Runtime, applicationId: string): Promise<{ rec: OrchRecord; ev: Evaluation | null; pending: string | null }> {
@@ -55,19 +55,22 @@ async function evaluate(rt: Runtime, applicationId: string): Promise<{ rec: Orch
   const inv = await investorMatchInput(rec, row, { loan_id: loanId, seller_loan_number: sln, closing });
   const key = purchaseIdempotencyKey({ fnma_loan_number: String(inv.advice["fnma_loan_number"]), purchase_date: plainDate(String(inv.advice["purchase_date"])), advice_id: row.id } as unknown as PurchaseAdvice);
   const updates = rec.all("loan.investor_updated");
-  const side301: Side301 = !updates.length ? "missing" : updates.every((e) => e.payload["idempotency_key"] === key) ? "matched" : "unmatched";
+  // 30.1's figure is the net its update was made from (its event carries the advice's net_proceeds_cents); the side matches only when every update is keyed to THIS row and carries this row's net — a same-key update from another net is one-sided
+  const adviceNet = big(row.data["net_proceeds_cents"]);
+  const investorNet = updates.length ? big(updates.at(-1)!.payload["net_proceeds_cents"]) : null;
+  const side301: Side301 = !updates.length ? "missing" : updates.every((e) => e.payload["idempotency_key"] === key && big(e.payload["net_proceeds_cents"]) !== null && big(e.payload["net_proceeds_cents"]) === adviceNet) ? "matched" : "unmatched";
   // side 27.2: the three-way match on the loan
   const match = rec.entities("proceeds_matches", (d) => d["loan_id"] === loanId).at(-1) ?? null;
   const side272: Side272 = !match ? "missing" : match.data["status"] === "matched" ? "matched" : "exception";
   const receipt = match ? rec.entity("proceeds_receipts", String(match.data["receipt_id"])) ?? null : null;
   const bankReceived = match ? big(receipt?.data["amount_cents"] ?? match.data["received_cents"]) : null;
-  const adviceNet = big(row.data["net_proceeds_cents"]);
-  const investorNet = side301 === "matched" ? adviceNet : null;
   const sides: Sides = { "29.4": side294, "30.1": side301, "27.2": side272 };
   const reconciled = side294 === "reconciled" && side301 === "matched" && side272 === "matched" && adviceNet !== null && bankReceived === adviceNet && investorNet === adviceNet;
   const pending = side294 === "missing" ? "delivery_reconcile" : side272 === "missing" ? "collection_bank" : null;
   const delivery = rec.entities("deliveries", (d) => typeof d["delivery_id"] === "string").at(-1) ?? null;
-  return { rec, pending, ev: { loanId, orchestrationId: orch?.id ?? null, adviceId: row.id, advice: row.data, sides, reconciled, variance294, match: match?.data ?? null, bankReceived, investorNet, expectedNet: match ? big(match.data["expected_proceeds_cents"]) : null, deliveryId: delivery ? String(delivery.data["delivery_id"]) : null } };
+  // the signed interest adjustment is 27.2's own arithmetic on its `purchase_advice.received` (the row carries the magnitude and a direction)
+  const interestAdjustment = big(settlementAdviceEvent(rec, row.id).payload["interest_adjustment_cents"]);
+  return { rec, pending, ev: { loanId, orchestrationId: orch?.id ?? null, adviceId: row.id, advice: row.data, sides, reconciled, variance294, interestAdjustment, match: match?.data ?? null, bankReceived, investorNet, expectedNet: match ? big(match.data["expected_proceeds_cents"]) : null, deliveryId: delivery ? String(delivery.data["delivery_id"]) : null } };
 }
 
 async function existingRow(rt: Runtime, loanId: string): Promise<{ id: string; status: string; escalation_id: string | null } | null> {
@@ -83,7 +86,7 @@ async function insertRow(rt: Runtime, applicationId: string, e: Evaluation, stat
        advice_net_proceeds_cents, expected_net_proceeds_cents, investor_net_proceeds_cents, bank_received_cents, warehouse_payoff_cents, warehouse_interest_cents, warehouse_fee_cents, sm_cost_recovery_cents, sm_retained_cents, partner_residual_cents,
        variance_cents, variance_breakdown, sides, interest_convention, status, escalation_id, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25::jsonb, $26::jsonb, $27, $28, $29, $30) RETURNING id`,
-    [e.loanId, applicationId, e.orchestrationId, e.deliveryId, e.adviceId, String(a["advice_date"]), String(a["purchase_date"]), String(a["price"]), String(a["upb_cents"]), String(a["gross_price_proceeds_cents"]), String(a["interest_cents"] ?? "0"), String(a["llpa_total_cents"]), String(a["other_fees_cents"] ?? "0"),
+    [e.loanId, applicationId, e.orchestrationId, e.deliveryId, e.adviceId, String(a["advice_date"]), String(a["purchase_date"]), String(a["price"]), String(a["upb_cents"]), String(a["gross_price_proceeds_cents"]), String(e.interestAdjustment ?? "0"), String(a["llpa_total_cents"]), String(a["other_fees_cents"] ?? "0"),
       String(a["net_proceeds_cents"]), e.expectedNet === null ? null : String(e.expectedNet), e.investorNet === null ? null : String(e.investorNet), e.bankReceived === null ? null : String(e.bankReceived), w.payoff === null ? null : String(w.payoff), w.interest === null ? null : String(w.interest), w.fee === null ? null : String(w.fee), w.cost === null ? null : String(w.cost), w.retained === null ? null : String(w.retained), w.residual === null ? null : String(w.residual),
       varianceCents === null ? null : String(varianceCents), JSON.stringify(m?.["variance_breakdown"] ?? {}), JSON.stringify(e.sides), conv, status, escalationId, now]);
   return r[0]!.id;
@@ -102,9 +105,10 @@ export async function reconcilePurchase(rt: Runtime, applicationId: string, o: R
   if (op === "complete") {
     if (!ev.reconciled) throw new RangeError(`35.6 rule 8: the sides no longer agree (${JSON.stringify(ev.sides)}) — nothing to complete`);
     const waterfall = rec.last("settlement.waterfall.posted"); const repaid = rec.last("warehouse.advance.repaid", (p) => p["repaid_from"] === "purchase_proceeds");
-    const released = rec.last("warehouse.secured_party.released") ?? rec.last("warehouse.bailee_letter.released") ?? rec.last("warehouse.collateral.status_changed", (p) => p["to"] === "released");
+    // rule 5: 27.2's release on payment (the bailee letter for a paper note; the collateral status for an eNote whose Secured Party the ToC already removed) — 27.1's Transfer-of-Control event at delivery is not the release
+    const released = rec.last("warehouse.bailee_letter.released") ?? rec.last("warehouse.collateral.status_changed", (p) => p["to"] === "released");
     if (!waterfall || !repaid) throw new RecordGap("settlement.waterfall.posted", "27.2's waterfall and the advance repayment are not on the record");
-    if (!released) throw new RecordGap("warehouse.secured_party.released", "27.1/27.2's collateral release is not on the record");
+    if (!released) throw new RecordGap("warehouse.collateral.status_changed{to: released}", "27.2's releaseCollateral event is not on the record");
     const wfRow = rec.entities("settlement_waterfalls", (d) => d["waterfall_id"] === waterfall.payload["waterfall_id"]).at(-1)?.data ?? {};
     const interest = big(wfRow["accrued_interest_cents"]) !== null ? big(wfRow["accrued_interest_cents"])! + (big(wfRow["capitalized_interest_cents"]) ?? 0n) : null;
     const figures = { payoff: big(waterfall.payload["payoff_total_cents"]), interest, fee: big(wfRow["warehouse_fees_cents"]), cost: big(waterfall.payload["sm_cost_recovery_cents"]), retained: big(waterfall.payload["sm_retained_residual_cents"]), residual: big(waterfall.payload["partner_residual_cents"]) };
@@ -114,6 +118,7 @@ export async function reconcilePurchase(rt: Runtime, applicationId: string, o: R
     if (!eventId) eventId = await emit(rt, applicationId, ev, EV.reconciled, { reconciliation_id: reconciliationId, waterfall_id: waterfall.payload["waterfall_id"], repaid_event_id: repaid.id, release_event_id: released.id, advice_net_proceeds_cents: String(ev.advice["net_proceeds_cents"]), bank_received_cents: String(ev.bankReceived), payoff_total_cents: String(figures.payoff), partner_residual_cents: String(figures.residual) }, o.now);
     return { status: "reconciled", reconciliation_id: reconciliationId, event_id: eventId, sides: ev.sides, step: "purchased" };
   }
+  if (op === "evaluate") return { status: ev.reconciled ? "reconciled" : pending ? "pending" : "exception", pending_write: true, waiting_on: pending, sides: ev.sides, advice_net_proceeds_cents: String(ev.advice["net_proceeds_cents"]), investor_net_proceeds_cents: ev.investorNet === null ? null : String(ev.investorNet), bank_received_cents: ev.bankReceived === null ? null : String(ev.bankReceived), match_id: ev.match?.["match_id"] ?? null, prior: prior?.status ?? null };
   if (prior) return { status: prior.status, reconciliation_id: prior.id, escalation_id: prior.escalation_id, sides: ev.sides, replayed: true, step: "purchased" };
   if (pending) return { status: "pending", waiting_on: pending, sides: ev.sides, reason: pending === "delivery_reconcile" ? "29.4 has not reconciled the advice against its expected net" : "the collection bank has not credited the proceeds" };
   if (ev.reconciled) return { status: "reconciled", pending_write: true, sides: ev.sides, advice_net_proceeds_cents: String(ev.advice["net_proceeds_cents"]), bank_received_cents: String(ev.bankReceived), step: "purchased" };

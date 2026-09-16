@@ -5,6 +5,7 @@
  * RecordGap the row waits on (rule 6's discipline applied to delivery).
  */
 import type { DomainEvent } from "../../kernel/events/index.ts";
+import { Decimal } from "../../kernel/money/decimal.ts";
 import type { EntityRecord } from "../../app/tools.ts";
 import { type OrchRecord, type Source, src, RecordGap } from "./facts-35-6.ts";
 import { partyFacts, loanTerms, escrowFacts, cdRow, productFacts, type ClosingFacts } from "./facts-35-6-b.ts";
@@ -29,7 +30,7 @@ export function commitmentFacts(rec: OrchRecord): { row: EntityRecord | null; ev
   // the servicing fee: 29.1's row when it carries one; otherwise 29.1's C2-1.1-02 identity (pass-through rate = note rate − servicing fee) over the commitment's PTR and the lock's note rate — 21.4's `commitments` projection has no fee column
   const ptr = S(d["pass_through_rate"] ?? p["ptr"]); if (!ptr) throw new RecordGap("commitments.pass_through_rate", "29.1's commitment carries no pass-through rate");
   const feeRaw = d["servicing_fee_bps"] ?? p["servicing_fee_bps"];
-  const fee = feeRaw !== undefined && feeRaw !== null ? Number(feeRaw) : Math.round((Number(terms.note_rate_pct.value) - Number(ptr)) * 100);
+  const fee = feeRaw !== undefined && feeRaw !== null ? Number(feeRaw) : Number(Decimal.parse(terms.note_rate_pct.value).sub(Decimal.parse(ptr)).mul(Decimal.parse("100")).toString());
   if (!Number.isFinite(fee) || fee < 0) throw new RecordGap("commitments.servicing_fee_bps", `29.1's commitment yields no servicing fee (note rate ${terms.note_rate_pct.value}, PTR ${ptr})`);
   const rtRaw = d["remittance_type"] ?? p["remittance_type"]; if (rtRaw === undefined || rtRaw === null) throw new RecordGap("commitments.remittance_type", "29.1's commitment carries no remittance type");
   const rt = String(rtRaw);
@@ -126,6 +127,8 @@ export async function loanFileBase(rec: OrchRecord, i: { loan_id: string; seller
   const order = rec.entities("valuation_orders", (d) => valuation === null || d["order_id"] === valuation.payload["order_id"]).at(-1) ?? rec.entities("valuation_orders").at(-1) ?? null;
   const valuationMethod = S(order?.data["method"]) ?? S(valuation?.payload["method"]) ?? S(appraisal.data["method"]); if (!valuationMethod) throw new RecordGap("valuation_orders.method", "neither 24.1's valuation order nor its valuation.received nor 24.2's appraisal row names the valuation method");
   const warehouseLenderId = S(i.wire["warehouse_lender_org_id"]); const baileeLetterName = S(i.wire["bailee_letter_name"]);
+  // 29.3 R3(j): a paper note's DocumentCustodianIdentifier is the custodian's Fannie Mae institution number — the platform's custodian party row (26.2's default custodian) carries it as its servicer_number
+  const custodianFin = i.closing.note_form === "paper" ? ((await rec.q.query<{ fin: string | null }>(`SELECT servicer_number AS fin FROM parties WHERE party_type = 'custodian' ORDER BY created_at, id LIMIT 1`))[0]?.fin ?? null) : null;
   if (!warehouseLenderId || !baileeLetterName) throw new RecordGap("wire_instructions", "29.4's approved warehouse wire instruction names no warehouse lender org id / bailee letter name");
   const base: Row = {
     application_id: rec.app.id, loan_id: i.loan_id, partner_id: rec.app.partner_party_id, seller_number: parties.partner_servicer_number ?? "", servicing_loan_number: i.seller_loan_number, purpose: transactionType,
@@ -137,7 +140,7 @@ export async function loanFileBase(rec: OrchRecord, i: { loan_id: string; seller
     du: { casefile_id: String(finalSub.payload["casefile_id"] ?? casefileRec?.payload["casefile_id"] ?? ""), is_final: finalSub.payload["is_final"] !== false, recommendation: String(finalSub.payload["recommendation"] ?? findings?.payload["recommendation"] ?? ""), closed_loan_snapshot_hash: String(finalSub.payload["closed_loan_snapshot_hash"] ?? ""), du_spec_file_sha256: String(duDoc.payload["sha256"]), du_spec_document_id: String(duDoc.payload["document_id"]) },
     valuation: { method: valuationMethod, offer_date: null, property_data_id: null, special_feature_codes: [] },
     lock: { locked_on: lockedOn, extensions }, commitment: { commitment_id_fnma: commitment.commitment_id_fnma, expires_on: commitment.expires_on, type: commitment.type, remittance_type: commitment.remittance_type, pass_through_rate: commitment.pass_through_rate, servicing_fee_rate: commitment.servicing_fee_rate },
-    warehouse: { advance_outstanding: !!advanceFunded && !repaid, payee_code: S(i.wire["payee_code"]), warehouse_lender_id: warehouseLenderId, custodian_fin: S(custody?.payload["custodian_fin"]), bailee_letter_name: baileeLetterName },
+    warehouse: { advance_outstanding: !!advanceFunded && !repaid, payee_code: S(i.wire["payee_code"]), warehouse_lender_id: warehouseLenderId, custodian_fin: S(custody?.payload["custodian_fin"]) ?? custodianFin, bailee_letter_name: baileeLetterName },
     note: { form: i.closing.note_form, enote_registered_at: registered ? String(registered.payload["registered_at"] ?? registered.occurredAt) : null, min: S(registered?.payload["min"]) ?? S(rec.payload("closing.scheduled")?.["min"]), closing_type: i.closing.closing_type === "wet" ? "paper" : i.closing.closing_type },
     notarization_kind: i.closing.closing_type === "ron" ? "ron" : i.closing.closing_type === "ipen" ? "rin" : "in_person",
     // 22.2 B3-5.1-02: the representative score is the lowest applicable score across scored borrowers (each borrower's applicable score is the middle of three / lower of two) — MISMO CreditScoreImpairmentType-free; the selection method as ULDD names that rule

@@ -24,6 +24,7 @@ import type { UnwindTrigger } from "../closing/ops-26-3.ts";
 import { SERVICER_CONTACT } from "../../runtime/servicing.ts";
 import { productFacts, lockStatus, trustPoaGate, decisionStatus, templateVersionGate, eclosingFacts, dollars, custodialAccountIdFor, executionReviewUnrecoverable } from "./facts-35-6-b.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
+import { wetPreSigningFunding } from "./steps-35-6-e.ts";
 
 type Row = Record<string, unknown>;
 const exitOn = (type: string, pred?: (p: Row) => boolean) => (rec: OrchRecord): DomainEvent | null => rec.last(type, pred);
@@ -281,6 +282,8 @@ const documentsReleased: StepDef = {
     const consentRow = primary ? (await rec.q.query<{ scope: string[] | null; captured_at: string; revoked_at: string | null; hw_sw_version: string | null; verified: boolean }>(`SELECT scope, captured_at::text AS captured_at, revoked_at::text AS revoked_at, hw_sw_version, verified FROM consents WHERE id = $1`, [primary.consent_id]))[0] : undefined;
     const consent = consentRow ? { consent_id: primary!.consent_id, kind: "esign", scope: consentRow.scope ?? [], granted_at: new Date(consentRow.captured_at).toISOString(), withdrawn_at: consentRow.revoked_at ? new Date(consentRow.revoked_at).toISOString() : null, hw_sw_statement_version: consentRow.hw_sw_version, access_demonstrated: consentRow.verified, paper_option_disclosed: true } : null;
     if (!rec.has("closing.consent.verified") && closing.closing_type !== "wet") await ctx.run({ process: "26.2", name: "verifyEsignConsent", actor: CLOSER, input: { closing_id: closing.closing_id, consent }, detail: { sources: { consent: primary?.source ?? src("derived", "no consents{kind: esign} row", "32.2") } } });
+    // wet states (26.3 rule 6 / SM_O73_WET_FUNDS_AT_TABLE_GATE): the funds reach the table before the session — the pre-signing subset, the advance and the wire the business day before the note date (steps-35-6-e.ts); the row waits on the approver, the bank or the warehouse approver there
+    const wet = await wetPreSigningFunding(ctx); if (wet) return wet; rec = ctx.rec;
     // the pre-session checks run inside 25.1's consummation-gate freshness window before the slot (GATES[...].freshness_hours): a run older than that is not the one the signing consummates under
     const preSessionOpensAt = new Date(Date.parse(closing.scheduled_at) - GATES["SM_O61_COMPLIANCE_PASS_CONSUMMATE_GATE"].freshness_hours * 3_600_000).toISOString();
     if (now < preSessionOpensAt) return { wait: { status: "waiting_window", waiting_on: "closing.scheduled", clocked: false } };
@@ -294,7 +297,7 @@ const documentsReleased: StepDef = {
       const ctc = rec.last("clear_to_close.issued", (p) => p["passed"] === true); const le = rec.payload("disclosure.le.issued"); const wp = rec.payload("disclosure.cd.waiting_period.computed"); const vvoe = rec.last("vvoe.completed"); const terms = loanTerms(rec); const fraud = rec.last("fraud.hold.placed") && !rec.last("fraud.hold.released");
       const decision = decisionStatus(rec, civil(rec, now)); const packageComposed = rec.last("notice.closing_package.composed"); const released = rec.last("closing.documents.released") ?? rec.last("closing.package.released");
       const facts = { ctc: { ctc_issued: !!ctc, checklist_passed: ctc?.payload["passed"] === true, decision_status: decision.value }, le: { earliest_consummation_date: S(le?.["earliest_consummation_date"]) }, cd: { earliest_consummation_date: S(wp?.["earliest_consummation_date"]), receipts_complete: !!wp?.["earliest_consummation_date"] }, // two copies of the H-8 per consumer on a rescindable loan (§1026.23(b)(1)), one otherwise; the material disclosures ride 25.4's composed closing package; receipt capture is the platform's for an eSign session and the settlement agent's release instructions for paper
-        signing_package: rec.borrowerIds().map((c) => ({ consumer_id: c, copies: closing.rescindable ? 2 : 1, channel: closing.closing_type === "wet" || !consents[c] ? "in_person" : "esign", esign_consent_id: consents[c]?.consent_id ?? null, material_disclosures_in_package: !!packageComposed, receipt_capture: closing.closing_type !== "wet" && !!consents[c] ? true : !!released })), fraud_hold: { fraud_hold: !!fraud }, compliance_consummate_gate_open: rec.has("compliance.gate.opened", (p) => p["gate"] === "consummation" || p["gate"] === "consummate"), vvoe_within_10bd: vvoe ? vvoe.payload["within_window"] !== false : false, mi_commitment_valid: rec.entities("mi_certificates").length === 0 || rec.entities("mi_certificates", (d) => d["status"] === "active").length > 0, lock_valid_through_closing: terms.lock_expires_on >= closing.scheduled_note_date, documents_released: true,
+        signing_package: rec.borrowerIds().map((c) => ({ consumer_id: c, copies: closing.rescindable ? 2 : 1, channel: closing.closing_type === "wet" || !consents[c] ? "in_person" : "esign", esign_consent_id: consents[c]?.consent_id ?? null, material_disclosures_in_package: !!packageComposed, receipt_capture: closing.closing_type !== "wet" && !!consents[c] ? true : !!released })), fraud_hold: { fraud_hold: !!fraud }, compliance_consummate_gate_open: rec.has("compliance.gate.opened", (p) => p["gate"] === "consummation" || p["gate"] === "consummate"), vvoe_within_10bd: vvoe ? vvoe.payload["within_window"] !== false : false, mi_commitment_valid: rec.entities("mi_certificates").length === 0 || rec.entities("mi_certificates", (d) => ["committed", "docs_ready", "activation_requested", "active"].includes(String(d["status"])) && (!d["commitment_expires_at"] || String(d["commitment_expires_at"]) >= closing.scheduled_at)).length > 0, lock_valid_through_closing: terms.lock_expires_on >= closing.scheduled_note_date, documents_released: true,
         // the notice gates 25.4 and 24.2 own, read from their events: GLBA privacy (privacy.gate.evaluated), the closing package composed and gated (notice.closing_package.composed), the appraisal copy delivered for the final version (valuation.copy.delivered)
         privacy_notice_gate_open: rec.has("privacy.gate.evaluated", (p) => p["result"] === "open"), state_notice_gate_open: rec.has("notice.closing_package.composed", (p) => p["status"] === "gated"), appraisal_copy_gate_open: rec.has("valuation.copy.delivered", (p) => p["is_final_version"] === true) };
       const noticeSources = { privacy: src("event", `privacy.gate.evaluated:${rec.last("privacy.gate.evaluated")?.id ?? ""}`, "25.4"), closing_package: src("event", `notice.closing_package.composed:${rec.last("notice.closing_package.composed")?.id ?? ""}`, "25.4"), appraisal_copy: src("event", `valuation.copy.delivered:${rec.last("valuation.copy.delivered")?.id ?? ""}`, "24.2") };
@@ -343,7 +346,7 @@ const consummated: StepDef = {
     }
     // 26.4: the MIN registered on the MERS System as post-closing (MOM; MERS_PROC_MOM_REGISTER_7 from the note date) — 26.4's SOR row, the one its MIN reversal (SM_O74_MIN_REVERSAL_2BD) runs against on an unwind
     {
-      const min = S(rec.entities("enotes", (d) => d["closing_id"] === closing.closing_id).at(-1)?.data["min"]) ?? S(rec.payload("closing.scheduled")?.["min"]) ?? S(rec.entities("closing_data_snapshots").at(-1)?.data["min"]);
+      const min = S(rec.entities("enotes", (d) => d["closing_id"] === closing.closing_id).at(-1)?.data["min"]) ?? S(rec.payload("closing.scheduled")?.["min"]) ?? S(rec.entities("closing_data_snapshots").at(-1)?.data["min"]) ?? S((rec.entities("closing_data_snapshots").at(-1)?.data["payload"] as Row | undefined)?.["min"]);
       const parties = await partyFacts(rec, closing);
       if (min && parties.partner_mers_org_id && !rec.entities("mers_registrations", (d) => d["min"] === min).length) {
         const funding = rec.payload("funding.requested");
@@ -383,13 +386,17 @@ const consummated: StepDef = {
       rec = await ctx.refresh();
     }
     if (!rec.has("closing.execution_review.passed") && !rec.has("closing.execution_review.failed")) {
+      // a paper note is reviewed from the executed package the settlement agent returns after the table (the FAKE agent scans it an hour after the signing; SM_O72_POST_SIGNING_REVIEW_4H runs from consummation); an eNote's package is the platform's at once
+      if (closing.note_form === "paper") { const pkg = ctx.fakes.settlementAgent.executedPackage(closing.closing_id, String(consummatedEv.payload["consummation_at"] ?? consummatedEv.occurredAt), now); if (!pkg) return { wait: { status: "waiting_vendor", waiting_on: "settlement_agent", clocked: true } }; ctx.journal.push({ step: "consummated", kind: "waiting", waiting_on: null, detail: { executed_package: pkg.package_ref, returned_at: pkg.returned_at } }); }
       const s = rec.entities("signing_sessions", (d) => d["closing_id"] === closing.closing_id).at(-1)!; const signed = (s.data["documents_signed"] as Row[] | undefined) ?? []; const acts = (s.data["notarial_acts"] as Row[] | undefined) ?? [];
       const docs = rec.entities("closing_documents", (d) => d["set_id"] !== undefined); const enote = rec.entities("enotes", (d) => d["closing_id"] === closing.closing_id).at(-1);
+      // the MIN on the recordable set: the eNote's, else the one 26.1's snapshot / 26.2's schedule carry for a paper note (26.4's MOM registration)
+      const minOnRecord = S(enote?.data["min"]) ?? S(rec.payload("closing.scheduled")?.["min"]) ?? S(rec.entities("closing_data_snapshots").at(-1)?.data["min"]) ?? S((rec.entities("closing_data_snapshots").at(-1)?.data["payload"] as Row | undefined)?.["min"]);
       const documents = docs.map((d) => { const kind = String(d.data["kind"]); const sigs = signed.filter((x) => x["closing_document_id"] === d.id); const act = acts.find((a) => a["closing_document_id"] === d.id);
         // the signers a document requires: 26.1's own list on the row when it carries one; the note class (note/eNote, the security instrument) every borrower; anything else the signers the platform recorded on it
         const listed = (d.data["required_signers"] ?? d.data["signers"]) as unknown; const listedIds = Array.isArray(listed) ? listed.map((x) => (typeof x === "string" ? x : String((x as Row)["party_id"] ?? ""))).filter(Boolean) : null;
         const required = listedIds?.length ? listedIds : (kind === "enote" || kind === "note" || kind === "security_instrument") ? rec.borrowerIds() : [...new Set(sigs.map((x) => String(x["signer_party_id"])))];
-        return { closing_document_id: d.id, kind, form: closing.closing_type === "wet" ? "paper" : "electronic", required_signers: required.map((p) => ({ party_id: p, typed_name: rec.borrowerName(p), capacity: "borrower" })), signatures: sigs.map((x) => ({ party_id: String(x["signer_party_id"]), signed_name: rec.borrowerName(String(x["signer_party_id"])), attributable: true, dated: true })), notarized: !!act, ...(act ? { notarial_certificate: { venue: true, date: true, notary_name: true, commission_expiry: true, seal: true, ron_statement: closing.closing_type === "ron" } } : {}), witness_count_required: 0, witnesses: 0, handwritten_changes: [], recordable: kind === "security_instrument", min_present: kind === "enote" || kind === "security_instrument" ? !!enote?.data["min"] : true, cover_sheet: true, ...(kind === "enote" ? { smart_doc_hash: S(enote?.data["tamper_seal_hash"]), eregistry_hash: S(enote?.data["tamper_seal_hash"]) } : {}) }; })
+        return { closing_document_id: d.id, kind, form: closing.closing_type === "wet" || kind === "note" ? "paper" : "electronic", required_signers: required.map((p) => ({ party_id: p, typed_name: rec.borrowerName(p), capacity: "borrower" })), signatures: sigs.map((x) => ({ party_id: String(x["signer_party_id"]), signed_name: rec.borrowerName(String(x["signer_party_id"])), attributable: true, dated: true })), notarized: !!act, ...(act ? { notarial_certificate: { venue: true, date: true, notary_name: true, commission_expiry: true, seal: true, ...(closing.closing_type === "ron" ? { ron_statement: true } : {}) } } : {}), witness_count_required: 0, witnesses: 0, handwritten_changes: [], recordable: kind === "security_instrument", min_present: kind === "enote" || kind === "security_instrument" ? !!minOnRecord : true, cover_sheet: true, ...(kind === "enote" ? { smart_doc_hash: S(enote?.data["tamper_seal_hash"]), eregistry_hash: S(enote?.data["tamper_seal_hash"]) } : {}) }; })
         .filter((d) => d.signatures.length > 0 || d.required_signers.length > 0);
       await ctx.run({ process: "26.2", name: "reviewExecution", actor: CLOSER, input: { closing_id: closing.closing_id, documents, platform_hash: S(s.data["audit_trail_hash"]) }, detail: { sources: { session: src("entity", `signing_sessions:${s.id}:${s.version}`, "26.2"), documents: src("entity", `closing_documents:${docs.map((d) => d.id).join(",")}`, "26.1") } } });
       rec = await ctx.refresh();
@@ -406,15 +413,27 @@ const executionReviewed: StepDef = {
   entryWait: (rec) => (rec.has("rescission.period.started") && !rec.has("rescission.confirmed_not_rescinded") ? { status: "waiting_window", waiting_on: "REGZ_1026_23_RESCISSION_3SBD_GATE", clocked: false } : null),
   clocked: () => true,
   actions: async (ctx) => {
-    let rec = ctx.rec; const closing = needClosing(rec); const now = ctx.now;
+    const rec = ctx.rec; const now = ctx.now;
     const resc = rescissionFacts(rec, now);
     if (resc.started && !resc.confirmed) return { wait: { status: "waiting_window", waiting_on: "REGZ_1026_23_RESCISSION_3SBD_GATE", clocked: false } };
+    const funding = rec.payload("funding.requested"); if (!funding) throw new RecordGap("funding.requested", "26.3 has not opened the funding calendar");
+    if (civil(rec, now) < String(funding["disbursement_date"])) return { wait: { status: "waiting_window", waiting_on: "SM_O73_FUNDING_DATE", clocked: false } };
+    return fundingChain(ctx, { stage: null, resc });
+  },
+};
+/**
+ * 26.3's worksheet from the consummated CD version (rule 7), the settlement agent's requested-net statement reconciled to it, 25.1's disbursement gate, the funding conditions with every fact
+ * from the record (`stage: "pre_signing"` = the wet-state subset the day before the session — 26.3 rule 6 / open question 1), `requestWarehouseAdvance` → `funding.authorized`; 27.1's eligibility,
+ * borrowing base and advance decision as `warehouse` → `warehouse.advance.approved`; 26.3 records the approval. Shared by the dry path (execution_reviewed) and the wet pre-signing chain (documents_released).
+ */
+export async function fundingChain(ctx: StepContext, o: { stage: "pre_signing" | null; resc: ReturnType<typeof rescissionFacts> }): Promise<StepOutcome> {
+  {
+    let rec = ctx.rec; const closing = needClosing(rec); const now = ctx.now; const resc = o.resc;
     const funding = rec.payload("funding.requested"); if (!funding) throw new RecordGap("funding.requested", "26.3 has not opened the funding calendar");
     const fundingId = String(funding["funding_id"]); const terms = loanTerms(rec); const cd = cdRow(rec)!; const cdF = (cd.data["figures"] as Row | undefined) ?? {};
     const fees = (cdF["fees"] as Row[] | undefined) ?? []; const prepaid = cents(fees.find((f) => f["fee_code"] === "prepaid_interest")?.["amount_cents"] ?? rec.payload("funding.interest_mode.decided")?.["amount_cents"] ?? 0);
     const escrowDeposit = cents(cdF["initial_escrow_payment_cents"] ?? fees.find((f) => f["fee_code"] === "escrow_deposit")?.["amount_cents"] ?? 0); const lenderCredit = cents(cdF["lender_credits_cents"] ?? terms.lender_credit_cents.value);
     const disbursement = String(funding["disbursement_date"]); const cdSource = src("entity", `disclosures:${cd.id}:${cd.version}`, "25.2");
-    if (civil(rec, now) < disbursement) return { wait: { status: "waiting_window", waiting_on: "SM_O73_FUNDING_DATE", clocked: false } };
     // 26.3: the worksheet from the consummated CD; the settlement agent's requested-net statement (FAKE) reconciled to it
     let ws = rec.entities("funding_worksheets", (d) => d["funding_id"] === fundingId).at(-1);
     if (!ws) { await ctx.run({ process: "26.3", name: "buildFundingWorksheet", actor: FUNDER, input: { funding_id: fundingId, version: 1, cd_version: Number(cd.data["cd_version"] ?? 1), gross_loan_cents: String(terms.loan_amount_cents.value), prepaid_interest_cents: String(prepaid), escrow_deposit_cents: String(escrowDeposit), lender_credits_cents: String(lenderCredit) }, detail: { sources: { cd: cdSource, gross_loan_cents: terms.loan_amount_cents.source, prepaid_interest: src("event", `funding.interest_mode.decided:${rec.last("funding.interest_mode.decided")?.id ?? ""}`, "26.3"), escrow_deposit: cdSource, lender_credits: cdSource } } }); rec = await ctx.refresh(); ws = rec.entities("funding_worksheets", (d) => d["funding_id"] === fundingId).at(-1)!; }
@@ -435,9 +454,12 @@ const executionReviewed: StepDef = {
     }
     // 26.3: the funding conditions with every fact from the record; then funding.authorized
     if (!rec.has("funding.authorized")) {
-      const fc = fundingConditionFacts(rec, { as_of: now, funding_type: String(funding["funding_type"]), transaction_type: rec.app.transaction_type ?? "limited_cash_out", disbursement_date: disbursement, release_date: disbursement, note_date: S(funding["note_date"]) ?? closing.scheduled_note_date, authorized: false, loan_amount_cents: terms.loan_amount_cents.value, enote: closing.note_form === "enote", first_payment_date: S(funding["first_payment_date"]), rescission: resc.facts, rescission_source: resc.source, worksheet_reconciled: ws.data["reconciled"] === true, warehouse_advance_approved: null });
-      const conditions = await ctx.run<Row>({ process: "26.3", name: "evaluateFundingConditions", actor: FUNDER, input: { funding_id: fundingId, facts: fc.facts }, detail: { sources: fc.sources } });
+      const fc = fundingConditionFacts(rec, { as_of: now, funding_type: String(funding["funding_type"]), transaction_type: rec.app.transaction_type ?? "limited_cash_out", disbursement_date: disbursement, release_date: disbursement, note_date: S(funding["note_date"]) ?? closing.scheduled_note_date, authorized: false, loan_amount_cents: terms.loan_amount_cents.value, enote: closing.note_form === "enote", first_payment_date: S(funding["first_payment_date"]), rescission: resc.facts, rescission_source: resc.source, worksheet_reconciled: ws.data["reconciled"] === true, warehouse_advance_approved: null, ...(o.stage ? { stage: o.stage } : {}) });
+      const conditions = await ctx.run<Row>({ process: "26.3", name: "evaluateFundingConditions", actor: FUNDER, input: { funding_id: fundingId, facts: fc.facts, ...(o.stage ? { op: o.stage } : {}) }, detail: { sources: fc.sources, ...(o.stage ? { subset: o.stage } : {}) } });
       if (conditions["passed"] !== true) { const pending = (conditions["pending_codes"] as string[] | undefined) ?? []; const blocking = (conditions["blocking_codes"] as string[] | undefined) ?? []; if (blocking.length) return { hold: { reason: "gate_closed", gate: String(blocking[0]), detail: { blocking, pending } } }; return { wait: { status: "open", waiting_on: pending[0] ?? "26.3", clocked: true } }; }
+      // the wet-state pre-signing run happens the business day before the note date (26.3's SM_O73_CONDITIONS_EVAL_2BH wet anchor); 26.3 authorizes no funding before its earliest funding date (BEFORE_EARLIEST_FUNDING_DATE) — the advance and the wire follow on the funding morning, before the session
+      const earliest = S(funding["earliest_funding_date"]) ?? disbursement;
+      if (civil(rec, now) < earliest) return { wait: { status: "waiting_window", waiting_on: "SM_O73_FUNDING_DATE", clocked: false } };
       await ctx.run({ process: "26.3", name: "requestWarehouseAdvance", actor: FUNDER, input: { funding_id: fundingId, conditions, rescission: resc.facts, fraud_hold: fc.facts["fraud"], ptf: fc.facts["ptf"], cash_to_close: fc.facts["cash_to_close"], gifts: fc.facts["gifts"] ?? [], at: now }, detail: { sources: { conditions: src("event", `funding.conditions.evaluated:${String(conditions["event_id"] ?? "")}`, "26.3"), rescission: resc.source ?? src("derived", "not rescindable", "25.3") } } });
       rec = await ctx.refresh();
     }
@@ -453,15 +475,19 @@ const executionReviewed: StepDef = {
       await ctx.run({ process: "26.3", name: "requestWarehouseAdvance", actor: FUNDER, input: { funding_id: fundingId, op: "advance_approved", advance_id: String(approval["advance_id"]) }, detail: { sources: { approved: src("event", `warehouse.advance.approved:${String(approval["event_id"] ?? "")}`, "27.1") } } });
     }
     return {};
-  },
-};
+  }
+}
 
 // ───────────────────────────── funding_authorized → wire_released: the wire and the release (T8) ─────────────────────────────
 const fundingAuthorized: StepDef = {
   name: "funding_authorized",
   exit: exitOn("funding.wire.accepted"),
   clocked: () => true,
-  actions: async (ctx) => {
+  actions: (ctx) => wireChain(ctx),
+};
+/** 26.3 `prepareWire` as `funder` with 24.4's verified wire record → `funding.wire.prepared`; `waiting_human{funding_approver}` until a funding_approver's release (the pass never releases); the FAKE bank's acceptance → `funding.wire.accepted`. Shared by the dry path (funding_authorized) and the wet pre-signing chain. */
+export async function wireChain(ctx: StepContext): Promise<StepOutcome> {
+  {
     let rec = ctx.rec; const closing = needClosing(rec); const now = ctx.now;
     const funding = rec.payload("funding.requested")!; const fundingId = String(funding["funding_id"]); const fundingRow = rec.entity("fundings", fundingId);
     const prepared = rec.last("funding.wire.prepared"); const released = rec.last("funding.wire.released");
@@ -480,8 +506,25 @@ const fundingAuthorized: StepDef = {
     await ctx.run({ process: "26.3", name: "prepareWire", actor: FUNDER, input: { funding_id: fundingId, op: "accept", wire_id: wireId, imad: bank.imad, accepted_at: bank.accepted_at }, detail: { sources: { bank: src("platform", `FAKE funding bank IMAD ${bank.imad}`, "35.6"), released: src("event", `funding.wire.released:${released.id}`, "26.3") } } });
     rec = await ctx.refresh();
     return {};
-  },
-};
+  }
+}
+/** 27.1 `prepareWire` books the advance behind the accepted funding wire — the warehouse wire package to the funding_approver (dual control; the FAKE approver in reviewers.ts) → `warehouse.advance.funded`; returns the wait while the approver has not acted, null once funded. */
+export async function bookAdvance(ctx: StepContext): Promise<StepOutcome | null> {
+  const rec = ctx.rec; const accepted = rec.last("funding.wire.accepted"); if (!accepted) return null;
+  const advanceId = S(rec.payload("warehouse.advance.approved")?.["advance_id"]) ?? advanceIdOf(rec);
+  if (rec.has("warehouse.advance.funded")) return null;
+  if (!(await ctx.rt.db.query(`SELECT 1 FROM escalations WHERE application_id = $1 AND owner_role = 'funding_approver' AND completed_at IS NULL AND payload->'package'->>'advance_id' = $2`, [rec.app.id, advanceId])).length) {
+    const fid = S(rec.entities("warehouse_facilities").at(-1)?.id) ?? FACILITY_FIXTURE.facility_id;
+    // SM_WH_HAIRCUT_RESERVE_GATE reads the partner's haircut reserve as the ledger carries it: the balance of `partner_haircut_reserve` on THIS facility's reserve bank account (27.1's `haircut_reserve_account_ref`; 27.1's draws debit it, the partner's deposits credit it); no line at all is a gap the warehouse owner fills
+    const facilityRow = rec.entities("warehouse_facilities", (d) => d["facility_id"] === fid).at(-1);
+    const reserveRef = String(facilityRow?.data["haircut_reserve_account_ref"] ?? (fid === FACILITY_FIXTURE.facility_id ? FACILITY_FIXTURE.haircut_reserve_account_ref : ""));
+    if (!reserveRef) throw new RecordGap("warehouse_facilities.haircut_reserve_account_ref", `facility ${fid} names no haircut reserve account (27.1)`);
+    const reserve = (await ctx.rt.db.query<{ cents: string | null }>(`SELECT (-SUM(amount_cents))::text AS cents FROM ledger_lines WHERE account = 'partner_haircut_reserve' AND scope = 'custodial' AND custodial_account_id = $1`, [custodialAccountIdFor(reserveRef)]))[0]?.cents ?? null;
+    if (reserve === null) throw new RecordGap("ledger:partner_haircut_reserve", `no partner_haircut_reserve line on the facility's reserve account ${reserveRef} (27.1 LSA haircut reserve; the partner's deposit is posted by 2.1 ledger.post)`);
+    await ctx.run({ process: "27.1", name: "prepareWire", actor: WAREHOUSE, input: { advance_id: advanceId, facility_id: fid, partner_haircut_reserve_cents: reserve, partner_contribution_cents: String(rec.payload("warehouse.advance.approved")?.["partner_contribution_cents"] ?? "0") }, detail: { sources: { haircut_reserve: src("table", `ledger_lines:partner_haircut_reserve@${reserveRef} (balance)`, "27.1"), approved: src("event", `warehouse.advance.approved:${rec.last("warehouse.advance.approved")?.id ?? ""}`, "27.1"), accepted: src("event", `funding.wire.accepted:${accepted.id}`, "26.3") } } });
+  }
+  return { wait: { status: "waiting_human", waiting_on: "funding_approver", clocked: true } };
+}
 const wireReleased: StepDef = {
   name: "wire_released",
   exit: exitOn("loan.funded"),
@@ -491,24 +534,17 @@ const wireReleased: StepDef = {
     let rec = ctx.rec; const now = ctx.now;
     const funding = rec.payload("funding.requested")!; const fundingId = String(funding["funding_id"]); const accepted = rec.last("funding.wire.accepted")!;
     // 27.1: the warehouse wire package to the funding_approver (dual control; the FAKE approver in reviewers.ts) → warehouse.advance.funded
-    const advanceId = S(rec.payload("warehouse.advance.approved")?.["advance_id"]) ?? advanceIdOf(rec);
-    if (!rec.has("warehouse.advance.funded")) {
-      if (!(await ctx.rt.db.query(`SELECT 1 FROM escalations WHERE application_id = $1 AND owner_role = 'funding_approver' AND completed_at IS NULL AND payload->'package'->>'advance_id' = $2`, [rec.app.id, advanceId])).length) {
-        const fid = S(rec.entities("warehouse_facilities").at(-1)?.id) ?? FACILITY_FIXTURE.facility_id;
-        // SM_WH_HAIRCUT_RESERVE_GATE reads the partner's haircut reserve as the ledger carries it: the balance of `partner_haircut_reserve` on THIS facility's reserve bank account (27.1's `haircut_reserve_account_ref`; 27.1's draws debit it, the partner's deposits credit it); no line at all is a gap the warehouse owner fills
-        const facilityRow = rec.entities("warehouse_facilities", (d) => d["facility_id"] === fid).at(-1);
-        const reserveRef = String(facilityRow?.data["haircut_reserve_account_ref"] ?? (fid === FACILITY_FIXTURE.facility_id ? FACILITY_FIXTURE.haircut_reserve_account_ref : ""));
-        if (!reserveRef) throw new RecordGap("warehouse_facilities.haircut_reserve_account_ref", `facility ${fid} names no haircut reserve account (27.1)`);
-        const reserve = (await ctx.rt.db.query<{ cents: string | null }>(`SELECT (-SUM(amount_cents))::text AS cents FROM ledger_lines WHERE account = 'partner_haircut_reserve' AND scope = 'custodial' AND custodial_account_id = $1`, [custodialAccountIdFor(reserveRef)]))[0]?.cents ?? null;
-        if (reserve === null) throw new RecordGap("ledger:partner_haircut_reserve", `no partner_haircut_reserve line on the facility's reserve account ${reserveRef} (27.1 LSA haircut reserve; the partner's deposit is posted by 2.1 ledger.post)`);
-        await ctx.run({ process: "27.1", name: "prepareWire", actor: WAREHOUSE, input: { advance_id: advanceId, facility_id: fid, partner_haircut_reserve_cents: reserve, partner_contribution_cents: String(rec.payload("warehouse.advance.approved")?.["partner_contribution_cents"] ?? "0") }, detail: { sources: { haircut_reserve: src("table", `ledger_lines:partner_haircut_reserve@${reserveRef} (balance)`, "27.1"), approved: src("event", `warehouse.advance.approved:${rec.last("warehouse.advance.approved")?.id ?? ""}`, "27.1"), accepted: src("event", `funding.wire.accepted:${accepted.id}`, "26.3") } } });
-      }
-      return { wait: { status: "waiting_human", waiting_on: "funding_approver", clocked: true } };
-    }
+    const booking = await bookAdvance(ctx); if (booking) return booking;
     // 26.3: the settlement agent's receipt confirmation (FAKE agent through the portal) and the final settlement statement → confirmDisbursement → loan.funded
     if (!rec.has("funding.agent_receipt.confirmed") && !rec.has("funding.funds_at_agent")) {
       const receipt = ctx.fakes.settlementAgent.receiptConfirmation(String(accepted.payload["accepted_at"] ?? accepted.occurredAt));
       await ctx.run({ process: "26.3", name: "notifySettlementAgent", actor: FUNDER, input: { funding_id: fundingId, op: "agent_receipt", funds_received_by_agent_at: receipt.funds_received_by_agent_at, channel: receipt.channel, confirmed_by: "settlement_agent" }, detail: { sources: { agent: src("platform", "FAKE settlement agent portal confirmation", "35.6"), accepted: src("event", `funding.wire.accepted:${accepted.id}`, "26.3") } } });
+      rec = await ctx.refresh();
+    }
+    // 26.3 rule 6 (wet: table_funds_then_authorize): after 26.2's execution review the disbursement authorization (the funding number) goes to the agent through the verified channel — `funding.disbursement.authorized`; the agent disburses only on it
+    if (String(funding["funding_type"]) === "wet" && !rec.has("funding.disbursement.authorized")) {
+      const review = rec.last("closing.execution_review.passed"); if (!review) throw new RecordGap("closing.execution_review.passed", "26.2's execution review has not passed (the wet-state authorization cites it)");
+      await ctx.run({ process: "26.3", name: "notifySettlementAgent", actor: FUNDER, input: { funding_id: fundingId, op: "disbursement_authorization", execution_review_passed_at: String(review.payload["reviewed_at"] ?? review.occurredAt), issued_at: now, channel: "portal", funding_number: `FN-${rec.app.id.slice(0, 8)}` }, detail: { sources: { review: src("event", `closing.execution_review.passed:${review.id}`, "26.2"), receipt: src("event", `funding.agent_receipt.confirmed:${rec.last("funding.agent_receipt.confirmed")?.id ?? ""}`, "26.3") } } });
       rec = await ctx.refresh();
     }
     const ws = rec.entities("funding_worksheets", (d) => d["funding_id"] === fundingId).at(-1);

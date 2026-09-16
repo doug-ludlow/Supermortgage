@@ -8,8 +8,10 @@
  *                  (timers-35-8.ts claimBreachHandler: the claim lapses, `claim_lapses + 1`, `work.item.claim_expired`, sev 3
  *                  ops_analyst on the third lapse of one item); (4) SM_WORK_ITEM_AGE_5BD breached → 35.7's
  *                  `role.queue.unstaffed{role}` once per breach; then (5) the queue pass (rule 8: an item per new source —
- *                  including the escalations and breached clocks this very sweep produced, so the queue matches the console's
- *                  after every sweep — and `source_closed` for a source that went away).
+ *                  including the escalations and breached clocks of every OTHER process this very sweep produced, so the queue
+ *                  matches the console's after every sweep — and `source_closed` for a source that went away). This process's own
+ *                  clocks (SM_WORK_*) and the escalations they open are the queue's bookkeeping about an item that already
+ *                  exists, never a new source (items.ts isOwnBookkeeping): an item per breach per sweep would otherwise breed.
  * Each change set is one global unit of work whose commit writes the rows. Nothing here touches a section's clock: the
  * engine armed, satisfied and breached every row from the process's own events.
  */

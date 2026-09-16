@@ -145,6 +145,7 @@ const sha256hex = (s: string): string => createHash("sha256").update(s).digest("
 const balance = async (loanId: string, account: string): Promise<bigint> => BigInt((await db.query<{ s: string }>(`SELECT coalesce(sum(amount_cents), 0)::text AS s FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = $2`, [loanId, account]))[0]!.s);
 /** Every string in a payload: the contract that no e-mail, phone, name or token reaches a screen (35.7-T15's pattern). */
 const strings = (v: unknown, out: string[] = []): string[] => { if (typeof v === "string") out.push(v); else if (Array.isArray(v)) v.forEach((x) => strings(x, out)); else if (v && typeof v === "object") Object.values(v as Json).forEach((x) => strings(x, out)); return out; };
+/** A token is 43 characters of mixed-case base64url; a 43-character upper-case rule code (FL_69B_124_013_ANTI_COERCION_AT_APPLICATION) is not one. */
 const assertIdsOnly = (payload: unknown, where: string): void => { for (const s of strings(payload)) assert.doesNotMatch(s, /@|^\+?\d{10,}$|^(?=.*[a-z])(?=.*[A-Z])[A-Za-z0-9_-]{43}$| Person$/, `${where}: no e-mail, phone, name or token: ${s}`); };
 
 // ---------------------------------------------------------------- fixtures
@@ -407,7 +408,8 @@ test("35.8-T6: Given the lifecycle fixture's orchestration at step `funding_auth
     clock.set(EST("2026-11-12", "09:40"));
     const r = await act("fin", "funding_approver", "funding_release", sub6, "release", { funding_id: FUNDING_ID, wire_id: WIRE_ID });
     assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body["status"], "executed"); assert.equal(r.body["tool"], "prepareWire");
-    const out = r.body["output"] as Json; const w = out["wire"] as Json; assert.equal(w["status"], "released"); assert.equal(w["amount_cents"], "55685207"); assert.equal(BigInt(w["amount_cents"] as string), D_NET_WIRE_CENTS);
+    assertIdsOnly(r.body, "the funding_release act answer");   // 26.3's wire carries a beneficiary name and free text; the screen answer carries neither
+    const out = r.body["output"] as Json; const w = out["wire"] as Json; assert.equal(w["status"], "released"); assert.ok(!("beneficiary_name_on_wire" in w) && !("originator_to_beneficiary_info" in w), "the wire's free text is not on the screen"); assert.equal(w["amount_cents"], "55685207"); assert.equal(BigInt(w["amount_cents"] as string), D_NET_WIRE_CENTS);
     const input = JSON.parse((await db.query<{ document: string }>(`SELECT metadata->>'document' AS document FROM documents WHERE id = $1`, [r.body["document_id"]]))[0]!.document) as Json;
     assert.equal((input["conditions"] as Json)["passed"], true, "the derived evaluateFundingConditions passed from the record"); assert.equal(input["op"], "release"); assert.ok(!("amount_cents" in { funding_id: FUNDING_ID, wire_id: WIRE_ID }), "the person never typed a figure");
     const release = await db.query<{ type: string; application_id: string | null; loan_id: string | null }>(`SELECT type, application_id::text AS application_id, loan_id::text AS loan_id FROM loan_events WHERE application_id = $1 AND type LIKE 'funding.%' AND type LIKE '%release%'`, [appId]);
@@ -628,7 +630,7 @@ test("35.8-T13: Given a 12.2 loss-mitigation evaluation with outcome `deny`, whe
   assert.equal((await timers("SM_LM_REVIEWER_DENIAL_APPROVAL_2BD", "AND loan_id = $2", [l.loanId]))[0]!.status, "satisfied");
   const reviewed = await db.query<{ type: string; actor_id: string }>(`SELECT type, actor_id FROM loan_events WHERE loan_id = $1 AND type LIKE 'lossmit.evaluation.%' AND actor_id = $2`, [l.loanId, ids["lin"]]); assert.ok(reviewed.length >= 1, "12.2's decision event by the reviewer");
   const notify = await act("lin", "lossmit_reviewer", "lossmit_decision", sub13, "notify", { request_id: evalId });
-  assert.equal(notify.status, 200, JSON.stringify(notify.body)); assert.equal(notify.body["process"], "12.2"); assert.equal(notify.body["tool"], "notice.render_send");
+  assert.equal(notify.status, 200, JSON.stringify(notify.body)); assert.equal(notify.body["process"], "12.2"); assert.equal(notify.body["tool"], "notice.render_send"); assertIdsOnly(notify.body, "the lossmit_decision notify answer");
   // 12.2's notice is the Notice Registry's (src/notices/service.ts: `notice.rendered` then `notice.sent` on the loan, the rendered notice in the runtime's notice memory); the screen wrote none of its own
   const noticeEvents = await db.query<{ type: string; actor_id: string; payload: Json }>(`SELECT type, actor_id, payload FROM loan_events WHERE loan_id = $1 AND type IN ('notice.rendered', 'notice.sent', 'notice.held') ORDER BY sequence`, [l.loanId]);
   const denialNotice = noticeEvents.filter((e) => e.payload["template"] === "NTC_REGX_41C1_DENIAL");

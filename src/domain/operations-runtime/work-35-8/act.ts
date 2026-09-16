@@ -105,14 +105,22 @@ async function itemFor(d: ActDeps, itemId: string | null, subject: Subject): Pro
   const it = await getItem(d.q, itemId); if (!it) throw new WorkRefused(404, "NOT_FOUND", `no work item ${itemId}`);
   if (it.status === "closed" || it.status === "cancelled") throw new WorkRefused(409, "ITEM_CLOSED", `item ${itemId} is ${it.status}`, { item_id: itemId, status: it.status });
   const me = actorId(d.actor);
-  if (it.status === "claimed" && it.claimed_by && it.claimed_by !== me && it.claim_expires_at && Date.parse(it.claim_expires_at) > Date.parse(d.now)) throw new WorkRefused(409, "CLAIMED_BY_OTHER", `item ${itemId} is claimed`, { staff_user_id: it.claimed_by });
+  // rule 9, the one rule everywhere (items.ts claimItem / releaseItem): while the row says `claimed` the claim holds — the clock's breach (the sweep's handler) ends it, never the wall clock read here
+  if (it.status === "claimed" && it.claimed_by && it.claimed_by !== me) throw new WorkRefused(409, "CLAIMED_BY_OTHER", `item ${itemId} is claimed`, { staff_user_id: it.claimed_by, claim_expires_at: it.claim_expires_at });
   if (it.subject_kind !== subject.kind || it.subject_id !== subject.id) throw new WorkRefused(409, "ITEM_SUBJECT", `item ${itemId} is about another subject`, { item_id: itemId });
   return it;
 }
 
 // ---------------------------------------------------------------- the derivation (rule 3)
 /** The stored form of a derived input (Data model: "PII never stored — ids, codes and cents strings only"): a recipient list is kept as party ids; a name, address, e-mail or phone anywhere in the input is dropped. The tool receives the full input (a notice tool prints the address); the record, the hash and the dry-run answer carry the redacted form. */
-const PII_KEYS = /^(name|legal_name|first_name|last_name|email|e_mail|phone|phone_number|mailing_address|mailingAddress|address|address_line1|address_line2|street|ssn|tin|account_number|routing_number)$/;
+/**
+ * The keys a stored derivation, a screen answer and an action row never carry (rule 2: ids, dates, counts, codes and cents only). Exact key names, never a
+ * substring match: `name` (a party's, a beneficiary's — and, by the same rule, a template's `denied[].name`, an option name the tool still receives), the
+ * contact and address keys, the identifiers, the wire's free text (26.3's `beneficiary_name_on_wire`, `originator_to_beneficiary_info`: a surname and a
+ * property address), the servicer-side lines of a notice (a phone, a PO box). The tool receives the unredacted input; only the record and the answer are
+ * redacted — so `work_derivations.input_sha256` equals `agent_decisions.inputs_snapshot_hash` (rule 3) exactly when nothing was redacted (35.8-T1's payment).
+ */
+const PII_KEYS = /^(name|names|legal_name|first_name|last_name|middle_name|full_name|borrower_name|borrower_last_name|beneficiary_name_on_wire|originator_to_beneficiary_info|email|e_mail|phone|phone_number|fax|mailing_address|mailingAddress|address|address_line1|address_line2|street|city|zip|postal_code|property_address|property_short|ssn|tin|dob|date_of_birth|account_number|routing_number|token|secret|password|spoc_name|spoc_phone|spoc_email|servicer_phone|servicer_address|exclusive_address|remittance_address|hud_phone|hope_hotline)$/;
 export function redactForRecord(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(redactForRecord);
   if (v && typeof v === "object" && !(v instanceof Date)) {
@@ -283,10 +291,10 @@ async function executeDerived(d: ActDeps, o: Outlive, y: Omit<RowInput, "status"
   try { out = await dispatch(d, r, y.keys, st.derived.input, actor, approvedBy); }
   catch (e) { if (e instanceof CommandRefused || e instanceof WorkRefused) return refuse(d, o, { ...y, actor, approval_of: approvalOf }, e); if (e instanceof RangeError && sectionCode(e) === null) return refuse(d, o, { ...y, actor, approval_of: approvalOf }, new WorkRefused(400, "BAD_REQUEST", e.message)); return refuse(d, o, { ...y, actor, approval_of: approvalOf }, e instanceof Error ? e : new Error(String(e))); }
   // 35.6: the closing orchestration opens on the clear-to-close (T7) — through the port (35.6's own tool once it lands; the seam's literal until then)
-  if (r.screen.code === "conditions" && r.action.code === "ctc" && y.keys.application_id) await portsOf(d.ports).orchestration.openOnCtc({ q: d.q, rt: d.rt, events: d.events }, { application_id: y.keys.application_id, at: d.now, by: actorId(actor) });
+  if (r.screen.code === "conditions" && r.action.code === "ctc" && y.keys.application_id) { try { await portsOf(d.ports).orchestration.openOnCtc({ q: d.q, rt: d.rt, events: d.events }, { application_id: y.keys.application_id, at: d.now, by: actorId(actor) }); } catch (e) { return refuse(d, o, { ...y, actor, approval_of: approvalOf }, e instanceof Error ? e : new Error(String(e))); } }   // rule 7: the CTC rolls back with the orchestration that would not open, and the row says so
   d.deferWrite(async (q) => { await q.query(insertActionSql, actionParams(d, { ...y, id, status: "executed", command_event_id: out.command_event_id, agent_decision_id: out.agent_decision_id, approval_of: approvalOf, actor })); });
   rawEvents(d).append(ev.actionExecuted(id, actor, { screen_code: r.screen.code, action_code: r.action.code, process: r.action.process, tool: r.action.tool, by: actorId(actor), role: actor.role ?? null, input_sha256: st.input_sha256, command_event_id: out.command_event_id, approval_of: approvalOf }));
-  return { action_id: id, status: "executed", ...common, output: out.output, command_event_id: out.command_event_id, agent_decision_id: out.agent_decision_id, events: out.events, approval_of: approvalOf };
+  return { action_id: id, status: "executed", ...common, output: redactForRecord(out.output), command_event_id: out.command_event_id, agent_decision_id: out.agent_decision_id, events: out.events, approval_of: approvalOf };   // the owning tool's answer, less every key of PII_KEYS (rule 2: the screen shows ids, dates, counts, codes, cents)
 }
 
 // ---------------------------------------------------------------- work.action.decide (rules 5–6)

@@ -27,7 +27,7 @@ import type { Queryable } from "../../infra/db/client.ts";
 import type { Actor } from "../../kernel/events/index.ts";
 import type { EntityStore } from "../../app/tools.ts";
 import type { Runtime } from "../../runtime/app.ts";
-import { loanCashState, recipientsOf, servicingParties } from "../../runtime/servicing.ts";
+import { loanCashState, recipientsOf, servicingParties, SERVICER_CONTACT } from "../../runtime/servicing.ts";
 import { plainDate as D, addDays, addMonths, type PlainDate } from "../../kernel/calendar/date.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { evaluateFundingConditions, type ConditionFacts } from "../closing/ops-26-3.ts";
@@ -72,8 +72,13 @@ export const derivePaymentPost: Deriver = async (c) => {
   const input: Row = { op: "post", id: pid, loan_id: loanId, state: facts.state, custodial: facts.custodial, days_delinquent: 0, ...(str(c.decision, "credited_as_of") ? { credited_as_of: str(c.decision, "credited_as_of") } : {}), ...(str(c.decision, "designation_override") ? { designation_override: str(c.decision, "designation_override"), reason: str(c.decision, "reason") } : {}) };
   return { input, sources: await loanSources(c, loanId) };
 };
+/** The record's own as-of for a derivation that may be approved on a later day (rule 6): the latest ledger effective date on the loan — the projection (2.x's LoanCashState) moves only when the ledger does, never with the calendar; today when the loan has no line yet. */
+async function recordAsOf(c: DeriveContext, loanId: string): Promise<PlainDate> {
+  const [r] = await c.q.query<{ d: string | null }>(`SELECT max(s.effective_date)::text AS d FROM ledger_entry_sets s WHERE EXISTS (SELECT 1 FROM ledger_lines l WHERE l.set_id = s.id AND l.loan_id = $1)`, [loanId]);
+  return r?.d ? D(r.d) : today(c.now);
+}
 export const derivePaymentReverse: Deriver = async (c) => {
-  const loanId = loanOf(c); const facts = await loanCashState(c.rt, loanId, today(c.now));
+  const loanId = loanOf(c); const facts = await loanCashState(c.rt, loanId, await recordAsOf(c, loanId));
   if (!facts.custodial) throw new WorkRefused(409, "NO_CUSTODIAL_ACCOUNTS", "the partner has no clearing / P&I / T&I custodial accounts", { loan_id: loanId });
   const pid = str(c.decision, "payment_id");
   const pay = facts.store.get("payments", pid)?.data; if (!pay || pay["loan_id"] !== loanId) throw new WorkRefused(404, "NOT_FOUND", `no payment ${pid} on this loan`, { payment_id: pid });
@@ -82,6 +87,11 @@ export const derivePaymentReverse: Deriver = async (c) => {
     allocation: pay["allocation"] ?? null, ledger_entry_set_ids: pay["ledger_entry_set_ids"] ?? [] };
   return { input, sources: await loanSources(c, loanId) };
 };
+
+/** The public lines of a §1024.41(c)(1) denial letter (12.2's template): HUD's counseling line, the HOPE hotline, the appeal procedure of §1024.41(h) and the AI-involvement sentence — regulation text, not data of any record. */
+export const REGX_DENIAL_PUBLIC_LINES = { hud_phone: "(800) 569-4287", hud_counselor_url: "consumerfinance.gov/find-a-housing-counselor", hope_hotline: "(888) 995-4673",
+  appeal_how: "writing to the exclusive address below", next_steps: "You may apply for the options listed as available, appeal within the period stated, or contact a HUD-approved housing counselor at no cost.",
+  ai_notice: "An automated system took part in evaluating your application; a person reviewed and is responsible for this decision." } as const;
 
 // ---------------------------------------------------------------- 16.1 (worked example C)
 /** The county release recording fee by property state: the `jurisdiction_rules` record keyed by the state (`data.payoff.release_recording_fee_cents`, 16.x's data) when one is on the record, else this default (16.1 worked example A: Ohio **$34.00**, marked [UNVERIFIED] there). */
@@ -201,9 +211,11 @@ export const deriveLossmitNotify: Deriver = async (c) => {
   const dets = Array.isArray(ev.data["determinations"]) ? (ev.data["determinations"] as Row[]) : [];
   const denied = dets.filter((d) => d["result"] === "denied").map((d) => ({ name: s(d["option"]), reason: (Array.isArray(d["reason_codes"]) ? (d["reason_codes"] as unknown[]).map(String) : []).join(", ") || "not eligible", investor_name: "Fannie Mae", investor_requirement: (Array.isArray(d["reason_codes"]) ? (d["reason_codes"] as unknown[]).map(String) : []).join(", ") || null }));
   const state = s(ev.data["state"]) || null;
-  // the servicer-side fields of the template (the SPOC, the addresses, the HUD lines, the appeal procedure) are the template version's own defaults until 12.x keeps a servicer profile; every borrower- and decision-side field is the record's
-  const tv = c.rt.noticeRegistry.activeVersion("NTC_REGX_41C1_DENIAL", today(c.now)); const sample = tv?.samplePayload ?? {};
-  const servicerSide = Object.fromEntries(Object.entries(sample).filter(([k]) => /^(spoc_|servicer_|exclusive_|hud_|hope_|appeal_how|ai_notice|next_steps|other_available)/.test(k)));
+  // the servicer-side lines of the letter are the platform's own servicer block (src/runtime/servicing.ts SERVICER_CONTACT — 7.1's statements and the staff invitation print the same one), the public HUD / HOPE lines and §1024.41(h)'s appeal procedure; never the catalog's sample payload. `other_available` is the record's: the options the evaluation did not deny.
+  const servicerSide: Row = { spoc_name: "Loss Mitigation Team", spoc_phone: SERVICER_CONTACT.servicer_phone, servicer_address: SERVICER_CONTACT.servicer_address, exclusive_address: SERVICER_CONTACT.exclusive_address,
+    hud_phone: REGX_DENIAL_PUBLIC_LINES.hud_phone, hud_counselor_url: SERVICER_CONTACT.counselor_url ?? REGX_DENIAL_PUBLIC_LINES.hud_counselor_url, hope_hotline: REGX_DENIAL_PUBLIC_LINES.hope_hotline,
+    appeal_how: REGX_DENIAL_PUBLIC_LINES.appeal_how, next_steps: REGX_DENIAL_PUBLIC_LINES.next_steps, ai_notice: REGX_DENIAL_PUBLIC_LINES.ai_notice,
+    other_available: dets.filter((d) => d["result"] !== "denied").map((d) => s(d["option"])).filter(Boolean) };
   const appealDays = state === "CA" ? 30 : 14;
   const input: Row = { template_code: "NTC_REGX_41C1_DENIAL", loan_id: loanId, option: s(ev.data["option"]) || denied[0]?.name || "modification", criterion: denied[0]?.reason ?? "not eligible", reviewer_approval_id: s(ev.data["reviewer_approval_id"]), recipients: recipientsOf(parties),
     payload: { ...servicerSide, complete_date: s(ev.data["complete_at"] ?? ev.data["complete_on"]) || today(c.now), denied, investor_based: denied.length > 0, investor_name: "Fannie Mae", not_evaluated_other_criteria: true, ...(state ? { state } : {}), state_block: null, credit_score_used: false, days_after_complete: 0, appeal_days: appealDays, appeal_by: addDays(today(c.now), appealDays), ai_notice_required: true, evaluation_id: ev.id, decided_on: today(c.now) } };
@@ -213,13 +225,13 @@ export const deriveLossmitNotify: Deriver = async (c) => {
 // ---------------------------------------------------------------- 14.1
 const bkCase = (c: DeriveContext, loanId: string, caseId: string): { id: string; data: Row } => { const r = c.store.get("bankruptcy_cases", caseId) ?? c.store.list("bankruptcy_cases", (d) => d["case_id"] === caseId).at(-1); if (!r || r.data["loan_id"] !== loanId) throw new WorkRefused(404, "NOT_FOUND", `no bankruptcy case ${caseId} on this loan`, { case_id: caseId }); return { id: r.id, data: r.data }; };
 const bkLedgerSnapshot = async (c: DeriveContext, loanId: string, kase: Row): Promise<Row> => {
-  const facts = await loanCashState(c.rt, loanId, today(c.now));
+  const facts = await loanCashState(c.rt, loanId, await recordAsOf(c, loanId));
   const l = obj(kase["ledgers"]);
   return { prepetition_arrearage_cents: cs(l["prepetition_arrearage_cents"] ?? "0"), postpetition: Array.isArray(l["postpetition"]) ? l["postpetition"] : [], postpetition_suspense_cents: cs(l["postpetition_suspense_cents"] ?? "0"), balances: { principal: cs(facts.balances.principal), escrow: cs(facts.balances.escrow), suspense_unapplied: cs(facts.balances.suspense_unapplied), late_charges: cs(facts.balances.late_charges) } };
 };
 export const deriveBkApplyTrustee: Deriver = async (c) => {
   const loanId = loanOf(c); const kase = bkCase(c, loanId, str(c.decision, "case_id")); const k = kase.data;
-  const facts = await loanCashState(c.rt, loanId, today(c.now)); const ledger_snapshot = await bkLedgerSnapshot(c, loanId, k);
+  const facts = await loanCashState(c.rt, loanId, await recordAsOf(c, loanId)); const ledger_snapshot = await bkLedgerSnapshot(c, loanId, k);
   const plan = obj(k["plan"]);
   const input: Row = { loan_id: loanId, case_id: kase.id, amount_cents: cs(c.decision["amount_cents"]), received_on: str(c.decision, "received_on"), received_at: `${str(c.decision, "received_on")}T12:00:00.000Z`, payer_type: "trustee",
     ledgers: { prepetition_arrearage_cents: ledger_snapshot["prepetition_arrearage_cents"], postpetition: ledger_snapshot["postpetition"], postpetition_suspense_cents: ledger_snapshot["postpetition_suspense_cents"] }, ledger_snapshot,

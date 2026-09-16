@@ -35,8 +35,9 @@ export async function logRecon(d: ReconDeps, i: { as_of_date: string }): Promise
   let soleOfficer = 0; let linked = 0;
   for (const r of rows) {
     const id = String(r["id"]); const status = String(r["status"]);
-    // the console keys the request's row to the act; an approved proposal's executed row is the decide request's, keyed to the proposal (approval_of)
-    const staffRows = await d.q.query<{ id: string }>(`SELECT id::text AS id FROM staff_actions WHERE subject_kind = 'work_action' AND subject_id = ANY($1::text[]) ORDER BY at LIMIT 1`, [[id, ...(r["approval_of"] ? [String(r["approval_of"])] : [])]]);
+    // the console keys the request's row to the act (routes.ts: the answer's action_id); an approved proposal's executed row has no request of its own — it is the decide request's, keyed to the proposal (approval_of) by the decide route, the later of the two rows the proposal id carries (the propose request's is the proposal's own)
+    let staffRows = await d.q.query<{ id: string }>(`SELECT id::text AS id FROM staff_actions WHERE subject_kind = 'work_action' AND subject_id = $1 ORDER BY at LIMIT 1`, [id]);
+    if (!staffRows.length && r["approval_of"]) staffRows = await d.q.query<{ id: string }>(`SELECT id::text AS id FROM staff_actions WHERE subject_kind = 'work_action' AND subject_id = $1 AND route LIKE '%/decide' ORDER BY at DESC LIMIT 1`, [String(r["approval_of"])]);
     const hasStaff = staffRows.length > 0;
     // the link the act could not carry at insert (the console's row lands after the answer): filled once, here (0201 admits NULL → value)
     if (hasStaff && !r["staff_action_id"]) { const said = staffRows[0]!.id; d.deferWrite(async (q) => { await q.query(`UPDATE work_actions SET staff_action_id = $2 WHERE id = $1 AND staff_action_id IS NULL`, [id, said]); }); linked += 1; }

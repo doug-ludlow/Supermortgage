@@ -26,6 +26,8 @@ export interface TimerDef extends RawTimer {
   readonly triggerPattern: EventPattern | null;
   readonly satisfiedPattern: EventPattern | null;
   readonly anchorField: string | null;
+  /** The anchor fact's spellings across the emitters an override names (`anchorFields`): the resolver reads the first the payload carries, `anchorField` first (a §35.5 row: `activated_on` is the event's `effective_on` / `effective_from` / `effective_date`). */
+  readonly anchorFields?: readonly string[];
   readonly severity: Severity;
   /** Timer codes this row says it cross-references / is owned by (e.g. "(11.1)", "owned by 5.1"). */
   readonly ownedBy?: string;
@@ -91,7 +93,7 @@ export function toTimerDef(raw: RawTimer): TimerDef {
   };
 }
 
-export type TimerOverride = Partial<Pick<TimerDef, "trigger" | "satisfied" | "anchor" | "offset" | "anchorField">> & {
+export type TimerOverride = Partial<Pick<TimerDef, "trigger" | "satisfied" | "anchor" | "offset" | "anchorField" | "anchorFields">> & {
   /** Name a domain evaluator for a condition-shaped gate/rule ("13.1.gate120"); sets the offset to `evaluator:<ref>`. */
   readonly evaluator?: string;
   /** Arm on the global subject regardless of the trigger's aggregate (see TimerDef.subjectOverride). */
@@ -137,7 +139,8 @@ export class TimerRegistry {
     // A later override that touches neither `anchor` nor `anchorField` keeps the anchor field an
     // earlier override set (toTimerDef would otherwise re-parse it from the raw anchor text).
     const anchorField = o.anchorField !== undefined ? o.anchorField : o.anchor === undefined ? cur.anchorField : merged.anchorField;
-    const next: TimerDef = { ...merged, anchorField, ...(o.why !== undefined ? { overrideWhy: o.why } : {}), ...(o.subject !== undefined ? { subjectOverride: o.subject } : cur.subjectOverride !== undefined ? { subjectOverride: cur.subjectOverride } : {}) };
+    const anchorFields = o.anchorFields !== undefined ? o.anchorFields : cur.anchorFields;
+    const next: TimerDef = { ...merged, anchorField, ...(anchorFields !== undefined ? { anchorFields } : {}), ...(o.why !== undefined ? { overrideWhy: o.why } : {}), ...(o.subject !== undefined ? { subjectOverride: o.subject } : cur.subjectOverride !== undefined ? { subjectOverride: cur.subjectOverride } : {}) };
     this.byCode.set(code, next);
     return next;
   }

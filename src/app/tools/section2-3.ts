@@ -28,7 +28,10 @@
  */
 import { cents, str, num, noticeOps, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
 import { CommandRefused, type CommandContext } from "../commands.ts";
-import { plainDate as D, addDays, daysBetween, type PlainDate } from "../../kernel/calendar/date.ts";
+import { plainDate as D, addDays, addMonths, daysBetween, type PlainDate } from "../../kernel/calendar/date.ts";
+import type { Queryable } from "../../infra/db/client.ts";
+import { readSchedule, restoreInstallments } from "../../domain/operations-runtime/installments.ts";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { addBusinessDays, federal } from "../../kernel/calendar/business.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import { CashieringOps } from "../../domain/cashiering/ops.ts";
@@ -112,6 +115,12 @@ async function handleReturn(i: ToolInput, ctx: CommandContext, rt: ToolRuntime):
     for (const setId of sets) { try { reversed.push(ctx.ledger.reverse(setId, returnedOn, `returned item ${code} (${payment_id})`, ctx.now).id); } catch { /* already reversed */ } }
     rt.store.put("payments", payment_id, { ...pay, status: "reversed", reversal: { reason: "returned_item", return_code: code, reversed_at: ctx.now, entry_set_ids: reversed } }, ctx.actor, ctx.now);
     ctx.events.append({ type: "payment.reversed", loanId, aggregate: { kind: "payment", id: payment_id }, actor: ctx.actor, payload: { payment_id, loan_id: loanId, reason: "returned_item", return_code: code, reversed_on: returnedOn, amount_cents: amount !== null ? s(amount) : (pay.amount_cents as string | undefined) ?? null, enrollment_id: e.id, installment_due_date: str(i, "installment_due_date") || (pay.installment_due_date as string | undefined) || null } });
+    // 35.5 rule 4: the reversal restores the `loan_installments` rows the posting satisfied, in this transaction (`installments.restore`; the row's satisfied_on, credited_as_of and satisfied_by_payment_id cleared), logged as `installment.restored`
+    const deferWrite = (rt.services as { deferWrite?: (fn: (q: Queryable) => Promise<void>) => void }).deferWrite; const dues = Array.isArray(pay.installments) ? (pay.installments as string[]) : [];
+    if (deferWrite && dues.length) {
+      for (const due of dues) ctx.events.append({ type: "installment.restored", loanId, actor: ctx.actor, payload: { loan_id: loanId, due_date: due, payment_id, reason: "returned_item", return_code: code, reversed_on: returnedOn } });
+      deferWrite((q) => restoreInstallments(q, loanId, dues.map((due) => ({ due_date: D(due), payment_id: UUID_RE.test(payment_id) ? payment_id : null }))));
+    }
   }
   let notice: Notice | null = null;
   if (d.notice) notice = await sendNotice(i, ctx, rt, d.notice, { ...contact(i, e), amount_cents: amount ?? cents((rt.store.get("payments", payment_id)?.data.amount_cents as string | undefined) ?? "0"), settlement_date: original ?? returnedOn, returned_on: returnedOn, return_code: code, return_reason: RETURN_REASON[code] ?? "returned", installment_due_date: str(i, "installment_due_date") || original || returnedOn,
@@ -119,7 +128,15 @@ async function handleReturn(i: ToolInput, ctx: CommandContext, rt: ToolRuntime):
   return { ...save(rt, ctx, e), disposition: { ...d, retry_on: d.retry_on, retry_banking_days: d.retry_on && returnedOn ? daysBetween(returnedOn, d.retry_on) : null }, notice_id: notice?.id ?? null, notice_status: notice?.status ?? null, notice_template: d.notice };
 }
 async function amountChangeCheck(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
-  const e = load(rt, i, ctx); const next = cents(i.next_amount_cents); const debitOn = D(str(i, "debit_on")); const on = today(ctx, i, "today");
+  const e = load(rt, i, ctx); const debitOn = D(str(i, "debit_on")); const on = today(ctx, i, "today");
+  // 35.5 rule 5: a hosted caller names no amount — the next draft is the schedule row of the debit month (P&I + escrow + the enrollment's extra principal), read from the typed rows
+  let next = i.next_amount_cents === undefined || i.next_amount_cents === null || i.next_amount_cents === "" ? null : cents(i.next_amount_cents);
+  if (next === null) {
+    const db = (rt.services as { db?: Queryable }).db; if (!db) throw new RangeError("amount_change_check needs next_amount_cents (or the hosted runtime's database to read the schedule row)");
+    const row = (await readSchedule(db, e.loan_id, { from: D(`${debitOn.slice(0, 7)}-01`), to: addDays(addMonths(D(`${debitOn.slice(0, 7)}-01`), 1), -1) }))[0] ?? (await readSchedule(db, e.loan_id, { status: "due" }))[0];
+    if (!row) throw new RangeError(`no installment row for ${e.loan_id} in ${debitOn.slice(0, 7)} — next_amount_cents is required`);
+    next = row.pi_cents + row.escrow_cents + e.extra_principal_cents;
+  }
   // an escrow / ARM statement counts only when it states the exact amount and date (2.3 rule 5) — recorded as a notice the borrower already received
   const st = i.statement && typeof i.statement === "object" ? (i.statement as Record<string, unknown>) : null;
   if (st && typeof st.template === "string" && st.amount_cents !== undefined && typeof st.debit_on === "string" && typeof st.sent_on === "string") e.notices.push({ template: st.template, sent_on: D(st.sent_on), amount_cents: cents(st.amount_cents), debit_on: D(st.debit_on) });

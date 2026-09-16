@@ -38,13 +38,13 @@ async function fixture(db: Db): Promise<Fixture> {
   return new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: 26_000_000n, originalTermMonths: 360, firstPaymentDate: D("2021-09-01"), maturityDate: D("2051-08-01") });
 }
 
-test("migrations: every file under db/migrations is applied to the test database (794 tables: public + restricted_fl)", { skip }, async () => {
+test("migrations: every file under db/migrations is applied to the test database (801 tables: public + restricted_fl)", { skip }, async () => {
   execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const [m] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM schema_migrations`);
   assert.equal(m!.c, BigInt(readdirSync(fileURLToPath(new URL("../../../db/migrations", import.meta.url))).filter((f) => f.endsWith(".sql")).length));
   const [t] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE'`);
-  assert.equal(t!.c, 794n);   // the count a fresh `db/migrate.sh` run produces through 0171: 776 through 0137 (public + restricted_fl base tables; 0132 journey_progress is a view; 0134 recreates three tables as views) plus 0146's five (35.3: cycle_registry, cycle_runs, jobs, job_events, cycle_receipts), 0150's eight (35.1's seam tables; its entity_latest_scoped is a view) and 0170's five (35.7: role_grants, role_queue_snapshots, role_handovers, breakglass_uses, api_principals); 0138–0141, 0151 and 0171 create no table; the absolute number moves with every §35 migration that adds a table
+  assert.equal(t!.c, 801n);   // the count a fresh `db/migrate.sh` run produces through 0171: 776 through 0137 (public + restricted_fl base tables; 0132 journey_progress is a view; 0134 recreates three tables as views) plus 35.5's seven — 0142's three (installment_schedule_runs, servicer_profiles, loan_servicing_configs; loan_installments is extended, not created), 0144's cashiering_unit_runs and 0145's three (lockbox_batches, lockbox_items, ach_return_files; ach_entries is extended) — 0146's five (35.3: cycle_registry, cycle_runs, jobs, job_events, cycle_receipts), 0150's eight (35.1's seam tables; its entity_latest_scoped is a view) and 0170's five (35.7: role_grants, role_queue_snapshots, role_handovers, breakglass_uses, api_principals); 0138–0141, 0143 (seed rows only), 0151 and 0171 create no table; measured on a scratch database at the 35.5 merge; the absolute number moves with every §35 migration that adds a table
 });
 
 test("staff_users.reviewer_roles CHECK equals HUMAN_ROLES (ROLE_LIST_DRIFT: a migration that adds a role the kernel lacks fails here — 35.7 rule 1)", { skip }, async () => {

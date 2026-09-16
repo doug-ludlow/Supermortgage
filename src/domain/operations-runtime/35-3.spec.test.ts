@@ -76,11 +76,14 @@ const borrowerOn = async (loanId: string, name: string): Promise<string> => {
 const count = async (sql: string, params: unknown[] = []): Promise<number> => Number((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM ${sql}`, params))[0]!.n);
 const events = async (type: string, where = "", params: unknown[] = []): Promise<{ id: string; sequence: bigint; loan_id: string | null; aggregate_kind: string | null; aggregate_id: string | null; actor_id: string; occurred_at: string; payload: Row }[]> =>
   db.query(`SELECT id::text AS id, sequence, loan_id::text AS loan_id, aggregate_kind, aggregate_id, actor_id, occurred_at, payload FROM loan_events WHERE type = $1 ${where} ORDER BY sequence`, [type, ...params]);
-/** A boarded fixture loan with one `loan_terms` row (the plan's §4 shape: UPB 24,831,055 cents, note rate 6.500%, P&I 161,234 cents, escrow 43,278 cents, a 5% late charge with a 15-day grace). */
+/** A boarded fixture loan with one `loan_terms` row (the plan's §4 shape: UPB 24,831,055 cents, note rate 6.500%, P&I 161,234 cents, escrow 43,278 cents, a 5% late charge with a 15-day grace) and, as every boarded loan since 35.5 (rule 9), its `loan_servicing_configs` row — the `cashiering_daily` selector (35.5 rule 6) joins it. */
 const boardedLoan = async (): Promise<string> => {
   const f = await new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2026-08-15"), originalUpbCents: 24_831_055n, originalTermMonths: 360, firstPaymentDate: D("2026-10-01"), maturityDate: D("2056-09-01") });
   await db.query(`UPDATE loans SET boarded_at = now(), first_payment_date = '2026-10-01' WHERE id = $1`, [f.loanId]);
   await db.query(`INSERT INTO loan_terms (loan_id, effective_from, source, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date) VALUES ($1, '2026-09-01', 'boarding', 65000, 161234, 43278, true, 'A/A', 5000, 15, '2056-09-01')`, [f.loanId]);
+  // 35.5 rule 9: the configuration row every boarded loan carries (TX, America/Chicago, the FAKE build's seeded servicer profile v1 — 0143), so the loan has a civil day
+  await db.query(`INSERT INTO loan_servicing_configs (loan_id, effective_from, time_zone, time_zone_source, jurisdiction_state, servicer_profile_id, lockbox_id, channels_enabled, late_charge_terms, nsf_fee_allowed, written_by)
+    SELECT $1, '2026-09-01', 'America/Chicago', 'state_default', 'TX', sp.id, 'LBX-1', '{lockbox,ach_debit_origin,portal_onetime}', '{"pct":"5","grace_days":15,"conflict":null}'::jsonb, true, '{"fixture":"35.3 boardedLoan"}'::jsonb FROM servicer_profiles sp WHERE sp.status = 'active' ORDER BY sp.version DESC LIMIT 1`, [f.loanId]);
   return f.loanId;
 };
 /** A dedicated client holding `pg_advisory_lock(35003)` on the application database — what a concurrently running planner looks like to the pass under test. */
@@ -518,12 +521,12 @@ test("35.3-T9: Given loan L with UPB $248,310.55, note rate 6.500%, P&I $1,612.3
     assert.equal(await count(`jobs WHERE idempotency_key = $1`, [`statements:2026-10-01:${L}`]), 1);
     const runL = String(jobL["run_id"]);
     assert.equal(await count(`cycle_runs WHERE id = $1 AND units_total = 1`, [runL]), 1);
-    // the executor's claim of the day's cashiering units (L and L2 are not originated → skipped_not_originated → done); the run's receipt unblocks both statement jobs in its transaction (D11)
+    // the executor's claim of the day's cashiering units (35.5's unit per loan: nothing received, the late charge already assessed above → done); the run's receipt unblocks both statement jobs in its transaction (D11)
     const cashiering = await claimJobs(rt.db, "h1", 20, wallClockOf(rt).now());
     assert.deepEqual(cashiering.map((j) => j.cycle_code), ["cashiering_daily", "cashiering_daily"]);
     for (const j of cashiering) assert.equal(await runClaimed(rt, j, "h1"), "done");
     assert.equal(await count(`cycle_receipts WHERE cycle_code = 'cashiering_daily' AND period_key = '2026-10-17' AND units_done = 2`), 1);
-    assert.equal(await count(`job_events e JOIN jobs j ON j.id = e.job_id WHERE j.cycle_code = 'cashiering_daily' AND e.kind = 'done' AND e.detail->>'outcome' = 'skipped_not_originated'`), 2);
+    assert.equal(await count(`job_events e JOIN jobs j ON j.id = e.job_id WHERE j.cycle_code = 'cashiering_daily' AND e.kind = 'done' AND e.detail->>'outcome' = 'done'`), 2);
     jobL = await jobOf(`id = $1`, [jobL["id"]]);
     assert.equal(jobL["status"], "queued"); assert.equal(await count(`job_events WHERE job_id = $1 AND kind = 'unblocked'`, [jobL["id"]]), 1);
     // the statement unit through `cycles.run_unit` on 2026-10-17 (the by-hand dispatcher: the claim in its own command, the unit after the commit under L's scope — D6)

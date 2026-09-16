@@ -200,7 +200,7 @@ test("35.5-T2: Given tape loan T-7 ($300,000.00 at 6.500%, 360 months, first pay
     const run = (await scheduleRuns(db, loanId))[0]!; assert.equal(run.rows, 299); assert.equal(run.maturity_variance_cents, 0n); assert.equal(run.source, "transfer");
     // the tape's UPB is what the note's own schedule leaves after 61 rows (28,045,824¢), and the run's hash is the rows'
     const fromNote = projectSchedule({ upb_cents: B.original, note_rate_bps: B.rate_bps, pi_cents: B.pi, escrow_cents: B.escrow, first_due: D("2021-10-01"), sequence_start: 1, maturity_date: D("2051-09-01") });
-    assert.equal(fromNote.rows[60]!.upb_after_cents, B.upb); assert.equal(fromNote.rows.length, 360); assert.equal(B.original, 30_000_000n);
+    assert.equal(fromNote.rows[60]!.upb_after_cents, B.upb); assert.equal(fromNote.rows.length, 360);
     assert.equal(projectSchedule({ upb_cents: B.upb, note_rate_bps: B.rate_bps, pi_cents: B.pi, escrow_cents: B.escrow, first_due: D("2026-11-01"), sequence_start: 62, maturity_date: D("2051-09-01") }).sha256, run.sha256);
     // the delinquency counter job's selector (`JOIN loan_installments … status = 'due'`) returns the loan once 2026-11-01 has passed unpaid in its zone (TX: America/Chicago) — not before
     const before = await delinquencyDailySweep(rtAt("2026-11-01T23:00:00.000Z"), "2026-11-01T23:00:00.000Z", [loanId]);   // 18:00 Chicago on the due date: not yet past due
@@ -225,7 +225,7 @@ test("35.5-T3: Given 7.2's Plan 4927 loan boarded at fund ($400,000.00 at 5.750%
   } finally { await s.close(); }
   const before = await readInstallments(db, loanId);
   assert.equal(before.length, 360); assert.equal(before[0]!.due_date, "2021-12-01");
-  const run1 = (await scheduleRuns(db, loanId))[0]!; assert.equal(run1.pi_cents, C.pi, "the schedule's P&I is $2,334.29"); assert.equal(levelPaymentBps(C.original, C.rate_bps, 360), C.pi); assert.equal(C.original, 40_000_000n);
+  const run1 = (await scheduleRuns(db, loanId))[0]!; assert.equal(run1.pi_cents, C.pi, "the schedule's P&I is $2,334.29"); assert.equal(levelPaymentBps(C.original, C.rate_bps, 360), C.pi);
   assert.equal(before[59]!.due_date, "2026-11-01"); assert.equal(before[59]!.upb_after_cents, C.row60_after, "row 60's UPB after is $371,048.86 — 7.2's expected UPB");
   assert.ok(before.every((r) => r.escrow_cents === C.escrow && r.rate_bps === C.rate_bps));
   // 7.2 activates v2 on the change date: `loan_terms.version.activated{version: 2, effective_on: 2026-11-01, rate_pct: 6.375, pi_cents: 247644, payment_effective_due: 2026-12-01, reason: arm_adjustment}` (ops-7-2.ts makeEffective's shape)

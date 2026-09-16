@@ -86,8 +86,8 @@ async function context(deps: FlowDeps, loanId: string): Promise<Ctx> {
   const store = new EntityStore(); store.seed(records);
   return { loanId, events, store, parties, facts, now: deps.runtime.clock.now() };
 }
-/** 35.5 rule 9: the loan's civil day is its configuration's zone; a loan with no row (a fixture without boarding) falls back to the planner's ET day for the card copy only — the counter job itself refuses such a loan (CONFIG_REQUIRED). */
-async function civilToday(deps: FlowDeps, loanId: string, nowIso: string): Promise<PlainDate> { try { return await loanCivilDate(deps.runtime, loanId, nowIso); } catch { return wallClock(Date.parse(nowIso), "America/New_York").date; } }
+/** 35.5 rule 9: the loan's civil day is its configuration's zone — a loan with no `loan_servicing_configs` row is refused `CONFIG_REQUIRED` (the flow logs the reaction's refusal; nothing falls back to a constant zone). */
+const civilToday = (deps: FlowDeps, loanId: string, nowIso: string): Promise<PlainDate> => loanCivilDate(deps.runtime, loanId, nowIso);
 const endOfDay = (d: string): string => new Date(`${d}T23:59:59-07:00`).toISOString();   // the card's expiry instant (the latest US mainland day end)
 const emailOf = (p: Party): string | undefined => { const c = p.contact ?? {}; const e = typeof c["email"] === "string" ? c["email"] : Array.isArray(c["emails"]) ? (c["emails"] as unknown[])[0] : undefined; return typeof e === "string" && e ? e : undefined; };
 /** A Notice Registry recipient for a loan party: the borrower at the property, a portal user (the channel decision is the registry's). */

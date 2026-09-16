@@ -223,7 +223,15 @@ const p27: ToolDef[] = defineTools("2.7", "cashiering", [
   { name: "fees.read", kind: "read", handler: read("fees") },
   { name: "fees.assess", kind: "write",
     /** Engine path (`state` on the input): the 2.7 calculator decides and records the fee; record path: a facts-gated store write of an assessment made elsewhere. */
-    handler: compute((i, ctx, rt) => {
+    handler: compute(async (i, ctx, rt) => {
+      // 35.5 rule 5: on a database command the cash state is derived from the typed rows inside this transaction (the rows, the ledger as this command sees it, the store's payments and fees); a caller's `state` is used only where there is no transaction (the §2 unit harnesses)
+      const loanIdForState = str(i, "loan_id") || ctx.loanId;
+      if (!i.state && ctx.q && loanIdForState && (i.op === "daily_run" || str(i, "installment_due_date"))) {
+        const { loanFactsFrom, balancesFromLedger } = await import("../../runtime/servicing.ts");
+        const facts = await loanFactsFrom(ctx.q, { loanId: loanIdForState, asOf: D(str(i, "run_on") || ctx.now.slice(0, 10)), store: rt.store, balances: balancesFromLedger(ctx.ledger, loanIdForState) });
+        i = { ...i, state: facts.state };
+      }
+      if (i.op === "daily_run" && !i.state) throw new CommandRefused("fees.assess", "STATE_REQUIRED", "35.5 rule 5: the daily run derives `LoanCashState` inside the command from the typed rows", "fees.assess{op=daily_run} runs on a database command for a loan (no rows to derive the state from here)");
       if (!i.state) return write("fees", "fee.assessed")(i, ctx, rt);
       const state = i.state as LoanCashState;
       // op=daily_run (2.7 "inputs and triggers" / 32.8 delta): the 00:30 run over every installment — `installment.due_date_reached{grace_end_on}` for the ones due today

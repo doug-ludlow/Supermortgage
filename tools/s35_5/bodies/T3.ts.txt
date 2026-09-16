@@ -11,7 +11,7 @@
   } finally { await s.close(); }
   const before = await readInstallments(db, loanId);
   assert.equal(before.length, 360); assert.equal(before[0]!.due_date, "2021-12-01");
-  const run1 = (await scheduleRuns(db, loanId))[0]!; assert.equal(run1.pi_cents, C.pi, "the schedule's P&I is $2,334.29"); assert.equal(levelPaymentBps(C.original, C.rate_bps, 360), C.pi); assert.equal(C.original, 40_000_000n);
+  const run1 = (await scheduleRuns(db, loanId))[0]!; assert.equal(run1.pi_cents, C.pi, "the schedule's P&I is $2,334.29"); assert.equal(levelPaymentBps(C.original, C.rate_bps, 360), C.pi);
   assert.equal(before[59]!.due_date, "2026-11-01"); assert.equal(before[59]!.upb_after_cents, C.row60_after, "row 60's UPB after is $371,048.86 — 7.2's expected UPB");
   assert.ok(before.every((r) => r.escrow_cents === C.escrow && r.rate_bps === C.rate_bps));
   // 7.2 activates v2 on the change date: `loan_terms.version.activated{version: 2, effective_on: 2026-11-01, rate_pct: 6.375, pi_cents: 247644, payment_effective_due: 2026-12-01, reason: arm_adjustment}` (ops-7-2.ts makeEffective's shape)

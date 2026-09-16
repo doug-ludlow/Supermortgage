@@ -13,9 +13,12 @@
  * condition so 2.1's and 6.1's own `lockbox.batch.received` (deposit clocks) never arm a posting clock nothing satisfies.
  *
  * Emitters (real path, non-test source): src/domain/operations-runtime/boarding-writes.ts (`installment.schedule.written`,
- * `loan.servicing_config.written` in both boarding transactions), installments.ts (`installment.schedule.reprojected`),
- * cashiering-cycle.ts (`cashiering.daily.run_completed`), lockbox.ts (`lockbox.batch.received{sha256}`, `lockbox.batch.posted`),
- * ach.ts (`ach.file.built`, `ach.return.actioned`; `ach.return.received` is 2.3's, src/domain/cashiering/ops.ts handleReturn).
+ * `loan.servicing_config.written` in both boarding transactions), installments.ts (`installment.schedule.reprojected`);
+ * the cycle emitters are this process's cashiering-cycle.ts (`cashiering.daily.run_completed`), lockbox.ts
+ * (`lockbox.batch.received{sha256}`, `lockbox.batch.posted`) and ach.ts (`ach.file.built`, `ach.return.actioned`) — until each
+ * lands, its clock is armable and satisfiable but has no emitter on the real path (the registry lint's word-level `sha256`
+ * check is satisfied by 6.1's hash helper alone; the audit's timer count for the lockbox-file clock is not earned before
+ * lockbox.ts emits). `ach.return.received` is 2.3's (src/domain/cashiering/ops.ts handleReturn).
  */
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
 

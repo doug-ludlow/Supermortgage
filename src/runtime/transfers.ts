@@ -31,7 +31,7 @@ import type { BatchContext, ExternalPositions, FnmaPosition, MersRecord } from "
 import { decodeTransferBatch, type TransferBatchFiles } from "../domain/boarding/tape-codec.ts";
 import { EscalationService } from "../app/escalations.ts";
 import type { Runtime } from "./app.ts";
-import { planBoardingWrites, persistBoardingWrites, appendBoardingWritten, lateChargePctFromBps, type BoardingLoanFacts, type BoardingWritePlan } from "../domain/operations-runtime/boarding-writes.ts";
+import { refuseUnplannable, persistBoardingWrites, appendBoardingWritten, lateChargePctFromBps, type BoardingLoanFacts, type BoardingWritePlan } from "../domain/operations-runtime/boarding-writes.ts";
 import { BOARDING_AGENT as BOARDING_ACTOR_35 } from "../domain/boarding/service.ts";
 
 export interface TransferBatchInput {
@@ -123,6 +123,9 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
     for (const [name, kind] of Object.entries(tapeKinds)) { const text = files[name as keyof TransferBatchFiles]; if (text) svc.ingestTape(uuid, kind as "final", text, Math.max(0, text.split("\n").filter((l) => l.length).length - 1)); }
     const staged = svc.stage(uuid, data.loans);
     const card: Scorecard = svc.validate(uuid);
+    // 35.5 rule 1: the schedule and the configuration are planned before the board — a loan that cannot get its rows is a hard exception, never boarded without them
+    const termsIds = new Map(staged.map((bl) => [bl.id, randomUUID()] as const));
+    const plans = transferDateReached ? await refuseUnplannable(q, svc, staged, (id) => { const bl = staged.find((x) => x.id === id)!; return boardingFacts(bl, termsIds.get(id)!, input.transfer_date, actor); }, BOARDING_ACTOR_35) : new Map<string, BoardingWritePlan>();
     const boarded = transferDateReached ? svc.board(uuid, { finalTapeReconciled: input.final_tape_reconciled ?? true }).boarded : [];
     const boardedIds = new Set(boarded.map((bl) => bl.id));
     // one escalation per hard exception so the console's queues show the loans that cannot board
@@ -136,14 +139,13 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
 
     // ---- persist: rows first (the events reference them), then the log, ledger, timers, escalations
     const upbTotal = staged.reduce((s, bl) => s + (bl.staged.upb_cents ?? 0n), 0n);
-    const termsIds = await insertBoardingRows(q, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt: clock.now(), ruleSetVersion: ctx.rule_set_version });
+    await insertBoardingRows(q, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt: clock.now(), ruleSetVersion: ctx.rule_set_version, termsIds });
     // 35.5 rules 1 and 9: the installment schedule and the servicing configuration in the boarding transaction, their events on the same log (the board-0 clocks are satisfied in this commit)
     for (const bl of boarded) {
-      const plan = await planBoardingWrites(q, boardingFacts(bl, termsIds.get(bl.id)!, input.transfer_date, actor));
+      const plan = plans.get(bl.id)!;
       await persistBoardingWrites(q, plan);
       const boardedEvent = events.all().find((e) => e.type === "loan.boarded" && e.loanId === bl.id);
       appendBoardingWritten(events, plan, BOARDING_ACTOR_35, boardedEvent ? { causationId: boardedEvent.id } : {});
-      for (const x of plan.exceptions) escalations.open({ kind: x.code === "SCHEDULE_REQUIRED" ? "sev1" : "sev2", ownerRole: x.code === "SCHEDULE_REQUIRED" ? "officer" : "compliance", loanId: bl.id, batchId: uuid, severity: x.code === "SCHEDULE_REQUIRED" ? "1" : "2", payload: { code: x.code, reason: x.message, transferor_loan_number: bl.staged.transferor_loan_number } }, BOARDING_ACTOR_35);
     }
     const persisted = await rt.uow.events.append(events.since(0), q);
     for (const set of ledger.sets()) await rt.uow.ledger.post(set, q);
@@ -153,7 +155,7 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
     const hardByLoan: Record<string, string[]> = {};
     for (const bl of staged) { const codes = bl.validations.filter((v) => v.severity === "hard" && v.result === "fail").map((v) => v.code); if (codes.length) hardByLoan[bl.staged.transferor_loan_number] = codes; }
     const summary: TransferBatchSummary = { batch_id: input.batch_id, batch_uuid: uuid, status: boarded.length ? "boarded" : "staged", transfer_date: input.transfer_date,
-      loans: { staged: staged.length, validated: card.loans["validated"], exception: card.loans["exception"], boarded: boarded.length }, hard: card.hard, warning: card.warning, hard_by_loan: hardByLoan,
+      loans: { staged: staged.length, validated: staged.filter((bl) => bl.status === "validated" || bl.status === "boarded").length, exception: staged.filter((bl) => bl.status === "exception").length, boarded: boarded.length }, hard: card.hard, warning: card.warning, hard_by_loan: hardByLoan,
       events: persisted.length, timers: timers.all().length, escalations: escalations.list().length, loan_ids: Object.fromEntries(staged.map((bl) => [bl.staged.transferor_loan_number, bl.id])), upb_total_cents: upbTotal };
     await rt.entities.save([{ kind: "transfer_batches", id: input.batch_id, version: 1, data: summary as unknown as Record<string, unknown>, updatedAt: clock.now(), updatedBy: `${actor.kind}:${actor.id}` }], null, q);
     return summary;

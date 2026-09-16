@@ -369,8 +369,9 @@ async function caseCards(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void
 async function partyOf(deps: FlowDeps, partyId: string): Promise<Party | undefined> { return (await deps.runtime.db.query<Party & Record<string, unknown>>(`SELECT id AS party_id, legal_name, contact FROM parties WHERE id = $1`, [partyId]))[0]; }
 /** 35.5 rule 9: the servicer block of every 4.x notice is the `servicer_profiles` version in force on the day (the FAKE constant keeps the fields the profile does not carry: the message-center channel, the insurance mailbox, the error-resolution line); `block` is the day's profile. */
 function contactPayload(party: Party, facts: LoanFacts | null, block: Partial<Record<string, unknown>> = {}): P { return { ...FAKE_SERVICER_CONTACT, ...block, borrower_name: party.legal_name, account_last4: (facts?.servicer_loan_number ?? "").slice(-4) || "0000", property_address: facts?.property_address ?? "" }; }
+/** 35.5 rule 9 / edge case: no profile in force → `CONFIG_REQUIRED` propagates (the notice refuses to render; nothing renders a stale or constant block). */
 async function servicerBlockToday(deps: FlowDeps, today: PlainDate): Promise<Partial<Record<string, unknown>>> {
-  try { const b = await servicerBlockAsOf(deps.runtime.db, today); return { servicer_phone: b.servicer_phone, servicer_address: b.servicer_address, exclusive_address: b.exclusive_address, error_resolution_address: `${b.servicer_name} Error Resolution, ${b.exclusive_address}` }; } catch { return {}; }
+  const b = await servicerBlockAsOf(deps.runtime.db, today); return { servicer_phone: b.servicer_phone, servicer_address: b.servicer_address, exclusive_address: b.exclusive_address, error_resolution_address: `${b.servicer_name} Error Resolution, ${b.exclusive_address}` };
 }
 
 async function onMessage(deps: FlowDeps, m: InboundMessage): Promise<FlowReply | null> {

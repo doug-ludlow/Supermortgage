@@ -10,8 +10,9 @@
  *                                       SM_INSTALLMENT_SCHEDULE_AT_BOARD_0 and SM_LOAN_SERVICING_CONFIG_AT_BOARD_0, in the boarding commit.
  *
  * A note whose P&I is more than a cent from the level payment refuses the board (SCHEDULE_REQUIRED, rule 2 / HF-005). A tape
- * whose fields cannot project a schedule (no P&I, no first payment date, no maturity) is 1.1's exception: the transfer path
- * boards the loan without rows and the board-0 clock breaches to `officer` — never a guessed payment (edge case 2).
+ * whose fields cannot project a schedule (no P&I, no first payment date, no maturity) or a property whose state has no
+ * reviewed zone is 1.1's hard exception: the transfer paths plan before `board()` (`refuseUnplannable`) and the loan stays
+ * `exception` — no `loans` row boards without its rows, never a guessed payment (rule 1, edge case 2).
  */
 import type { Queryable } from "../../infra/db/client.ts";
 import type { Actor, DomainEvent, EventStore } from "../../kernel/events/index.ts";
@@ -69,6 +70,18 @@ export async function planBoardingWrites(q: Queryable, f: BoardingLoanFacts, opt
     exceptions.push({ code: e.code, message: e.message });
   }
   return { loan_id: f.loan_id, schedule, config, exceptions };
+}
+
+/** Rule 1 on the transfer paths: every validated loan's plan before `board()`; a loan whose plan has an exception is raised as a hard boarding exception (`SCHEDULE_REQUIRED` / `CONFIG_REQUIRED`) so 1.1's machine keeps it out of `boarded`. Returns the plans by loan id. */
+export async function refuseUnplannable(q: Queryable, svc: { raiseException(id: string, x: { rule_code: string; severity: "hard"; message?: string }, actor: Actor): unknown }, loans: readonly { id: string; status: string }[], factsOf: (loanId: string) => BoardingLoanFacts, actor: Actor): Promise<Map<string, BoardingWritePlan>> {
+  const plans = new Map<string, BoardingWritePlan>();
+  for (const bl of loans) {
+    if (bl.status !== "validated") continue;
+    const plan = await planBoardingWrites(q, factsOf(bl.id));
+    plans.set(bl.id, plan);
+    for (const x of plan.exceptions) svc.raiseException(bl.id, { rule_code: x.code, severity: "hard", message: x.message }, actor);
+  }
+  return plans;
 }
 
 export async function persistBoardingWrites(q: Queryable, p: BoardingWritePlan): Promise<void> {

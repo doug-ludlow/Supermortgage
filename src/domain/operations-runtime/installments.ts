@@ -182,8 +182,8 @@ export async function persistSchedule(q: Queryable, p: SchedulePlan, opts: { dec
       params.push(p.loan_id, r.due_date, s(r.pi_cents), s(r.interest_cents), s(r.principal_cents), s(r.escrow_cents), r.sequence, s(r.upb_before_cents), s(r.upb_after_cents), p.note_rate_bps, p.terms_id, p.run_id, r.absorbs_rounding);
     }
     await q.query(`INSERT INTO loan_installments (loan_id, due_date, pi_cents, interest_cents, principal_cents, escrow_cents, status, sequence, upb_before_cents, upb_after_cents, rate_bps, terms_id, schedule_run_id, absorbs_rounding) VALUES ${values.join(", ")}
-      ON CONFLICT (loan_id, due_date) DO UPDATE SET pi_cents = EXCLUDED.pi_cents, interest_cents = EXCLUDED.interest_cents, principal_cents = EXCLUDED.principal_cents, escrow_cents = EXCLUDED.escrow_cents, sequence = EXCLUDED.sequence, upb_before_cents = EXCLUDED.upb_before_cents, upb_after_cents = EXCLUDED.upb_after_cents, rate_bps = EXCLUDED.rate_bps, terms_id = EXCLUDED.terms_id, schedule_run_id = EXCLUDED.schedule_run_id, absorbs_rounding = EXCLUDED.absorbs_rounding, updated_at = now()
-      WHERE loan_installments.status = 'due'`, params);
+      ON CONFLICT (loan_id, due_date) DO UPDATE SET status = 'due', pi_cents = EXCLUDED.pi_cents, interest_cents = EXCLUDED.interest_cents, principal_cents = EXCLUDED.principal_cents, escrow_cents = EXCLUDED.escrow_cents, sequence = EXCLUDED.sequence, upb_before_cents = EXCLUDED.upb_before_cents, upb_after_cents = EXCLUDED.upb_after_cents, rate_bps = EXCLUDED.rate_bps, terms_id = EXCLUDED.terms_id, schedule_run_id = EXCLUDED.schedule_run_id, absorbs_rounding = EXCLUDED.absorbs_rounding, updated_at = now()
+      WHERE loan_installments.status IN ('due', 'deferred', 'forborne')`, params);
   }
 }
 
@@ -228,10 +228,12 @@ export interface ReprojectInput {
   readonly source?: "reprojection" | "correction";
   readonly trigger_event_id?: string | null;
   readonly maturity_date?: PlainDate | null;
+  /** The run's decision record (pre-minted by the tool so the run row names it). */
+  readonly decision_id?: string | null;
 }
 export interface ReprojectResult { readonly run_id: string; readonly rows_kept: number; readonly rows_replaced: number; readonly sha256: string; readonly first_replaced_due: PlainDate; readonly event: DomainEvent; readonly plan: SchedulePlan; }
 
-/** Rule 3 — replace the `due` rows on or after `effective_from`; refuse when a satisfied / prepaid row is named (SATISFIED_ROW_FROZEN). */
+/** Rule 3 — replace the `due` rows on or after `effective_from` (a `deferred` / `forborne` row comes back `due` under the new terms — state machine "(new terms) → due"); refuse when a satisfied / prepaid row is named (SATISFIED_ROW_FROZEN). */
 export async function reprojectSchedule(q: Queryable, events: EventStore, actor: Actor, i: ReprojectInput): Promise<ReprojectResult> {
   const existing = await readInstallments(q, i.loan_id);
   if (!existing.length) throw new ScheduleRefused("SCHEDULE_REQUIRED", `loan ${i.loan_id} has no schedule to re-project`);
@@ -247,7 +249,7 @@ export async function reprojectSchedule(q: Queryable, events: EventStore, actor:
   const projection = projectSchedule({ upb_cents: upbStart, note_rate_bps: i.note_rate_bps, pi_cents: i.pi_cents, escrow_cents: i.escrow_cents !== null && i.escrow_cents !== undefined ? i.escrow_cents : (due) => escrowByDue.get(due) ?? first.escrow_cents, first_due: first.due_date, sequence_start: first.sequence ?? kept.length + 1, maturity_date: maturity });
   const prior = replaced.map((r) => ({ due_date: r.due_date, sequence: r.sequence, pi_cents: s(r.pi_cents), interest_cents: s(r.interest_cents), principal_cents: s(r.principal_cents), escrow_cents: s(r.escrow_cents), upb_before_cents: r.upb_before_cents === null ? null : s(r.upb_before_cents), upb_after_cents: r.upb_after_cents === null ? null : s(r.upb_after_cents), rate_bps: r.rate_bps, terms_id: r.terms_id, schedule_run_id: r.schedule_run_id }));
   const plan: SchedulePlan = { run_id: randomUUID(), loan_id: i.loan_id, terms_id: i.terms_id, source: i.source ?? "reprojection", trigger_event_id: i.trigger_event_id ?? null, projection, note_rate_bps: i.note_rate_bps, pi_cents: i.pi_cents, upb_start_cents: upbStart, rows_kept: kept.length, rows_replaced: replaced.length, replaced: prior, hf005: { recomputed_cents: i.pi_cents, difference_cents: 0n } };
-  await persistSchedule(q, plan);
+  await persistSchedule(q, plan, { decision_id: i.decision_id ?? null });
   // rows beyond the new maturity (a shortened term) stay as they were only if due; a longer schedule adds rows through ON CONFLICT's insert path
   const event = events.append({ type: INSTALLMENT_EVENTS.reprojected, loanId: i.loan_id, aggregate: { kind: "installment_schedule_run", id: plan.run_id }, actor,
     payload: { loan_id: i.loan_id, run_id: plan.run_id, terms_id: i.terms_id, effective_from: i.effective_from, rows_replaced: replaced.length, rows_kept: kept.length, rows: projection.rows.length, rate_bps: i.note_rate_bps, pi_cents: s(i.pi_cents), upb_start_cents: s(upbStart), sha256: projection.sha256, trigger_event_id: i.trigger_event_id ?? null, rule_set_version: SCHEDULE_RULE_SET } });
@@ -273,10 +275,11 @@ async function paymentRowId(q: Queryable, loanId: string, paymentId: string): Pr
 
 /** The row id the FK may carry: the payment's own uuid, or the minted one when the store's version projects at commit (35.1 classifyVersion) — a version the projector would gap (a §2 unit harness's bare payment) leaves the FK null and the ref on the event alone. */
 export async function paymentRowIdFor(q: Queryable, store: Pick<EntityStore, "get"> | undefined, loanId: string, paymentId: string): Promise<string | null> {
-  if (isUuid(paymentId)) return paymentId;
   const rec = store?.get("payments", paymentId);
-  if (!rec || classifyVersion(rec) !== null) return null;
-  return mintKey(q, "payments", paymentId, loanId);
+  // a version the projector would gap (schema mismatch) never lands a `payments` row — uuid-shaped or not, the FK stays null rather than failing the commit
+  if (rec && classifyVersion(rec) !== null) return null;
+  if (isUuid(paymentId)) return paymentId;
+  return rec ? mintKey(q, "payments", paymentId, loanId) : null;
 }
 
 /** Rule 4 / state machine — `satisfied` → `due` when 2.1 reverses the satisfying payment (`payment.reversed`), logged as `installment.restored`. */

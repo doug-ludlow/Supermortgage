@@ -9,6 +9,7 @@ import type { EntityRecord } from "../../app/tools.ts";
 import { type OrchRecord, type Source, type Sourced, src, fromEvent, fromEntity, fromTable, derived, cents, RecordGap } from "./facts-35-6.ts";
 import { ronRule } from "../closing/ops-26-2.ts";
 import { FACILITY_FIXTURE } from "../warehouse/ops-27-1.ts";
+import { createHash } from "node:crypto";
 
 type Row = Record<string, unknown>;
 const S = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
@@ -23,7 +24,7 @@ export function closingFacts(rec: OrchRecord): ClosingFacts | null {
   const d = row.data;
   return { row, closing_id: String(d["closing_id"]), scheduled_at: String(d["scheduled_at"]), time_zone: String(d["time_zone"] ?? rec.timeZone()), scheduled_note_date: String(d["scheduled_note_date"]), closing_type: String(d["closing_type"]), note_form: String(d["note_form"]), settlement_agent_party_id: String(d["settlement_agent_party_id"]), notary_party_id: S(d["notary_party_id"]), session_ids: (d["session_ids"] as string[] | undefined) ?? [], document_set_id: S(d["document_set_id"]), consummation_at: S(d["consummation_at"]), execution_status: String(d["execution_status"] ?? ""), rescindable: d["rescindable"] !== false, state: String(d["state"] ?? rec.state()), dry_state: d["dry_state"] === true, county_fips: S(d["county_fips"]) };
 }
-export interface PartyFacts { readonly partner_legal_name: string; readonly partner_nmlsr_id: string; readonly partner_mers_org_id: string | null; readonly partner_id: string; readonly mlo_name: string; readonly mlo_nmlsr_id: string; readonly settlement_agent_name: string; readonly settlement_agent_license: string; readonly borrower_names: readonly string[]; readonly borrower_ids: readonly string[]; readonly property_address: string; readonly legal_description: string | null; readonly apn: string | null; readonly county: string | null; readonly sources: Record<string, Source> }
+export interface PartyFacts { readonly partner_legal_name: string; readonly partner_nmlsr_id: string; readonly partner_mers_org_id: string | null; readonly partner_servicer_number: string | null; readonly partner_id: string; readonly mlo_name: string; readonly mlo_nmlsr_id: string; readonly settlement_agent_name: string; readonly settlement_agent_license: string; readonly borrower_names: readonly string[]; readonly borrower_ids: readonly string[]; readonly property_address: string; readonly legal_description: string | null; readonly apn: string | null; readonly county: string | null; readonly sources: Record<string, Source> }
 /** The parties on the file: the partner (parties row), the MLO of record (21.1's assignment), the vetted settlement agent (24.4), the borrowers (21.1's interview). */
 export async function partyFacts(rec: OrchRecord, closing: ClosingFacts | null): Promise<PartyFacts> {
   const intake = rec.intake() ?? {};
@@ -39,7 +40,7 @@ export async function partyFacts(rec: OrchRecord, closing: ClosingFacts | null):
   const p0 = rec.app.properties[0];
   const address = p0 ? `${p0.address_line1}, ${p0.city}, ${p0.state} ${p0.postal_code}` : String(intake["property_address"] ?? "");
   const ids = rec.borrowerIds();
-  return { partner_legal_name: String(intake["partner_name"] ?? partner.legal_name), partner_nmlsr_id: String(intake["partner_nmlsr_id"] ?? (partner.contact as Row | null)?.["nmlsr_id"] ?? ""), partner_mers_org_id: partner.mers_org_id, partner_id: rec.app.partner_party_id, mlo_name: mloName, mlo_nmlsr_id: mloNmls,
+  return { partner_legal_name: String(intake["partner_name"] ?? partner.legal_name), partner_nmlsr_id: String(intake["partner_nmlsr_id"] ?? (partner.contact as Row | null)?.["nmlsr_id"] ?? ""), partner_mers_org_id: partner.mers_org_id, partner_servicer_number: partner.servicer_number, partner_id: rec.app.partner_party_id, mlo_name: mloName, mlo_nmlsr_id: mloNmls,
     settlement_agent_name: agentParty?.legal_name ?? String(agentRow?.data["legal_name"] ?? agentRow?.data["name"] ?? agentId ?? ""), settlement_agent_license: String(agentRow?.data["license_number"] ?? ""), borrower_names: ids.map((id) => rec.borrowerName(id)), borrower_ids: ids, property_address: address,
     legal_description: S(commitment?.payload["legal_description"] ?? title?.data["legal_description"]), apn: S(title?.data["apn"] ?? commitment?.payload["apn"]), county: S(p0 ? (p0 as Row)["county"] : intake["county"]) ?? null,
     sources: { partner: src("table", `parties:${rec.app.partner_party_id}`, "20.2"), mlo: mloEv ? src("event", `${mloEv.type}:${mloEv.id}`, "21.1") : src("entity", `applications:${rec.app.id}`, "21.1"), settlement_agent: agentRow ? src("entity", `settlement_agents:${agentRow.id}:${agentRow.version}`, "24.4") : src("derived", "no vetted settlement agent row", "24.4"), borrowers: src("entity", `applications:${rec.app.id}`, "21.1"), property: p0 ? src("table", `application_properties:${p0.id}`, "21.1") : src("derived", "interview property address", "21.1") } };
@@ -196,10 +197,12 @@ export function warehouseFacts(rec: OrchRecord, i: { funding_id: string; advance
   const request: Row = { advance_id: i.advance_id, facility_id: i.facility_id, loan_id: null, application_id: rec.app.id, funding_id: i.funding_id, requested_at: i.requested_at, note_form: i.note_form, closing_type: i.closing_type, wet_dry: i.wet_dry, note_amount_cents: String(i.note_amount_cents), net_disbursement_cents: String(i.net_disbursement_cents), note_date: i.note_date, transaction_type: rec.app.transaction_type ?? "limited_cash_out", commitment_price: i.commitment_price, commitment_id_fnma: i.commitment_id_fnma, wire_verification_id: wire?.id ?? "", property_state: rec.state(), enote_registered_at: i.enote_registered_on, secured_party_added_at: i.secured_party_added_at, trust_receipt_at: null };
   // the DU final match is 23.3's CTC_DU_FINAL_MATCH item (a passed CTC carries it); the commitment is live while 29.1's executed commitment has not expired by the disbursement date; the program is in scope for a conventional product with an approve/eligible recommendation; a dry-state recording condition is met only once 26.4/24.4 confirm the recording (null until then: 27.1 reads null as "not yet"); a duplicate advance is any other advance row on this application; the facility is 27.1's own row (status; suspended by kickout/covenant) or, when the id is the LSA fixture's, the fixture (sm.warehouse.v1)
   const ltv = ltvPct(rec); const product = productFacts(rec, loanTerms(rec)); const commitmentEv = rec.last("commitment.executed"); const commitmentRow = rec.entities("commitments").at(-1) ?? null;
-  const commitmentLive = (!!commitmentEv || !!commitmentRow) && (i.commitment_expires_on === "" || i.commitment_expires_on >= i.disbursement_date);
+  if ((commitmentEv || commitmentRow) && i.commitment_expires_on === "") throw new RecordGap("commitments.expires_on", "29.1's commitment carries no expiry date");
+  const commitmentLive = (!!commitmentEv || !!commitmentRow) && i.commitment_expires_on >= i.disbursement_date;
   const facility = rec.entities("warehouse_facilities", (d) => d["facility_id"] === i.facility_id).at(-1) ?? null;
   const facilityStatus = facility ? String(facility.data["status"] ?? "") : i.facility_id === FACILITY_FIXTURE.facility_id ? FACILITY_FIXTURE.status : "";
-  const otherAdvances = rec.entities("warehouse_advances", (d) => d["advance_id"] !== i.advance_id && !["cancelled", "rejected", "unwound"].includes(String(d["status"])));
+  // 27.1 AdvanceStatus: a rejected, kicked-out, returned or repaid advance on the application is history, not a duplicate; a requested/approved/funded/delivered/transferred one is
+  const otherAdvances = rec.entities("warehouse_advances", (d) => d["advance_id"] !== i.advance_id && !["rejected", "kicked_out", "returned", "repaid", "repurchased"].includes(String(d["status"])));
   const facts: Row = { du_recommendation: String(findings?.payload["recommendation"] ?? ""), du_final_matches_closing: !!ctc, ctc_issued: !!ctc, disbursement_gate_opened: !!disb,
     commitment: { commitment_id_fnma: i.commitment_id_fnma, live: commitmentLive, expires_on: i.commitment_expires_on, type: String(commitmentEv?.payload["type"] ?? commitmentRow?.data["type"] ?? commitmentRow?.data["commitment_type"] ?? "best_efforts") },
     wire_verification: wire ? { id: wire.id, match_result: String(wire.data["match_result"] ?? ""), expires_at: S(wire.data["expires_at"]) ?? "", blocks_disbursement: wire.data["blocks_disbursement"] === true } : null,
@@ -237,9 +240,9 @@ export function productFacts(rec: OrchRecord, terms: LoanTerms): ProductFacts {
 /** 21.4's lock status as 26.1's gate reads it: a lock that is executed, committed or confirmed is `active`; anything else is the row's own word. */
 export function lockStatus(rec: OrchRecord, terms: LoanTerms): Sourced<string> {
   const lockRow = rec.entity("locks", String(terms.lock.payload["lock_id"])) ?? null;
-  const raw = String(lockRow?.data["status"] ?? terms.lock.payload["status"] ?? "executed");
-  const status = ["executed", "committed", "confirmed", "locked", "active"].includes(raw) ? "active" : raw;
-  return lockRow ? fromEntity(status, lockRow, "21.4") : fromEvent(status, terms.lock, "21.4");
+  if (!lockRow) throw new RecordGap("locks", `lock.executed ${terms.lock.id} names ${String(terms.lock.payload["lock_id"])} but 21.4's locks row is not on the entity store`);
+  const raw = String(lockRow.data["status"] ?? "");
+  return fromEntity(["executed", "committed", "confirmed", "locked", "active"].includes(raw) ? "active" : raw, lockRow, "21.4");
 }
 /** 24.4's SM_TRUST_POA_REVIEW_GATE: `vesting.reviews.completed{all_eligible}` when a trust or POA review ran; vacuously open when the title commitment vests no trust and no trust/POA review was opened. */
 export function trustPoaGate(rec: OrchRecord): Sourced<boolean> {
@@ -285,3 +288,12 @@ export function eclosingFacts(rec: OrchRecord, closing: ClosingFacts): { facts: 
 }
 /** A dollar figure for a FAKE vendor payload from bigint cents — never through Number(bigint). */
 export const dollars = (c: bigint): string => { const neg = c < 0n; const a = neg ? -c : c; return `${neg ? "-" : ""}${a / 100n}.${String(a % 100n).padStart(2, "0")}`; };
+
+/** 26.2's execution review is unrecoverable when it blocks funding with no redraw cure (26.2 emits `funding_blocked` and `redraw`; a redraw is a cure, not an unwind). One definition for the off-path detector and the unwind step. */
+export const executionReviewUnrecoverable = (p: Row): boolean => p["funding_blocked"] === true && (p["redraw"] === null || p["redraw"] === undefined || p["redraw"] === false);
+/** The platform's `custodial_accounts.id` for a bank account 27.1 names by reference (`bank:partner-haircut:hash-h1`): the reference itself when it is already the row's uuid, otherwise a name-derived uuid (SHA-256 of the reference, version-5 shaped) so the ledger's custodial lines and the fixture's deposit key the same row. */
+export function custodialAccountIdFor(ref: string): string {
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)) return ref;
+  const h = createHash("sha256").update(`supermortgage:custodial_account:${ref}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0")}${h.slice(18, 20)}-${h.slice(20, 32)}`;
+}

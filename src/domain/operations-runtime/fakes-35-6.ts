@@ -120,6 +120,11 @@ export class FakeCarrier {
 
 export interface Fakes35_6 { readonly ron: FakeRonSessionFeed; readonly settlementAgent: FakeSettlementAgent; readonly bank: FakeFundingBank; readonly printMail: FakePrintMail; readonly operator: FakePortalOperator; readonly evault: FakeEvaultCertifier; readonly carrier: FakeCarrier; readonly roles: readonly string[]; readonly delaySeconds: number; fills(role: string): boolean }
 const sets = new WeakMap<Runtime, Fakes35_6>();
+/** The build stage as the runtime states it (`root.environment`) or ENVIRONMENT names it; `nonprod` when neither does. Read fresh on every call (rule 6's production refusal is decided per hand-off). */
+export function environmentOf(rt: Runtime): string {
+  const root = rt.root ?? rt; const env = (root as { env?: NodeJS.ProcessEnv }).env ?? process.env;
+  return (root as { environment?: string }).environment ?? env["ENVIRONMENT"] ?? "nonprod";
+}
 /** The runtime's FAKE set (rule 4 / operational prerequisite 35.7): the operator, the settlement agent and the notary, after the delay, as `{kind: human, id: FAKE:<role>, role}`; empty under FAKE_REVIEWERS=off or outside INTEGRATIONS=fake. */
 export function fakesFor(rt: Runtime): Fakes35_6 {
   const root = rt.root ?? rt;

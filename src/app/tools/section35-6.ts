@@ -76,6 +76,12 @@ export const TOOLS_35_6: readonly ToolDef[] = defineTools(ORCH_PROCESS, ORCH_AGE
   { name: "orchestration.snapshot", kind: "act", ruleSetVersion: ORCH_RULE_SET_VERSION, guardrails: [...ALL, SNAPSHOT_CITES_SOURCES, FIXTURE_REFUSED_IN_PRODUCTION], handler: compute(async (i, ctx, rt) => {
       const runtime = runtimeOf(rt); const applicationId = appOf(i, ctx);
       const r = await buildFundingSnapshot(runtime, applicationId, { now: str(i, "at") || ctx.now, actor: ctx.actor, persist: true });
+      // rule 6: a production gap refuses the hand-off and names the paths to the ops_analyst and to compliance (the timer keeps running; no loans row)
+      // one open escalation per owner while the gap stands (the pass retries every sweep; a person's queue holds one item)
+      for (const e of r.escalations) {
+        const open = await runtime.db.query(`SELECT 1 FROM escalations WHERE application_id = $1 AND owner_role = $2 AND completed_at IS NULL AND payload->>'reason' = 'FIXTURE_REFUSED'`, [applicationId, e.ownerRole]);
+        if (!open.length) rt.escalations.open({ kind: "sev2", ownerRole: e.ownerRole, applicationId, severity: e.severity, payload: { ...e.payload, snapshot_id: r.snapshot_id } }, ctx.actor);
+      }
       return { snapshot_id: r.snapshot_id, application_id: applicationId, snapshot_hash: r.snapshot_hash, gaps: r.gaps, fixture_used: r.fixture_used, environment: r.environment, refused_code: r.refused_code, sources: r.sources, step: "funded", orchestration_id: r.orchestration_id }; }),
     decision: decision("snapshot_built") },
   { name: "orchestration.fund", kind: "act", ruleSetVersion: ORCH_RULE_SET_VERSION, moneyFields: ["pi_cents", "initial_escrow_deposit_cents", "prepaid_interest_cents", "amount_cents", "monthly_escrow_cents"], guardrails: [ONE_STEP_PER_PASS, PASS_IS_IDEMPOTENT, OWNER_EMITS, HUMAN_ACTS_STAY_HUMAN, NO_GATE_RECOMPUTE, NO_CLOCK_EDIT, SNAPSHOT_CITES_SOURCES, FIXTURE_REFUSED_IN_PRODUCTION, OFFICER_OVERRIDES_ONLY,

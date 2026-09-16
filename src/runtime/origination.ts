@@ -208,7 +208,10 @@ export type DemoOverrides = Partial<OriginationSnapshot> & { readonly partner_na
  * and subject property, with the worked example's note / CD / escrow / consents / documents. `overrides` replace whole top-level
  * fields (the 30.2 correction rule: a snapshot is replaced, never edited).
  */
+/** How many times the demo fixture was read (35.6 rule 6 / T9: a hand-off built from a complete record never calls it; a nonprod gap does, with `fixture_used = true`). A live ESM binding for the tests to read. */
+export const DEMO_SNAPSHOT_CALLS = { count: 0 };
 export function demoSnapshot(app: ApplicationRecord, overrides: DemoOverrides = {}): OriginationSnapshot {
+  DEMO_SNAPSHOT_CALLS.count += 1;
   const { partner_name, ...rest } = overrides;
   const prop = app.properties[0];
   const address = prop ? `${prop.address_line1}, ${prop.city}, ${prop.state} ${prop.postal_code}` : "100 N Central Ave, Phoenix, AZ 85004";

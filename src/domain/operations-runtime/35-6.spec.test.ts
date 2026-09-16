@@ -25,6 +25,9 @@ let router: ReturnType<typeof createBorrowerRouter>;
 import { createLogger } from "../../runtime/log.ts";
 import { FakeReviewers } from "../../infra/integrations/reviewers.ts";
 import { Journey, MST, EST, OFFICER } from "../../runtime/borrower/fixtures/journey.ts";
+import { custodialAccountIdFor } from "./facts-35-6-b.ts";
+import { DEMO_SNAPSHOT_CALLS } from "../../runtime/origination.ts";
+import { FACILITY_FIXTURE } from "../warehouse/ops-27-1.ts";
 import { runOrchestrationPass, orchestrationByApplication, dailyReceipt, orchestrationBoard, EV } from "./orchestration-35-6.ts";
 import { fakesFor, fakeHuman } from "./fakes-35-6.ts";
 import { WORKED_A, WORKED_B } from "./figures-35-6.ts";
@@ -42,7 +45,10 @@ type P = Record<string, unknown>;
 type Actor = { kind: "agent" | "human" | "system"; id: string; role?: string };
 const VERIFICATION: Actor = { kind: "agent", id: "verification" }; const COMPLIANCE: Actor = { kind: "agent", id: "compliance-tester" }; const FRAUD_RISK: Actor = { kind: "agent", id: "fraud-risk" }; const VALUATION: Actor = { kind: "agent", id: "valuation" }; const UNDERWRITER: Actor = { kind: "agent", id: "underwriter" };
 const DISCLOSURES: Actor = { kind: "agent", id: "disclosures" }; const PRICING: Actor = { kind: "agent", id: "pricing" }; const DISCLOSURE: Actor = { kind: "agent", id: "disclosure" }; const OPS: Actor = { kind: "human", id: "u-ops", role: "ops_analyst" };
-void OFFICER; void OPS; void MST; void EST; void WORKED_A; void WORKED_B; void fakeHuman; void dailyReceipt; void orchestrationBoard; void EV;
+/** T9's spy on src/runtime/origination.ts: the fixture's call count before the chain's funding pass (T8) — unchanged after the hand-off built from the complete record. */
+const demoCalls = { before: -1 };
+const BORROWER_APP: Actor = { kind: "agent", id: "borrower-app" };
+void demoCalls; void DEMO_SNAPSHOT_CALLS; void OFFICER; void OPS; void MST; void EST; void WORKED_A; void WORKED_B; void fakeHuman; void dailyReceipt; void orchestrationBoard; void EV;
 
 let db: Db; let runtime: Runtime; let base = ""; let partnerPartyId = ""; let close: () => Promise<void> = async () => undefined;
 const reviewers = new FakeReviewers({ delaySeconds: 20, logger: undefined });
@@ -82,8 +88,14 @@ const ORDER_PAYLOAD = { address: "100 N Central Ave, Phoenix AZ 85004", legal_de
 /** A journey (the lifecycle fixture) over this file's runtime: the book, the application, the interview (trid), the LE received under 21.2, the credit fee handled. */
 async function newJourney(): Promise<Journey> {
   const j = new Journey({ runtime, db, base, token: TOKEN, clock, borrowerEmail: `alex.${randomUUID().slice(0, 8)}@example.test`, coBorrowerEmail: `blake.${randomUUID().slice(0, 8)}@example.test`, partnerPartyId });
-  await j.seedBook(); await j.openApplication(); await interviewWithJointIntent(j); await j.quoteAndLe();
+  await j.seedBook(); await j.openApplication(); await seedDemographics(j); await interviewWithJointIntent(j); await j.quoteAndLe();
   return j;
+}
+/** 21.1's restricted demographics row per application borrower (0057 restricted_fl.applicant_demographics — the interview's HMDA questions; the only demographics table 30.2 reads): borrower A self-reported, borrower B "information not provided" — never derived. */
+async function seedDemographics(j: Journey): Promise<void> {
+  const at = MST("2026-10-05", "10:35");
+  await db.query(`INSERT INTO restricted_fl.applicant_demographics (application_borrower_id, ethnicity, race, sex, age, declined_ethnicity, declined_race, declined_sex, visual_observation_used, collection_channel, collected_at) VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, false, false, false, false, 'telephone', $6)`, [j.abIds[0], JSON.stringify(["not_hispanic_or_latino"]), JSON.stringify(["white"]), "female", 41, at]);
+  await db.query(`INSERT INTO restricted_fl.applicant_demographics (application_borrower_id, ethnicity, race, sex, age, declined_ethnicity, declined_race, declined_sex, visual_observation_used, collection_channel, collected_at) VALUES ($1, NULL, NULL, NULL, $2, true, true, true, false, 'telephone', $3)`, [j.abIds[1], 40, at]);
 }
 /** The journey's 21.1 interview (a5) with both borrowers' joint-intent affirmations at 10:20/10:22 MST (§1002.7(d), 21.1's own tool) before the six items at 10:41 — the joint-intent facts 22.2 reads from the record. */
 async function interviewWithJointIntent(j: Journey): Promise<void> {
@@ -93,7 +105,9 @@ async function interviewWithJointIntent(j: Journey): Promise<void> {
   clock.set(new Date("2026-10-05T10:14:07-07:00").toISOString()); await j.tool(scope, "21.1", "discloseAI", { session_id: `S-${R}`, utterance_id: `utt-${R}`, state: "AZ" });
   clock.set(MST("2026-10-05", "10:16")); await j.tool(scope, "21.1", "captureField", { field: "credit_request", transaction_type: "limited_cash_out", occupancy: "primary", property_state: "AZ", identity_verified: true });
   await j.tool(scope, "21.1", "confirmPrefill", { op: "offer", item: "name", value: "Alex Borrower" }); await j.tool(scope, "21.1", "confirmPrefill", { item: "name" });
-  clock.set(MST("2026-10-05", "10:18")); await j.tool(scope, "21.1", "captureField", { field: "ssn", value: "123-45-6789", borrower_id: "B1" });
+  // the SSN is 32.2's one typed field (E5): confirmField{path: ssn} stores the nine digits encrypted beside the last four on application_borrowers (32.18 rule 7) and captures 21.1's `ssn` six-item on the way — both borrowers, so the record carries every TIN 30.2's OB-014 reads
+  clock.set(MST("2026-10-05", "10:18")); await j.tool(scope, "32.2", "application.confirmField", { path: "ssn", fields: [{ path: "ssn", value: "123-45-6789", source: "borrower" }], application_id: j.appId, application_borrower_id: j.abIds[0], borrower_id: "B1" }, BORROWER_APP);
+  clock.set(MST("2026-10-05", "10:18")); await j.tool(scope, "32.2", "application.confirmField", { path: "ssn", fields: [{ path: "ssn", value: "987-65-4321", source: "borrower" }], application_id: j.appId, application_borrower_id: j.abIds[1], borrower_id: "B2" }, BORROWER_APP);
   await j.tool(scope, "21.1", "confirmPrefill", { op: "offer", item: "property_address", value: "100 N Central Ave, Phoenix, AZ 85004" }); clock.set(MST("2026-10-05", "10:19")); await j.tool(scope, "21.1", "confirmPrefill", { item: "property_address" });
   clock.set(MST("2026-10-05", "10:20")); await j.tool(scope, "21.1", "affirmJointIntent", { borrower_id: "B1", method: "web_checkbox", evidence_id: `ji-B1-${R}` });
   clock.set(MST("2026-10-05", "10:22")); await j.tool(scope, "21.1", "affirmJointIntent", { borrower_id: "B2", method: "web_checkbox", evidence_id: `ji-B2-${R}` });
@@ -275,14 +289,17 @@ async function complianceAt(j: Journey, at: string, gate = "SM_O61_COMPLIANCE_PA
 }
 const complianceAtCd = (j: Journey, at: string) => complianceAt(j, at);
 /** A second journey driven through the chain the way T1–T8 drive the main line (the same passes at the same instants), stopping at `target` — the fixture for the branches that need their own row (T7's money mismatch, T13's stall, T15's unwind). */
-/** The partner's haircut reserve as the ledger carries it (27.1 SM_WH_HAIRCUT_RESERVE_GATE reads the balance of `partner_haircut_reserve`): the LSA fixture's $250,000.00 deposit, posted once per journey by an officer through 2.1 ledger.post on the corporate books — Cr partner_haircut_reserve / Dr sm_funding_cash (27.1's draw at the wire is the mirror image). In-process, so the cents stay bigint. */
+/** The partner's haircut reserve as the ledger carries it (27.1 SM_WH_HAIRCUT_RESERVE_GATE reads the balance of `partner_haircut_reserve` on the facility's reserve bank account, `FACILITY_FIXTURE.haircut_reserve_account_ref`): the LSA fixture's $250,000.00 deposit, posted once per platform (idempotent) by an officer through 2.1 ledger.post — Cr the reserve account / Dr the SM funding account, both custodial rows keyed as the pass keys 27.1's references (custodialAccountIdFor). In-process, so the cents stay bigint. */
 async function fundHaircutReserve(j: Journey): Promise<void> {
-  const memo = `partner haircut reserve deposit ${j.R}`;
-  if ((await db.query(`SELECT 1 FROM ledger_lines WHERE account = 'partner_haircut_reserve' AND memo = $1`, [memo])).length) return;
+  const reserveId = custodialAccountIdFor(FACILITY_FIXTURE.haircut_reserve_account_ref); const fundingId = custodialAccountIdFor(FACILITY_FIXTURE.funding_account_ref);
+  for (const [id, kind] of [[reserveId, "partner_haircut_reserve"], [fundingId, "sm_funding_cash"]] as const) await db.query(`INSERT INTO custodial_accounts (id, partner_party_id, kind, remittance_type) VALUES ($1, $2, $3, 'A/A') ON CONFLICT (id) DO NOTHING`, [id, partnerPartyId, kind]);
+  const memo = `LSA haircut reserve deposit ${FACILITY_FIXTURE.facility_id}`;
+  if ((await db.query(`SELECT 1 FROM ledger_lines WHERE account = 'partner_haircut_reserve' AND custodial_account_id = $1 AND memo = $2`, [reserveId, memo])).length) return;
   await runtime.execute({ process: "2.1", name: "ledger.post", loanId: "", actor: OFFICER, input: { entry_set: { effectiveDate: "2026-11-02", description: "LSA haircut reserve: partner deposit (fixture)", lines: [
-    { account: { scope: "corporate", account: "partner_haircut_reserve" }, amountCents: -25_000_000n, ruleRef: "27.1 LSA haircut reserve", memo },
-    { account: { scope: "corporate", account: "sm_funding_cash" }, amountCents: 25_000_000n, ruleRef: "27.1 LSA haircut reserve", memo }] } } });
-  assert.equal(await n(`FROM ledger_lines WHERE account = 'partner_haircut_reserve' AND memo = $1`, [memo]), 1, "the reserve deposit is a ledger_lines row");
+    { account: { scope: "custodial", custodialAccountId: reserveId, account: "partner_haircut_reserve" }, amountCents: -25_000_000n, ruleRef: "27.1 LSA haircut reserve", memo },
+    { account: { scope: "custodial", custodialAccountId: fundingId, account: "sm_funding_cash" }, amountCents: 25_000_000n, ruleRef: "27.1 LSA haircut reserve", memo }] } } });
+  assert.equal(await n(`FROM ledger_lines WHERE account = 'partner_haircut_reserve' AND custodial_account_id = $1 AND memo = $2`, [reserveId, memo]), 1, "the reserve deposit is a ledger_lines row on the facility's reserve account");
+  void j;
 }
 async function driveTo(j: Journey, target: "execution_reviewed" | "wire_released"): Promise<Journey> {
   const appId = j.appId; const scope = { app: appId };
@@ -681,6 +698,7 @@ test("35.6-T7: Given 25.3's `rescission.confirmed_not_rescinded` at Wed Nov 11 0
 test("35.6-T8: Given the advance approved, when the pass runs 08:20 ET, then 26.3 `prepareWire` as `funder` prepared a wire of 55,685,207 cents (`funding.wire.prepared`) and the row is `waiting_human{funding_approver}`; an agent actor's `prepareWire{op: release}` is refused `ROLE_DENIED` and the pass never calls it (contract: no `op: \"release\"` literal under `src/domain/operations-runtime/`); when the FAKE `funding_approver` releases at 09:40 ET, then `funding.wire.released`, the bank's `funding.wire.accepted{imad}`, 27.1's `warehouse.advance.funded{advance_date=2026-11-12}`, `notifySettlementAgent{op: agent_receipt}` and, on the uploaded final settlement statement, `confirmDisbursement` → `loan.funded{disbursement_date=2026-11-12, per_diem_cents=9397, prepaid_interest_cents=178543, prepaid_days=19}` keyed by the application only, and `SM_O73_DUAL_CONTROL_RELEASE_1H` and `SM_O73_WIRE_CUTOFF_1300ET` are satisfied.", { skip }, async () => {
   const j = await chainJourney(); const appId = j.appId; const scope = { app: appId };
   await fundHaircutReserve(j);   // the partner's LSA haircut reserve on the ledger (27.1's gate reads its balance)
+  demoCalls.before = DEMO_SNAPSHOT_CALLS.count;   // T9: the fixture is never read when the record is complete — the count before any pass that could fund
   // when the pass runs 08:20 ET: 26.3 prepareWire as funder prepared the wire; the row waits on the funding_approver
   clock.set(EST("2026-11-12", "08:20")); const r1 = await pass(clock.now(), appId);
   const jl1 = await journal(appId); const fail1 = JSON.stringify(jl1.filter((x) => x.step === "funding_authorized").map((x) => [x.kind, x.command_name, x.command_op, x.error_class, x.refusal_code, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? null])).slice(0, 3000);
@@ -719,7 +737,54 @@ test("35.6-T8: Given the advance approved, when the pass runs 08:20 ET, then 26.
   assert.ok(["funded", "boarded", "package_frozen", "delivered", "certified", "purchased", "completed"].includes((await row(appId)).step), JSON.stringify(await row(appId)));
 });
 
-test("35.6-T9: Given `loan.funded`, when the same sweep's pass runs, then `funding_snapshots` has one row whose `sources` names a row or event for every top-level field of 30.2's `OriginationSnapshot` (`note` ← 26.1's eNote and `closing.consummated`; `final_cd` ← the consummated CD version; `escrow_analysis` ← 30.3's refreshed analysis; `consents` ← `consent.captured` rows; `documents` ← 35.2 rows; `min` ← `enote.registered`; `warehouse_advance_id` ← `warehouse.advance.funded`; `flood`, `hazard`, `mi`, `hpml`, `qm_type`, `ltv_pct`, `custody`, `trailing`, `property`, `borrowers`), `gaps = []`, `fixture_used = false`, `demoSnapshot` was not called (a spy on `src/runtime/origination.ts` exports), `orchestration.fund` produced ONE `loans` row with `origination_application_id`, `loan_terms` with `pi_cents = 340262`, `escrow_payment_cents = 68750`, `note_rate_bps = 61250`, a balanced opening set with principal 56,000,000, escrow 206,250 and prepaid interest 178,543 cents, OB-001…OB-022 passing, `loan.staged` … `loan.boarded` carrying both ids, `SM_ORIG_BOARD_T1BD` and `SM_ORCH_HANDOFF_AFTER_FUNDED_4H` satisfied, and `POST /v1/applications/{id}/fund` on the same application answers `duplicate: true`; given `ENVIRONMENT=production` and a record missing 30.3's analysis, then the hand-off is refused `FIXTURE_REFUSED`, the row lists `escrow_analysis` in `gaps`, no `loans` row exists and one `ops_analyst` and one `compliance` escalation are open.", { todo: true });
+test("35.6-T9: Given `loan.funded`, when the same sweep's pass runs, then `funding_snapshots` has one row whose `sources` names a row or event for every top-level field of 30.2's `OriginationSnapshot` (`note` ← 26.1's eNote and `closing.consummated`; `final_cd` ← the consummated CD version; `escrow_analysis` ← 30.3's refreshed analysis; `consents` ← `consent.captured` rows; `documents` ← 35.2 rows; `min` ← `enote.registered`; `warehouse_advance_id` ← `warehouse.advance.funded`; `flood`, `hazard`, `mi`, `hpml`, `qm_type`, `ltv_pct`, `custody`, `trailing`, `property`, `borrowers`), `gaps = []`, `fixture_used = false`, `demoSnapshot` was not called (a spy on `src/runtime/origination.ts` exports), `orchestration.fund` produced ONE `loans` row with `origination_application_id`, `loan_terms` with `pi_cents = 340262`, `escrow_payment_cents = 68750`, `note_rate_bps = 61250`, a balanced opening set with principal 56,000,000, escrow 206,250 and prepaid interest 178,543 cents, OB-001…OB-022 passing, `loan.staged` … `loan.boarded` carrying both ids, `SM_ORIG_BOARD_T1BD` and `SM_ORCH_HANDOFF_AFTER_FUNDED_4H` satisfied, and `POST /v1/applications/{id}/fund` on the same application answers `duplicate: true`; given `ENVIRONMENT=production` and a record missing 30.3's analysis, then the hand-off is refused `FIXTURE_REFUSED`, the row lists `escrow_analysis` in `gaps`, no `loans` row exists and one `ops_analyst` and one `compliance` escalation are open.", { skip }, async () => {
+  const j = await chainJourney(); const appId = j.appId;
+  const fundedEv = (await events(appId, "loan.funded")).at(-1)!; assert.ok(fundedEv, "Given loan.funded (T8)");
+  // the same sweep's pass: T8's funding pass folded loan.funded, entered `funded` and ran the hand-off in that unit of work (rule 1: the fold continues while the record moves); a row still at funded takes one more pass
+  let o = await row(appId);
+  if (!o.loan_id) { clock.set(EST("2026-11-12", "13:05")); const r = await pass(clock.now(), appId); o = await row(appId); assert.ok(o.loan_id, `the hand-off ran: ${JSON.stringify(r).slice(0, 400)} ${JSON.stringify((await journal(appId)).filter((x) => x.step === "funded").map((x) => [x.kind, x.command_process, x.command_name, x.command_op, x.error_class, x.refusal_code, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? x.detail["gaps"] ?? null])).slice(0, 3000)}`); }
+  const snaps = await db.query<{ id: string; sources: Record<string, { kind: string; ref: string; process: string }>; gaps: string[]; fixture_used: boolean; refused_code: string | null; environment: string; snapshot: P }>(`SELECT id::text AS id, sources, gaps, fixture_used, refused_code, environment, snapshot FROM funding_snapshots WHERE application_id = $1 ORDER BY built_at`, [appId]);
+  assert.equal(snaps.length, 1, "funding_snapshots has one row"); const snap = snaps[0]!;
+  assert.deepEqual(snap.gaps, [], JSON.stringify(snap.sources)); assert.equal(snap.fixture_used, false); assert.equal(snap.refused_code, null); assert.equal(snap.environment, "nonprod");
+  // sources: a row or event for every top-level field of 30.2's OriginationSnapshot
+  const expected: [string, string][] = [["note", "26.1"], ["note.note_date", "26.2"], ["closing", "26.2"], ["final_cd", "25.2"], ["final_cd.version", "25.2"], ["escrow_analysis", "30.3"], ["consents", "21.1"], ["documents", "35.2"], ["min", "26.2"], ["warehouse_advance_id", "27.1"], ["flood", "24.5"], ["hazard", "24.5"], ["mi", "23.1"], ["hpml", "23.4"], ["qm_type", "23.4"], ["ltv_pct", "23.1"], ["custody", "26.2"], ["trailing", "26.4"], ["property", "21.1"], ["borrowers", "21.1"]];
+  for (const [path, process] of expected) { const s = snap.sources[path]; assert.ok(s, `sources names ${path}: ${JSON.stringify(Object.keys(snap.sources))}`); assert.ok(["event", "entity", "table"].includes(s.kind), `${path} is a row or event, not ${s.kind} (${s.ref})`); assert.equal(s.process, process, `${path} from ${process}`); }
+  assert.equal(DEMO_SNAPSHOT_CALLS.count, demoCalls.before, "demoSnapshot was not called (the spy on src/runtime/origination.ts exports)");
+  // orchestration.fund produced ONE loans row with origination_application_id; loan_terms; the balanced opening set
+  const loans = await db.query<{ id: string; status: string }>(`SELECT id::text AS id, status FROM loans WHERE origination_application_id = $1`, [appId]); assert.equal(loans.length, 1); const loanId = loans[0]!.id; assert.equal(o.loan_id, loanId); assert.equal(loans[0]!.status, "active");
+  assert.equal(await n(`FROM loan_terms WHERE loan_id = $1 AND source = 'boarding' AND pi_cents = 340262 AND escrow_payment_cents = 68750 AND note_rate_bps = 61250`, [loanId]), 1);
+  const bal = async (account: string) => BigInt((await db.query<{ s: string }>(`SELECT coalesce(sum(amount_cents), 0)::text AS s FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = $2`, [loanId, account]))[0]!.s);
+  assert.equal(await bal("principal"), 56_000_000n); assert.equal(-(await bal("escrow")), 206_250n); assert.equal(-(await bal("prepaid_interest")), 178_543n);
+  assert.equal(await n(`FROM (SELECT l.set_id FROM ledger_lines l WHERE l.set_id IN (SELECT set_id FROM ledger_lines WHERE loan_id = $1) GROUP BY l.set_id HAVING sum(l.amount_cents) <> 0) x`, [loanId]), 0, "every set that touches the loan balances across its scopes");
+  // OB-001…OB-022 passing
+  const ob = await db.query<{ rule_code: string; result: string }>(`SELECT rule_code, result FROM boarding_validations WHERE application_id = $1 AND rule_code LIKE 'OB-%' ORDER BY rule_code`, [appId]);
+  assert.equal(ob.length, 22, ob.map((v) => v.rule_code).join(",")); assert.deepEqual(ob.filter((v) => v.result !== "pass").map((v) => v.rule_code), []);
+  // loan.staged … loan.boarded carrying both ids; the journal names the hand-off commands as this process's own tools
+  for (const t of ["loan.staged", "loan.validated", "loan.boarded", "ledger.opening_posted"]) { const e = (await events(appId, t)).at(-1)!; assert.ok(e, `${t} emitted`); assert.equal(e.application_id, appId); assert.equal(e.loan_id, loanId, `${t} carries the loan id`); }
+  const jl = await journal(appId); const fundedCmds = jl.filter((x) => x.step === "funded" && x.kind === "command_run").map((x) => `${x.command_process} ${x.command_name}${x.command_op ? `{${x.command_op}}` : ""}`);
+  for (const c of ["35.6 orchestration.snapshot", "35.6 orchestration.fund", "30.3 buildEscrowLines{establish}", "25.4 schedulePostClosingRun", "30.4 openHandoff"]) assert.ok(fundedCmds.includes(c), `${c} ran in the funded step (${fundedCmds.join(", ")})`);
+  const t1 = await timers(appId, "SM_ORIG_BOARD_T1BD"); assert.equal(t1.length, 1); assert.equal(t1[0]!.status, "satisfied");
+  const t4h = await timers(appId, "SM_ORCH_HANDOFF_AFTER_FUNDED_4H"); assert.equal(t4h.length, 1, JSON.stringify(t4h)); assert.equal(t4h[0]!.status, "satisfied");
+  // POST /v1/applications/{id}/fund on the same application answers duplicate: true (one loans row, one snapshot)
+  const again = await call("POST", `/v1/applications/${appId}/fund`, { actor: OFFICER });
+  assert.equal(again.status, 200, JSON.stringify(again.body).slice(0, 500)); assert.equal(again.body["duplicate"], true); assert.equal(again.body["loan_id"], loanId);
+  assert.equal(await n(`FROM loans WHERE origination_application_id = $1`, [appId]), 1); assert.equal(await n(`FROM funding_snapshots WHERE application_id = $1`, [appId]), 1);
+  // given ENVIRONMENT=production and a record missing 30.3's analysis: the hand-off is refused FIXTURE_REFUSED, the row lists escrow_analysis in gaps, no loans row, one ops_analyst and one compliance escalation
+  const u = await newJourney(); await seedCreditAuthorizations(u);
+  clock.set(MST("2026-10-05", "17:50")); await pass(clock.now(), u.appId);
+  process.env["ENVIRONMENT"] = "production";
+  try {
+    const built = await runtime.execute({ process: "35.6", name: "orchestration.snapshot", loanId: "", applicationId: u.appId, actor: OFFICER, input: {} });
+    const out = built.output as P; assert.equal(out["refused_code"], "FIXTURE_REFUSED", JSON.stringify(out).slice(0, 300)); assert.ok((out["gaps"] as string[]).includes("escrow_analysis"), JSON.stringify(out["gaps"])); assert.equal(out["fixture_used"], false); assert.equal(out["environment"], "production");
+    await assert.rejects(runtime.execute({ process: "35.6", name: "orchestration.fund", loanId: "", applicationId: u.appId, actor: OFFICER, input: { snapshot_id: out["snapshot_id"] } }), (e: unknown) => (e as { code?: string }).code === "FIXTURE_REFUSED");
+    const refused = await call("POST", `/v1/applications/${u.appId}/fund`, { actor: OFFICER }); assert.equal(refused.status, 409, JSON.stringify(refused.body).slice(0, 300)); assert.equal(refused.body["code"], "FIXTURE_REFUSED");
+  } finally { delete process.env["ENVIRONMENT"]; }
+  const urow = (await db.query<{ gaps: string[]; refused_code: string | null; fixture_used: boolean }>(`SELECT gaps, refused_code, fixture_used FROM funding_snapshots WHERE application_id = $1 ORDER BY built_at LIMIT 1`, [u.appId]))[0]!;
+  assert.equal(urow.refused_code, "FIXTURE_REFUSED"); assert.ok(urow.gaps.includes("escrow_analysis")); assert.equal(urow.fixture_used, false);
+  assert.equal(await n(`FROM loans WHERE origination_application_id = $1`, [u.appId]), 0);
+  assert.equal((await escalations(u.appId, "ops_analyst")).filter((e) => !e.completed_at && e.payload["reason"] === "FIXTURE_REFUSED").length, 1);
+  assert.equal((await escalations(u.appId, "compliance")).filter((e) => !e.completed_at && e.payload["reason"] === "FIXTURE_REFUSED").length, 1);
+});
 
 test("35.6-T10: Given `loan.boarded` on Thu Nov 12, when the pass runs Fri Nov 13 10:05 MST, then 29.3 built and froze the package (`delivery.uldd.built`, `earlycheck.completed{clean=true}`, `delivery.package.frozen`) as `secondary`, `SM_ORCH_DELIVERY_OPEN_2BD` is satisfied, 29.4 registered the delivery with Supermortgage's approved wire instruction and payee code, opened the operator task with `sla_due_at = 2026-11-16T15:00 MT`, eDelivered the eNote and requested the Transfer of Control the same day (`enote.transfer_of_control.requested{effective_date=2026-11-16}`, gate open), the row is `waiting_human{fnma_portal_operator}`; when the FAKE operator's evidence arrives 13:31 ET Mon Nov 16, then `delivery.submitted{fnma_loan_number}` exists, the custodian package is `evault_auto` with no documents, the eVault's auto-certification yields `custody.certified{purchase_ready_at=2026-11-16}` and `expected_purchase_date = 2026-11-17`.", { todo: true });
 

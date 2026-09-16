@@ -31,6 +31,7 @@ import { EscalationService } from "../../app/escalations.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { daysBetween, plainDate as D } from "../../kernel/calendar/date.ts";
 import { STEPS, stepIndex, type StepDef, type StepOutcome, type Wait } from "./steps-35-6.ts";
+import { executionReviewUnrecoverable } from "./facts-35-6-b.ts";
 import { loadRecord, RecordGap, type OrchRecord } from "./facts-35-6.ts";
 import { fakesFor } from "./fakes-35-6.ts";
 import { storeDocument } from "./documents-port-35-6.ts";
@@ -225,8 +226,8 @@ async function claim(rt: Runtime, holder: string, limit: number, applicationId: 
 }
 async function releaseLeases(rt: Runtime, holder: string, ids: readonly string[]): Promise<void> { if (ids.length) await rt.db.query(`UPDATE closing_orchestrations SET lease_holder = NULL, lease_until = NULL WHERE id = ANY($1::uuid[]) AND lease_holder = $2`, [ids, holder]).catch(() => undefined); }
 
-/** Holds a new owner's fact may clear (rule: "or the condition clears"); a `money_mismatch` (rule 7: never adjusted) and a `warehouse_kickout` are the officer's `orchestration.release` only. */
-const AUTO_RELEASE_HOLDS = ["gate_closed", "unavailable"];
+/** Holds a new owner's fact may clear — the Off-path paragraph: "`held` —(`orchestration.release`, `ops_analyst`; or the condition clears)→ the same step" for a money mismatch, a closed gate and a vendor `unavailable`; the figures are never adjusted (rule 7): a corrected statement is the settlement agent's new fact and the step compares again. `failed` and `warehouse_kickout` are a person's release only. */
+const AUTO_RELEASE_HOLDS = ["gate_closed", "money_mismatch", "unavailable"];
 interface Pending { step: string; status: OrchStatus; waiting_on: string | null; hold_reason: string | null; attempts: number; patch: Record<string, unknown>; events: { type: string; payload: Record<string, unknown> }[]; journal: JournalEntry[]; commands: number; escalations: { kind: string; ownerRole: string; severity: string; payload: Record<string, unknown> }[]; actions: string[]; entered: Set<string> }
 
 /** A row is due when the record carries a fact newer than `last_event_sequence`, or when its wait is one that time or a poll resolves (an open row, a vendor, a statutory window, a person a FAKE fills); a borrower's wait and a hold are not due (rule 1: "a pass with no new fact and no due wait writes nothing"). */
@@ -278,7 +279,7 @@ export async function processRow(rt: Runtime, row: OrchRow, nowIso: string, runI
       } catch (e) {
         // an owner's refusal (the bus's CommandRefused, or the owner's own gate/refusal class carrying a code — 22.2 CreditGateClosed, 25.1 ComplianceGateBlocked, 25.2 CdRefused, 26.3 FundingRefused …) holds the row on that gate; anything else is a failure the step retries
         const code = refusalCode(e);
-        if (code) { p.journal.push({ step: p.step, kind: "command_refused", command: { process: c.process, name: c.name, op: typeof c.input["op"] === "string" ? c.input["op"] : null }, actor: c.actor, refusal_code: code, detail: journalDetail({ ...(c.detail ?? {}), reason: (e as Error).message.slice(0, 500) }) }); throw new StepHalt({ hold: { reason: "gate_closed", gate: code, detail: { command: `${c.process} ${c.name}`, reason: (e as Error).message.slice(0, 500) } } }); }
+        if (code) { const validations = (e as { validations?: { code: string; result: string; severity: string; message?: string; resolved?: boolean }[] }).validations; p.journal.push({ step: p.step, kind: "command_refused", command: { process: c.process, name: c.name, op: typeof c.input["op"] === "string" ? c.input["op"] : null }, actor: c.actor, refusal_code: code, detail: journalDetail({ ...(c.detail ?? {}), reason: (e as Error).message.slice(0, 500), ...(Array.isArray(validations) ? { failures: validations.filter((v) => v.result === "fail" && !v.resolved).map((v) => `${v.code}: ${v.message ?? ""}`.slice(0, 300)) } : {}) }) }); throw new StepHalt({ hold: { reason: "gate_closed", gate: code, detail: { command: `${c.process} ${c.name}`, reason: (e as Error).message.slice(0, 500) } } }); }
         throw e;
       }
     };
@@ -417,7 +418,7 @@ function offPath(rec: OrchRecord, step: string): OffPath | null {
   const idx = stepIndex(step);
   if (idx < stepIndex("clear_to_close")) { const c = rec.last("application.withdrawn") ?? rec.last("adverse_decision.handed_off"); if (c) return { kind: "cancelled", reason: c.type, ev: c }; }
   if (idx < stepIndex("funded") && !rec.has("loan.funded")) {
-    const u = rec.last("rescission.exercised") ?? rec.last("funding.cancelled") ?? rec.events.filter((e) => e.type === "closing.execution_review.failed" && (e.payload as Row)["unrecoverable"] === true).at(-1) ?? rec.last("orchestration.unwind.requested");
+    const u = rec.last("rescission.exercised") ?? rec.last("funding.cancelled") ?? rec.last("closing.execution_review.failed", executionReviewUnrecoverable) ?? rec.last("orchestration.unwind.requested");
     if (u) return { kind: "unwinding", reason: u.type, ev: u };
   }
   return null;
@@ -436,7 +437,8 @@ async function foldUnwind(sctx: StepContext, p: Pending, runActions: (def: StepD
   // the unwinding step's actions run under the same savepoint, attempt count and hold rules as any step (rule 10) — a held unwind is the ops_analyst's; released, the row is `unwinding` again
   const outcome = await runActions(unwindDef);
   if (outcome.hold) { hold(p, outcome.hold, rec); return; }
-  if (outcome.wait) setWait(p, outcome.wait); else if (!outcome.retry) { p.status = "unwinding"; p.waiting_on = "26.3"; }
+  // a gap or a retry inside the unwind keeps the row `unwinding` (the board reads the truth; the next pass folds again without re-opening the off-path) — the gap's owner rides on waiting_on
+  p.status = "unwinding"; p.waiting_on = outcome.wait?.waiting_on ?? "26.3";
 }
 
 function report(row: OrchRow, p: Pending, wrote: boolean): PassRowReport { return { application_id: row.application_id, orchestration_id: row.id, from: row.step, to: p.step, status: p.status, waiting_on: p.waiting_on, commands: p.commands, journal: p.journal.length, wrote }; }

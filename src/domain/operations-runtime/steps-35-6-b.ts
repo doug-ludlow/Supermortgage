@@ -22,7 +22,7 @@ import { GATES } from "../compliance-disclosures/ops-25-1.ts";
 import { FACILITY_FIXTURE } from "../warehouse/ops-27-1.ts";
 import type { UnwindTrigger } from "../closing/ops-26-3.ts";
 import { SERVICER_CONTACT } from "../../runtime/servicing.ts";
-import { productFacts, lockStatus, trustPoaGate, decisionStatus, templateVersionGate, eclosingFacts, dollars } from "./facts-35-6-b.ts";
+import { productFacts, lockStatus, trustPoaGate, decisionStatus, templateVersionGate, eclosingFacts, dollars, custodialAccountIdFor, executionReviewUnrecoverable } from "./facts-35-6-b.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
 
 type Row = Record<string, unknown>;
@@ -182,6 +182,12 @@ const cdDelivered: StepDef = {
     const ftc = fundsToClose(rec); const ctc = rec.last("clear_to_close.issued", (p) => p["passed"] === true);
     if (!ctc) throw new RecordGap("clear_to_close.issued", "23.3's CTC is not on the record");
     if (!ftc.reconciled) throw new RecordGap("funds_to_close.reconciled", "22.4 has not reconciled the cash to close to the CD");
+    // 30.3: the approved initial analysis freezes against the delivered CD version (`escrow.initial_analysis.frozen{cd_version_id}`) — the row the statement, the closing package and 30.2's hand-off read — as `escrow`
+    const approvedAnalysis = rec.entities("escrow_analyses", (d) => d["source"] === "origination" && (d["status"] === "approved" || d["status"] === "disclosed_on_cd")).at(-1);
+    if (approvedAnalysis && !rec.entities("escrow_analyses", (d) => d["source"] === "origination" && d["status"] === "frozen").length) {
+      await ctx.run({ process: "30.3", name: "buildEscrowLines", actor: ESCROW, input: { op: "freeze", application_id: rec.app.id, analysis_id: approvedAnalysis.id, cd_version_id: cd.id }, detail: { sources: { analysis: src("entity", `escrow_analyses:${approvedAnalysis.id}:${approvedAnalysis.version}`, "30.3"), cd: src("entity", `disclosures:${cd.id}:${cd.version}`, "25.2") } } });
+      rec = await ctx.refresh();
+    }
     // 26.1: the note terms, the doc-gen gates, the snapshot, the render, the eNote, the QC and the release — as title-closing
     const parties = await partyFacts(rec, closing); const escrow = escrowFacts(rec); const cal = await calendar(ctx, closing);
     const setId = `SET-${rec.app.id.slice(0, 8)}-1`;
@@ -489,10 +495,13 @@ const wireReleased: StepDef = {
     if (!rec.has("warehouse.advance.funded")) {
       if (!(await ctx.rt.db.query(`SELECT 1 FROM escalations WHERE application_id = $1 AND owner_role = 'funding_approver' AND completed_at IS NULL AND payload->'package'->>'advance_id' = $2`, [rec.app.id, advanceId])).length) {
         const fid = S(rec.entities("warehouse_facilities").at(-1)?.id) ?? FACILITY_FIXTURE.facility_id;
-        // SM_WH_HAIRCUT_RESERVE_GATE reads the partner's haircut reserve as the ledger carries it: the balance of `partner_haircut_reserve` (27.1's draws debit it; the partner's deposits credit it); no line at all is a gap the warehouse owner fills
-        const reserve = (await ctx.rt.db.query<{ cents: string | null }>(`SELECT (-SUM(amount_cents))::text AS cents FROM ledger_lines WHERE account = 'partner_haircut_reserve'`))[0]?.cents ?? null;
-        if (reserve === null) throw new RecordGap("ledger:partner_haircut_reserve", "no partner_haircut_reserve line on the ledger (27.1 LSA haircut reserve; the partner's deposit is posted by 2.1 ledger.post)");
-        await ctx.run({ process: "27.1", name: "prepareWire", actor: WAREHOUSE, input: { advance_id: advanceId, facility_id: fid, partner_haircut_reserve_cents: reserve, partner_contribution_cents: String(rec.payload("warehouse.advance.approved")?.["partner_contribution_cents"] ?? "0") }, detail: { sources: { haircut_reserve: src("table", "ledger_lines:partner_haircut_reserve (balance)", "27.1"), approved: src("event", `warehouse.advance.approved:${rec.last("warehouse.advance.approved")?.id ?? ""}`, "27.1"), accepted: src("event", `funding.wire.accepted:${accepted.id}`, "26.3") } } });
+        // SM_WH_HAIRCUT_RESERVE_GATE reads the partner's haircut reserve as the ledger carries it: the balance of `partner_haircut_reserve` on THIS facility's reserve bank account (27.1's `haircut_reserve_account_ref`; 27.1's draws debit it, the partner's deposits credit it); no line at all is a gap the warehouse owner fills
+        const facilityRow = rec.entities("warehouse_facilities", (d) => d["facility_id"] === fid).at(-1);
+        const reserveRef = String(facilityRow?.data["haircut_reserve_account_ref"] ?? (fid === FACILITY_FIXTURE.facility_id ? FACILITY_FIXTURE.haircut_reserve_account_ref : ""));
+        if (!reserveRef) throw new RecordGap("warehouse_facilities.haircut_reserve_account_ref", `facility ${fid} names no haircut reserve account (27.1)`);
+        const reserve = (await ctx.rt.db.query<{ cents: string | null }>(`SELECT (-SUM(amount_cents))::text AS cents FROM ledger_lines WHERE account = 'partner_haircut_reserve' AND scope = 'custodial' AND custodial_account_id = $1`, [custodialAccountIdFor(reserveRef)]))[0]?.cents ?? null;
+        if (reserve === null) throw new RecordGap("ledger:partner_haircut_reserve", `no partner_haircut_reserve line on the facility's reserve account ${reserveRef} (27.1 LSA haircut reserve; the partner's deposit is posted by 2.1 ledger.post)`);
+        await ctx.run({ process: "27.1", name: "prepareWire", actor: WAREHOUSE, input: { advance_id: advanceId, facility_id: fid, partner_haircut_reserve_cents: reserve, partner_contribution_cents: String(rec.payload("warehouse.advance.approved")?.["partner_contribution_cents"] ?? "0") }, detail: { sources: { haircut_reserve: src("table", `ledger_lines:partner_haircut_reserve@${reserveRef} (balance)`, "27.1"), approved: src("event", `warehouse.advance.approved:${rec.last("warehouse.advance.approved")?.id ?? ""}`, "27.1"), accepted: src("event", `funding.wire.accepted:${accepted.id}`, "26.3") } } });
       }
       return { wait: { status: "waiting_human", waiting_on: "funding_approver", clocked: true } };
     }
@@ -518,10 +527,7 @@ export const closingSteps: readonly StepDef[] = [
   { name: "clear_to_close", exit: exitOn("closing.scheduled"), entryWait: () => ({ status: "waiting_borrower", waiting_on: "borrower", clocked: false }), clocked: () => false, idleWait: () => ({ status: "waiting_borrower", waiting_on: "borrower", clocked: false }) },
   closingScheduled, cdDelivered, documentsReleased, consummated, executionReviewed,
 ];
-export const fundingSteps: readonly StepDef[] = [
-  fundingAuthorized, wireReleased,
-  { name: "funded", exit: exitOn("loan.boarded"), clocked: () => true },
-];
+export const fundingSteps: readonly StepDef[] = [fundingAuthorized, wireReleased];
 export const deliverySteps: readonly StepDef[] = [
   { name: "boarded", exit: exitOn("delivery.package.frozen"), clocked: () => true },
   { name: "package_frozen", exit: exitOn("delivery.submitted"), clocked: () => true },
@@ -541,7 +547,7 @@ export const unwindStep: StepDef = {
     const exercised = rec.last("rescission.exercised"); const cancelled = rec.last("funding.cancelled");
     if (!rec.entities("funding_unwinds", (d) => d["funding_id"] === fundingId).length && !cancelled) {
       // the trigger is the record's: 25.3's exercise (pre/post disbursement by `loan.funded`), the officer's `orchestration.unwind{reason}` when the reason is one of 26.3's triggers, 26.2's unrecoverable execution review; anything else is not an unwind this process may open
-      const requested = rec.last("orchestration.unwind.requested"); const reviewFailed = rec.last("closing.execution_review.failed", (p) => p["funding_blocked"] === true || p["unrecoverable"] === true);
+      const requested = rec.last("orchestration.unwind.requested"); const reviewFailed = rec.last("closing.execution_review.failed", executionReviewUnrecoverable);
       const requestedReason = S(requested?.payload["reason"]);
       const trigger: UnwindTrigger = exercised ? (rec.has("loan.funded") ? "rescission_exercised_post_disbursement" : "rescission_exercised_pre_disbursement") : requestedReason && UNWIND_TRIGGERS.includes(requestedReason as UnwindTrigger) ? (requestedReason as UnwindTrigger) : reviewFailed ? "conditions_failed" : ctx.halt({ hold: { reason: "gate_closed", gate: "UNWIND_TRIGGER", detail: { reason: requestedReason, message: `orchestration.unwind reason ${requestedReason ?? "(none)"} is not one of 26.3's unwind triggers (${UNWIND_TRIGGERS.join(", ")})` } } });
       await ctx.run({ process: "26.3", name: "openUnwind", actor: FUNDER, input: { funding_id: fundingId, op: "open", unwind_id: `UNW-${rec.app.id.slice(0, 8)}`, trigger, ...(exercised ? { exercise: { exercise_id: String(exercised.payload["exercise_id"]), refund_due_at: exercised.payload["refund_due_at"] ?? null } } : {}), enote: closing?.note_form === "enote", security_instrument_recorded: rec.has("recording.confirmed"), prior_lien_paid: rec.has("payoff.disbursed") || rec.has("payoff.wire.sent"), at: now }, detail: { sources: { trigger: exercised ? src("event", `rescission.exercised:${exercised.id}`, "25.3") : requested && UNWIND_TRIGGERS.includes(requestedReason as UnwindTrigger) ? src("event", `orchestration.unwind.requested:${requested.id}`, "35.6") : src("event", `closing.execution_review.failed:${reviewFailed?.id ?? ""}`, "26.2") } } });
@@ -554,4 +560,4 @@ export const unwindStep: StepDef = {
     return { wait: { status: "unwinding", waiting_on: "26.3" } };
   },
 };
-export { plus };
+export { plus, exitOn, DISCLOSURE, ESCROW, S, civil };

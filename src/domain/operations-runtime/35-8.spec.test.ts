@@ -488,7 +488,10 @@ test("35.8-T8: Given the console's five item kinds on the fixture book plus one 
   // the five console kinds match GET /api/queue for the same role row for row
   const console = await api("GET", "/ops/api/queue?role=ops_analyst", undefined, bearer(await fresh("ana"), "ops_analyst")); assert.equal(console.status, 200);
   // the console still lists this process's own clocks and their escalations (SM_WORK_*); those are the queue's bookkeeping, never its sources (items.ts isOwnBookkeeping)
-  const consoleRows = (console.body as unknown as Json[]).filter((c) => !(c["kind"] === "breached_timer" && /^SM_WORK_/.test(String(c["title"]))) && !(c["kind"] === "escalation" && /^SM_WORK_/.test(String((c["detail"] as Json | undefined)?.["timer_code"] ?? ""))));
+  const consoleAll = console.body as unknown as Json[];
+  // …and a breached clock whose breach escalation is on the console rides with the escalation's item (items.ts collectSources: one source, one item)
+  const escalatedClocks = new Set(consoleAll.filter((c) => c["kind"] === "escalation").map((c) => String((c["detail"] as Json | undefined)?.["timer_id"] ?? "")));
+  const consoleRows = consoleAll.filter((c) => !(c["kind"] === "breached_timer" && (/^SM_WORK_/.test(String(c["title"])) || escalatedClocks.has(String(c["id"])))) && !(c["kind"] === "escalation" && /^SM_WORK_/.test(String((c["detail"] as Json | undefined)?.["timer_code"] ?? ""))));
   const five = rows.filter((r) => ["escalation", "portal_task", "held_notice", "dead_letter", "breached_timer"].includes(r["source_kind"] as string));
   const missing = five.filter((r) => !consoleRows.some((c) => c["id"] === r["source_id"]));
   const missingTimers = missing.length ? await db.query<Json>(`SELECT id::text AS id, code, status::text AS status, breached_at::text AS breached_at FROM timers WHERE id::text = ANY($1::text[])`, [missing.map((r) => r["source_id"])]) : [];
@@ -554,7 +557,7 @@ test("35.8-T10: Given an item opened 2026-09-14 (Monday) and left open, when the
     wclock.set("2026-09-21T21:01:00.000Z"); await rt.sweep(wclock.now(), { verify: false });
     assert.equal((await wtimers("SM_WORK_ITEM_AGE_5BD", aged))[0]!.status, "breached");
     const [e5] = await wdb.query<{ kind: string; owner_role: string; severity: string }>(`SELECT kind, owner_role, severity FROM escalations WHERE payload->>'timer_id' = $1`, [five!.id]); assert.ok(e5, "the sev 1 escalation"); assert.deepEqual([e5!.kind, e5!.owner_role, e5!.severity], ["sev1", "officer", "1"]);
-    const un = await wdb.query<{ payload: Json }>(`SELECT payload FROM loan_events WHERE type = 'role.queue.unstaffed' AND payload->>'item_id' = $1`, [aged]); assert.equal(un.length, 1); assert.equal(un[0]!.payload["role"], "ops_analyst");
+    const un = await wdb.query<{ payload: Json }>(`SELECT payload FROM loan_events WHERE type = 'role.queue.unstaffed' AND payload->'item_ids' ? $1`, [aged]); assert.equal(un.length, 1); assert.equal(un[0]!.payload["role"], "ops_analyst"); assert.equal(un[0]!.payload["count"], 1);
     for (const code of ["SM_WORK_ITEM_AGE_2BD", "SM_WORK_ITEM_AGE_5BD"]) assert.equal((await wtimers(code, closedSoon))[0]!.status, "satisfied");
   } finally { await new Promise<void>((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()); }); await wdb.end(); await t.close(); }
 });

@@ -34,7 +34,15 @@ export function applySatisfiedOverrides_35_8(reg: TimerRegistry): void {
 }
 
 /** The codes whose breach action is executed by this process's handler rather than by the generic escalation (src/runtime/app.ts breach pass). */
-export const BREACH_HANDLED_BY_35_8: ReadonlySet<string> = new Set(["SM_WORK_ITEM_CLAIM_4H"]);
+export const BREACH_HANDLED_BY_35_8: ReadonlySet<string> = new Set(["SM_WORK_ITEM_CLAIM_4H", "SM_WORK_ITEM_AGE_2BD", "SM_WORK_ITEM_AGE_5BD"]);
+/**
+ * Timer table rows 2–3: the age clocks' breach actions are executed by the work.breaches pass, one escalation per role per
+ * sweep naming every item whose clock breached (sev 2 → ops_analyst for the two-day clock; sev 1 → officer and one
+ * `role.queue.unstaffed{role}` for the five-day clock: "the queue is unstaffed for that role") — never an escalation per
+ * item: a worked book breaches thousands of item clocks a day and the officer's answer is one per role, not one per row.
+ * `timer_id` on the escalation is the batch's first clock (its sla_timer_id); `timer_ids` and `item_ids` list the batch.
+ */
+export const AGE_BATCH_LIMIT = 200;
 
 /**
  * The breach handler of `SM_WORK_ITEM_CLAIM_4H` (timer table row 1; rule 9): for a breached claim clock whose item is still

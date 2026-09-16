@@ -6,8 +6,8 @@
  *                  to `claimed`, `work.action.decided{decision: expired}` (edge cases).
  *   work.breaches  after the breach pass — the breach actions this process executes: (3) SM_WORK_ITEM_CLAIM_4H's handler
  *                  (timers-35-8.ts claimBreachHandler: the claim lapses, `claim_lapses + 1`, `work.item.claim_expired`, sev 3
- *                  ops_analyst on the third lapse of one item); (4) SM_WORK_ITEM_AGE_5BD breached → 35.7's
- *                  `role.queue.unstaffed{role}` once per breach; then (5) the queue pass (rule 8: an item per new source —
+ *                  ops_analyst on the third lapse of one item); (4) the age clocks (rows 2–3): per role, one escalation
+ *                  naming the items whose clock breached, and for AGE_5BD one 35.7 `role.queue.unstaffed{role}`; then (5) the queue pass (rule 8: an item per new source —
  *                  including the escalations and breached clocks of every OTHER process this very sweep produced, so the queue
  *                  matches the console's after every sweep — and `source_closed` for a source that went away). This process's own
  *                  clocks (SM_WORK_*) and the escalations they open are the queue's bookkeeping about an item that already
@@ -21,7 +21,7 @@ import { EscalationService } from "../../../app/escalations.ts";
 import type { Runtime } from "../../../runtime/app.ts";
 import { wallClock } from "../../../kernel/calendar/zoned.ts";
 import { addBusinessDays, servicer } from "../../../kernel/calendar/business.ts";
-import { claimBreachHandler, BREACH_HANDLED_BY_35_8 } from "../timers-35-8.ts";
+import { claimBreachHandler, BREACH_HANDLED_BY_35_8, AGE_BATCH_LIMIT } from "../timers-35-8.ts";
 import { queuePass, getItem, type ItemDeps, type QueuePassReport } from "./items.ts";
 import { reconRanOn } from "./recon.ts";
 import type { WorkPorts } from "./ports.ts";
@@ -29,7 +29,7 @@ import * as ev from "./events.ts";
 import { CLAIM_LAPSES_BEFORE_ESCALATION, PROCESS_35_8, type Row } from "./types.ts";
 
 export interface WorkSweepReport { readonly at: string; readonly as_of_date: string; readonly recon_run_id: string | null; readonly recon_error: string | null; readonly proposals_expired: number; readonly line: string }
-export interface WorkBreachReport { readonly at: string; readonly claims_lapsed: number; readonly claim_escalations: number; readonly unstaffed_emitted: readonly string[]; readonly queue: QueuePassReport; readonly line: string }
+export interface WorkBreachReport { readonly at: string; readonly claims_lapsed: number; readonly claim_escalations: number; readonly age_escalations: number; readonly unstaffed_emitted: readonly string[]; readonly queue: QueuePassReport; readonly line: string }
 export const WORK_SWEEP_ACTOR: Actor = { kind: "system", id: "work-35-8" };
 const ET = "America/New_York";
 
@@ -77,19 +77,30 @@ export async function workBreachPass(rt: Runtime, nowIso: string = rt.clock.now(
       }
     }, { clock: rt.clock, commit: async (q) => { for (const fn of writes) await fn(q); for (const e of es?.list() ?? []) await rt.escalationRepo.save(e, q); } });
   }
-  // (4) SM_WORK_ITEM_AGE_5BD breached → role.queue.unstaffed{role} (35.7's literal) once per breached clock
-  // handled once per breached clock: the item's own `unstaffed` event names the timer (0202; indexed by item and kind — never a scan of loan_events payloads)
-  const aged = await rt.db.query<{ timer_id: string; item_id: string }>(`SELECT t.id::text AS timer_id, t.subject_id AS item_id FROM timers t WHERE t.code = 'SM_WORK_ITEM_AGE_5BD' AND t.status = 'breached' AND t.subject_kind = 'work_item' AND NOT EXISTS (SELECT 1 FROM work_item_events e WHERE e.work_item_id::text = t.subject_id AND e.kind = 'unstaffed' AND e.reason = 'timer:' || t.id::text)`);
+  // (4) the age clocks' breach actions (timer table rows 2–3; timers-35-8.ts): per role, one escalation naming the items whose clock breached since the last pass — sev 2 ops_analyst for AGE_2BD, sev 1 officer and one `role.queue.unstaffed{role}` (35.7's literal) for AGE_5BD; each item's own `aged` / `unstaffed` event names its clock, so a clock is handled once (0202/0203, indexed by item and kind)
   const unstaffed: string[] = [];
-  if (aged.length) {
-    const marks: ((q: Queryable) => Promise<void>)[] = [];
+  let ageEscalations = 0;
+  for (const [code, mark] of [["SM_WORK_ITEM_AGE_2BD", "aged"], ["SM_WORK_ITEM_AGE_5BD", "unstaffed"]] as const) {
+    const rows = await rt.db.query<{ timer_id: string; item_id: string; required_role: string; loan_id: string | null; application_id: string | null }>(`SELECT t.id::text AS timer_id, i.id::text AS item_id, i.required_role, i.loan_id::text AS loan_id, i.application_id::text AS application_id FROM timers t JOIN work_items i ON i.id::text = t.subject_id WHERE t.code = $1 AND t.status = 'breached' AND t.subject_kind = 'work_item' AND NOT EXISTS (SELECT 1 FROM work_item_events e WHERE e.work_item_id = i.id AND e.kind = $2 AND e.reason = 'timer:' || t.id::text) ORDER BY t.breached_at, t.id`, [code, mark]);
+    if (!rows.length) continue;
+    const byRole = new Map<string, typeof rows>(); for (const r of rows) byRole.set(r.required_role, [...(byRole.get(r.required_role) ?? []), r]);
+    const marks: ((q: Queryable) => Promise<void>)[] = []; let es: EscalationService | undefined;
     await rt.uow.run({}, async (ctx) => {
-      for (const a of aged) { const it = await getItem(ctx.q!, a.item_id); if (!it) continue; unstaffed.push(it.required_role); ctx.events.append(ev.roleQueueUnstaffed(WORK_SWEEP_ACTOR, { role: it.required_role, item_id: it.id, timer_id: a.timer_id, environment: rt.environment })); marks.push(async (q) => { await q.query(`INSERT INTO work_item_events (work_item_id, kind, reason, at) VALUES ($1, 'unstaffed', $2, $3::timestamptz)`, [it.id, `timer:${a.timer_id}`, nowIso]); }); }
-    }, { clock: rt.clock, commit: async (q) => { for (const fn of marks) await fn(q); } });
+      es = new EscalationService(ctx.events, ctx.clock);
+      for (const [role, batch] of byRole) {
+        const itemIds = batch.slice(0, AGE_BATCH_LIMIT).map((r) => r.item_id); const timerIds = batch.slice(0, AGE_BATCH_LIMIT).map((r) => r.timer_id);
+        const one = batch.length === 1 ? batch[0]! : null;   // one item: the escalation keys to its loan or application as the console does
+        es.open({ kind: code === "SM_WORK_ITEM_AGE_2BD" ? "sev2" : "sev1", ownerRole: code === "SM_WORK_ITEM_AGE_2BD" ? "ops_analyst" : "officer", severity: code === "SM_WORK_ITEM_AGE_2BD" ? "2" : "1", slaTimerId: timerIds[0]!, ...(one?.loan_id ? { loanId: one.loan_id } : {}), ...(one?.application_id ? { applicationId: one.application_id } : {}),
+          payload: { timer_code: code, timer_id: timerIds[0]!, timer_ids: timerIds, item_ids: itemIds, count: batch.length, role, breach: code === "SM_WORK_ITEM_AGE_2BD" ? "35.8 timer table row 2: an item needing a person has sat two business days" : "35.8 timer table row 3: five business days unworked — the queue is unstaffed for that role" } }, WORK_SWEEP_ACTOR);
+        ageEscalations += 1;
+        if (code === "SM_WORK_ITEM_AGE_5BD") { unstaffed.push(role); ctx.events.append(ev.roleQueueUnstaffed(WORK_SWEEP_ACTOR, { role, count: batch.length, item_ids: itemIds, timer_ids: timerIds, timer_id: timerIds[0] ?? null, environment: rt.environment })); }
+        for (const r of batch) marks.push(async (q) => { await q.query(`INSERT INTO work_item_events (work_item_id, kind, reason, at) VALUES ($1, $2, $3, $4::timestamptz)`, [r.item_id, mark, `timer:${r.timer_id}`, nowIso]); });
+      }
+    }, { clock: rt.clock, commit: async (q) => { for (const fn of marks) await fn(q); for (const e of es?.list() ?? []) await rt.escalationRepo.save(e, q); } });
   }
   // (5) the queue pass — after the breach pass, so the escalations and breached clocks this sweep produced are items now (rule 8: "the queue refreshes every sweep")
   const queue = await queuePass(rt, nowIso, { ...(o.ports ? { ports: o.ports } : {}) });
-  return { at: nowIso, claims_lapsed: lapsed, claim_escalations: escalated, unstaffed_emitted: unstaffed, queue, line: `work breaches: claims_lapsed=${lapsed} claim_escalations=${escalated} unstaffed=[${unstaffed.join(",")}] opened=${queue.opened} closed=${queue.closed}` };
+  return { at: nowIso, claims_lapsed: lapsed, claim_escalations: escalated, unstaffed_emitted: unstaffed, age_escalations: ageEscalations, queue, line: `work breaches: claims_lapsed=${lapsed} claim_escalations=${escalated} age_escalations=${ageEscalations} unstaffed=[${unstaffed.join(",")}] opened=${queue.opened} closed=${queue.closed}` };
 }
 export { BREACH_HANDLED_BY_35_8 };
 export type { ItemDeps };

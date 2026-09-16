@@ -41,7 +41,8 @@ export class PgTimerRepository {
   }
   /** Armed/breached timers whose subject is neither a loan nor an application (a transfer batch, a partner, a vendor …): what a global command can satisfy (32.12 backend delta — 17.2's proofs of mailing satisfy REGX_1024_33B3_COMBINED_15 on the batch) — less the kinds hydrated by subject (SUBJECT_HYDRATED_KINDS: one row per work item would otherwise be read by every global command). */
   async openGlobal(): Promise<TimerInstance[]> {
-    return (await this.db.query<TimerRow>(`SELECT * FROM timers WHERE loan_id IS NULL AND application_id IS NULL AND status IN ('armed', 'breached') AND NOT (subject_kind = ANY($1::text[])) ORDER BY armed_at`, [[...SUBJECT_HYDRATED_KINDS]])).map(rowToInstance);
+    // the predicate is spelled as 0203's partial index (timers_open_global_idx) spells it, so the read is the index, never a scan of every item clock
+    return (await this.db.query<TimerRow>(`SELECT * FROM timers WHERE loan_id IS NULL AND application_id IS NULL AND status IN ('armed', 'breached') AND subject_kind NOT IN (${SUBJECT_HYDRATED_KINDS.map((k) => `'${k}'`).join(", ")}) ORDER BY armed_at`)).map(rowToInstance);
   }
   /** Armed/breached timers of the named aggregate subjects — what a command that names them (ToolDef.timerSubjects, UowOptions.subjects) hydrates in place of the global read. */
   async forSubjects(subjects: readonly { kind: string; id: string }[]): Promise<TimerInstance[]> {

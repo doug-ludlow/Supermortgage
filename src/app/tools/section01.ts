@@ -19,6 +19,13 @@ import { recordTosPendingNotices, recordTosConfirmations, mreReceived, reconcile
 import { violationNoticeReceived, SUPERMORTGAGE_ORG_ID } from "../../domain/transfers/inbound.ts";
 import { recertDeadline, custodyClocks, custodyOk, mersTransaction, mersIntegrity, mersClocks, violationResponseDue } from "../../domain/transfers/custody-mers.ts";
 import { expectedWires, wireVariance, classifyVariance, absorbNeedsOfficer, isBorrowerAffecting, fnmaPositionLagDeadline, type VarianceFacts } from "../../domain/transfers/reconciliation.ts";
+import type { Queryable } from "../../infra/db/client.ts";
+import type { CommandContext } from "../commands.ts";
+import type { ToolRuntime } from "../tools.ts";
+import { batchUuid, insertBoardingRows, partyId, custodialAccount, DEFAULT_LICENSED_STATES, type TransferBatchInput } from "../../runtime/transfers.ts";
+import type { BoardingDepsHandle } from "../../runtime/origination.ts";
+import { decodeTransferBatch, type TransferBatchFiles } from "../../domain/boarding/tape-codec.ts";
+import type { BatchContext, FnmaPosition, MersRecord } from "../../domain/boarding/types.ts";
 import { TransferBatchService, proposeBatch, parseConsentNotice as parseConsent, loanListFreezeOn, planNoticeRun as planRun, releaseGate, forecastRecertRisk as forecastRisk, ingestCustodianFeedItem, planMersTransactions as planMers, recordMersAcknowledgement, verifyPostTransferSnapshots, mreMismatchFinding, raiseVariance as raiseVarianceEvent, resolveVariance, verifyCarryover, requestFromTransferor as sendTransferorRequest, honorTransferorOfferCase, type BatchProposal, type CustodianFeedItem, type MersTxnRow, type TransferorLossmitFile, type InheritedOffer } from "../../domain/transfers/inbound.ts";
 
 /** 1.1 guardrail: money fields (UPB, escrow, suspense, advances, fees, P&I, rate) are never agent-corrected — the canonical StagedLoan/loan_terms names (domain/boarding/types.ts) plus their generic aliases. */
@@ -40,6 +47,72 @@ const proposalOf = (i: ToolInput): BatchProposal => ({ batch_id: str(i, "batch_i
   ...(i.first_batch_for_partner !== undefined ? { first_batch_for_partner: flag(i, "first_batch_for_partner") } : {}), ...(typeof i.notice_mode === "string" ? { notice_mode: i.notice_mode as "separate" | "combined" } : {}),
   ...(typeof i.loan_count === "number" ? { loan_count: i.loan_count } : {}), ...(typeof i.emortgage_count === "number" ? { emortgage_count: i.emortgage_count } : {}), ...(typeof i.code_type === "string" ? { code_type: i.code_type as "D" | "I" | "C" | "none" } : {}) });
 
+/** `1.1 boardLoan{batch, files}` — the bus form of src/runtime/transfers.ts boardTransferBatch (35.1 rule 10, T10). */
+async function boardBatchOnBus(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
+  const q = ctx.q; if (!q) throw new RangeError("1.1 boardLoan{batch, files} runs inside a database command (the rows are written in the command's transaction)");
+  const deferBefore = rt.services["deferBefore"] as ((fn: (qq: Queryable) => Promise<void>) => void) | undefined; if (!deferBefore) throw new RangeError("1.1 boardLoan{batch, files} needs the runtime's before-hook (services.deferBefore)");
+  const handle = rt.services["boarding-deps"] as BoardingDepsHandle | undefined; if (!handle) throw new RangeError("1.1 boardLoan{batch, files} needs the boarding adapter (services[\"boarding-deps\"])");
+  const batch = i.batch as Record<string, unknown>; const files = i.files as Record<string, unknown>;
+  for (const k of ["batch_id", "transfer_date", "transferor_name", "transferor_servicer_number", "partner_servicer_number", "transferor_mers_org_id", "partner_mers_org_id"]) if (typeof batch[k] !== "string" || !batch[k]) throw new RangeError(`batch.${k} is required`);
+  if (typeof files["boarding_tape.final.csv"] !== "string") throw new RangeError("files.boarding_tape.final.csv is required");
+  const input: TransferBatchInput = { ...(batch as unknown as TransferBatchInput), transfer_date: D(String(batch["transfer_date"])), ...(batch["respa_effective_date"] ? { respa_effective_date: D(String(batch["respa_effective_date"])) } : {}), ...(batch["sale_date"] ? { sale_date: D(String(batch["sale_date"])) } : {}) };
+  const empty = (): string => "";
+  const f: TransferBatchFiles = { "boarding_tape.final.csv": String(files["boarding_tape.final.csv"]), "payment_history.csv": String(files["payment_history.csv"] ?? empty()), "escrow_history.csv": String(files["escrow_history.csv"] ?? empty()), "escrow_analysis.csv": String(files["escrow_analysis.csv"] ?? empty()),
+    "lossmit_file.csv": String(files["lossmit_file.csv"] ?? empty()), "fc_bk_file.csv": String(files["fc_bk_file.csv"] ?? empty()), "consents_file.csv": String(files["consents_file.csv"] ?? empty()), "images_manifest.csv": String(files["images_manifest.csv"] ?? empty()), "trial_balance.csv": String(files["trial_balance.csv"] ?? empty()),
+    "fnma_position.csv": String(files["fnma_position.csv"] ?? empty()), "mers_lookup.csv": String(files["mers_lookup.csv"] ?? empty()), "fair_lending.csv": String(files["fair_lending.csv"] ?? empty()) };
+  const uuid = batchUuid(input.batch_id);
+  const existing = rt.store.get("transfer_batches", input.batch_id);
+  if (existing) return { ...existing.data, status: "already_on_platform" };
+  const data = decodeTransferBatch(f);
+  const today = D(ctx.now.slice(0, 10));
+  const transferDateReached = today >= input.transfer_date;
+  // external positions: the files, the platform's licenses, and what is already on the platform (HF-017) — read on the command's connection
+  const fnma = new Map<string, FnmaPosition>(data.fnma.map((p) => [p.fnma_loan_number, p]));
+  const tb = new Map(data.trialBalance.map((t) => [t.transferor_loan_number, t.upb_cents]));
+  const mers = new Map<string, MersRecord>(data.mers.map((m) => [m.min, m]));
+  const licensed = new Set(input.licensed_states ?? DEFAULT_LICENSED_STATES);
+  const numbers = data.loans.map((l) => l.fnma_loan_number).filter((n): n is string => !!n);
+  const mins = data.loans.map((l) => l.min).filter((m): m is string => !!m);
+  const onPlatform = { fnma_loan_number: new Set<string>(), min: new Set<string>() };
+  if (numbers.length) for (const r of await q.query<{ n: string }>(`SELECT fnma_loan_number AS n FROM loans WHERE fnma_loan_number = ANY($1::text[])`, [numbers])) onPlatform.fnma_loan_number.add(r.n);
+  if (mins.length) for (const r of await q.query<{ m: string }>(`SELECT min AS m FROM loans WHERE min = ANY($1::text[])`, [mins])) onPlatform.min.add(r.m);
+  handle.setExternal({ fnma: (n) => fnma.get(n), trialBalanceUpb: (n) => tb.get(n), mers: (m) => mers.get(m), licensed: (st) => licensed.has(st), onPlatform: (k, v) => onPlatform[k].has(v) });
+  // the parties and the clearing account the opening entries balance against (found or inserted, in this transaction, before the rows that reference them)
+  const transferorParty = await partyId(q, "transferor", input.transferor_name, input.transferor_servicer_number, input.transferor_mers_org_id);
+  const partnerParty = await partyId(q, "servicer", "Supermortgage", input.partner_servicer_number, input.partner_mers_org_id);
+  const clearing = await custodialAccount(q, partnerParty, "clearing");
+  handle.setClearingAccount(clearing);
+  const svc = boardingSvc(rt);
+  const bctx: BatchContext = { batch_id: uuid, transfer_date: input.transfer_date, transferor_party_id: transferorParty, transferor_servicer_number: input.transferor_servicer_number, partner_servicer_number: input.partner_servicer_number,
+    rule_set_version: input.rule_set_version ?? "boarding.dq.v1", acceptable_mers_org_ids: new Set([input.partner_mers_org_id, input.transferor_mers_org_id]) };
+  svc.openBatch(bctx);
+  const tapeKinds: Record<string, string> = { "boarding_tape.final.csv": "final", "payment_history.csv": "payment_history", "escrow_history.csv": "escrow_history", "escrow_analysis.csv": "escrow_analysis", "lossmit_file.csv": "lossmit", "fc_bk_file.csv": "fc_bk", "consents_file.csv": "consents", "images_manifest.csv": "images_manifest", "trial_balance.csv": "trial_balance" };
+  for (const [name, kind] of Object.entries(tapeKinds)) { const text = f[name as keyof TransferBatchFiles]; if (text) svc.ingestTape(uuid, kind as "final", text, Math.max(0, text.split("\n").filter((l) => l.length).length - 1)); }
+  const staged = svc.stage(uuid, data.loans);
+  const card = svc.validate(uuid);
+  const boarded = transferDateReached ? svc.board(uuid, { finalTapeReconciled: input.final_tape_reconciled ?? true }).boarded : [];
+  const boardedIds = new Set(boarded.map((bl) => bl.id));
+  // one escalation per hard exception so the console's queues show the loans that cannot board
+  for (const bl of staged) {
+    const hard = bl.validations.filter((v) => v.severity === "hard" && v.result === "fail");
+    if (!hard.length) continue;
+    const money = hard.some((v) => v.money_field);
+    rt.escalations.open({ kind: money ? "officer" : "human_portal_task", ownerRole: money ? "officer" : "ops_analyst", loanId: bl.id, batchId: uuid, severity: "2",
+      payload: { transferor_loan_number: bl.staged.transferor_loan_number, fnma_loan_number: bl.staged.fnma_loan_number, rules: hard.map((v) => ({ code: v.code, message: v.message ?? null, expected: v.expected ?? null, actual: v.actual ?? null, money_field: v.money_field })), next: money ? "transferor correction or officer waiver (money field)" : "transferor correction, agent correction with evidence, or officer waiver" } }, ctx.actor);
+  }
+  // the boarding set, written before the events in the command's own transaction (rule 2 / rule 10)
+  const boardedAt = ctx.now;
+  deferBefore((qq) => insertBoardingRows(qq, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt, ruleSetVersion: bctx.rule_set_version }));
+  const hardByLoan: Record<string, string[]> = {};
+  for (const bl of staged) { const codes = bl.validations.filter((v) => v.severity === "hard" && v.result === "fail").map((v) => v.code); if (codes.length) hardByLoan[bl.staged.transferor_loan_number] = codes; }
+  const upbTotal = staged.reduce((sum, bl) => sum + (bl.staged.upb_cents ?? 0n), 0n);
+  const summary = { batch_id: input.batch_id, batch_uuid: uuid, status: boarded.length ? "boarded" : "staged", transfer_date: input.transfer_date,
+    loans: { staged: staged.length, validated: card.loans["validated"], exception: card.loans["exception"], boarded: boarded.length }, hard: card.hard, warning: card.warning, hard_by_loan: hardByLoan,
+    events: ctx.events.all().length, timers: ctx.timers.all().length, escalations: rt.escalations.list().length, loan_ids: Object.fromEntries(staged.map((bl) => [bl.staged.transferor_loan_number, bl.id])), upb_total_cents: upbTotal };
+  rt.store.put("transfer_batches", input.batch_id, summary, ctx.actor, ctx.now);
+  return summary;
+}
+
 const p11: ToolDef[] = defineTools("1.1", "boarding", [
   { name: "readTape", kind: "act", handler: compute((i, _c, rt) => boardingSvc(rt).ingestTape(str(i, "batch_id"), (i.kind as "preliminary" | "final") ?? "preliminary", str(i, "bytes"), num(i, "row_count"))) },
   { name: "mapField", kind: "write", handler: write("tape_field_map", "boarding.field_mapped") },
@@ -57,7 +130,9 @@ const p11: ToolDef[] = defineTools("1.1", "boarding", [
   // The agent's own exception goes through the service so a hard one is the `loan.boarding_exception.raised{severity=hard}` SM_BOARD_EXCEPTION_SLA_2 arms on (anchored on `raised_at`).
   { name: "raiseException", kind: "write", handler: compute((i, ctx, rt) => boardingSvc(rt).raiseException(str(i, "batch_loan_id") || str(i, "id"), { rule_code: str(i, "rule_code"), severity: ((i.severity as string | undefined) ?? "hard") as "hard" | "warning" | "info", money_field: flag(i, "money_field"),
         ...(typeof i.message === "string" ? { message: i.message } : typeof i.reason === "string" ? { message: i.reason } : {}), ...(i.expected !== undefined ? { expected: i.expected } : {}), ...(i.actual !== undefined ? { actual: i.actual } : {}), ...(Array.isArray(i.evidence_document_ids) ? { evidence_document_ids: i.evidence_document_ids as string[] } : {}) }, ctx.actor)) },
-  { name: "boardLoan", kind: "act", handler: compute((i, _c, rt) => { const svc = boardingSvc(rt); const r = svc.board(str(i, "batch_id"), { finalTapeReconciled: flag(i, "final_tape_reconciled") });
+  // 35.1 rule 10: with `batch` and `files` the whole 1.1 intake runs on the bus for the batch — the parties and the clearing account found-or-inserted, the tapes ingested, the loans staged and validated, the batch boarded — and the boarding set is written in the command's `before` hook by the same writer the seed route uses (src/runtime/transfers.ts insertBoardingRows), then the events, the 1.6 opening sets, the timers, one escalation per hard exception, the global `transfer_batches` row and one decision
+  { name: "boardLoan", kind: "act", handler: compute(async (i, ctx, rt) => { if (i.files && typeof i.files === "object" && i.batch && typeof i.batch === "object") return boardBatchOnBus(i, ctx, rt);
+      const svc = boardingSvc(rt); const r = svc.board(str(i, "batch_id"), { finalTapeReconciled: flag(i, "final_tape_reconciled") });
       // 1.1 state machine "cutover (transfer date)": once the batch has boarded, the cutover event arms the post-transfer clocks of 1.3–1.6.
       const cutover = flag(i, "complete_cutover") ? svc.completeCutover(str(i, "batch_id"), { ...(typeof i.code_type === "string" ? { code_type: i.code_type as "D" | "I" | "C" | "none" } : {}), ...(typeof i.notice_mode === "string" ? { notice_mode: i.notice_mode as "separate" | "combined" } : {}), ...(i.respa_effective_date ? { respa_effective_date: D(str(i, "respa_effective_date")) } : {}) }) : null;
       return { ...r, cutover_event_id: cutover?.id ?? null }; }),

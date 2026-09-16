@@ -229,7 +229,7 @@ export class TimerEngine {
 /** Sections 20–31 (origination) define timers that share servicing event names (`loan.boarded`, `loan.paid_in_full`, …):
  *  they arm only for an event that carries origination context — an application id, or a payload that names one — so a
  *  transferred-in loan on the servicing side never picks up an origination clock (one product, two contexts). */
-export function isOriginationDef(def: { readonly process: string }): boolean { return Number(def.process.split(".")[0]) >= 20; }
+export function isOriginationDef(def: { readonly process: string }): boolean { const n = Number(def.process.split(".")[0]); return n >= 20 && n !== 35; }   // §35 (operations runtime) is the platform's: its receipts (sweep.run_completed, projection.run_completed, integration.message.*) carry no application
 export function isOriginationContext(e: DomainEvent): boolean {
   if (e.applicationId) return true;
   if (e.aggregate?.kind === "application") return true;

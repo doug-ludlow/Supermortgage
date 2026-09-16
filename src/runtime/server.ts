@@ -54,6 +54,7 @@ import { CommandRefused, AiPathUnavailable } from "../app/commands.ts";
 import { CardRefused } from "../app/tools/section32-1.ts";
 import { RescissionRefused } from "../domain/compliance-disclosures/ops-25-3.ts";
 import { PortUnavailable } from "../app/tools.ts";
+import { StaleRecord } from "../domain/operations-runtime/seam/guard.ts";
 import { RoleDenied } from "../app/roles.ts";
 import { StaffError } from "./staff/roles.ts";
 import { PrincipalRefused } from "../domain/operations-runtime/roles-35-7/refusals.ts";
@@ -400,6 +401,8 @@ export function createApiServer(opts: ServerOptions): Server {
       done(404, { error: "not found" });
     } catch (e) {
       if (e instanceof CommandRefused) { done(409, { error: "refused", command: e.command, code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }
+      // 35.1 rule 8: the expected-version guard (declared or mechanical) refuses the whole command — nothing was written; the API log carries the refusal (open question 5)
+      if (e instanceof StaleRecord) { done(409, e.toJSON(), { refused: e.code }); return; }
       // 35.7: the typed refusals of the /v1 door (PRINCIPAL_*, NO_SELF_ASSERTED_ACTOR, SHARED_TOKEN_REFUSED_IN_PRODUCTION, …), of dual control (APPROVER_DISTINCT{request_id}) and of the roles' tools — status, code and extras
       if (e instanceof StaffError) { done(e.status, { error: e.code.toLowerCase(), code: e.code, reason: e.message, ...e.extra }, { refused: e.code }); return; }
       // a section's own typed refusal thrown by its tool (not a bus guardrail): the same 409 shape, its code and reason kept (32.5 T10, 32.7 T6)

@@ -36,6 +36,7 @@ import { randomUUID } from "node:crypto";
 import type { Db, Queryable } from "../infra/db/client.ts";
 import { PgFakeBlobStore, type ObjectStorePort } from "../infra/blobs/pg-fake-blob-store.ts";
 import { noticeServiceFor } from "./documents/notice-sink.ts";
+import { documentsSweepPass, type DocumentsSweepReport } from "./documents/sweep.ts";
 import { listDuDocuments, type DuDocumentSummary } from "../domain/underwriting/du/persist.ts";
 import { listDuPreflight, type PreflightResultRow } from "../domain/underwriting/du/preflight.ts";
 import { PgUnitOfWork, type UowResult, type CommittedListener } from "../infra/db/unit-of-work.ts";
@@ -125,6 +126,8 @@ export interface SweepReport {
   readonly partner_book_daily_reports: SweepDailyReportsResult | null;
   /** 34.4 rule 4: kill-switch requests no admin confirmed within 10 minutes expired on this pass, and the compliance escalations opened for switches tripped more than 24 hours (src/runtime/controls/ai.ts). */
   readonly controls: { readonly kill_requests_expired: number; readonly long_trips_escalated: number };
+  /** 35.2 rule 4: the staged-blob drain every sweep (and, with the e-sign and mail groups, the envelope expiry and the print vendor probe — src/runtime/documents/sweep.ts documentsSweepPass); null when the hook failed. */
+  readonly documents: DocumentsSweepReport | null;
 }
 export class ToolNotFound extends Error { constructor(process: string, name: string) { super(`no tool ${name} in process ${process}`); this.name = "ToolNotFound"; } }
 
@@ -210,7 +213,7 @@ export class Runtime {
       const ctx = uow.loanId ? { ...uow, events: withDefaultLoan(uow.events, uow.loanId) } : uow;
       escalations = new EscalationService(ctx.events, ctx.clock); escalations.seed(openEscalations);
       // 35.2: the Notice Registry with the artifact layer — every render becomes a stored PDF (PgArtifactSink); its rows are written after the command's other deferred writes (the card rows a borrower-surface tool defers)
-      const { notices, sink } = noticeServiceFor(this, ctx, req.actor, (fn) => { deferredLate.push(fn); });
+      const { notices, sink } = noticeServiceFor(this, ctx, req.actor, (fn) => { deferredLate.push(fn); }, (fn) => { deferred.push(fn); });
       // `agents` (the live registry, so a tool that delegates to another agent's tool keeps the allowlists and AI-off state), `db` (read-only lookups a borrower-surface tool needs) and `deferWrite` (a row committed with the command) ride on the services map
       // `runtime` (this) lets a pass-shaped tool (33.2 review.run / offer.deliver / offer.expire) run the runtime pass it wraps — its own units of work, sequential to this command's
       const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: this.db, runtime: this, blobs: this.blobs, ...(sink ? { artifacts: sink } : {}), deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
@@ -312,8 +315,11 @@ export class Runtime {
     // 33.1 T12 / rule 8: the breach action of SM_PARTNER_BOOK_TAPE_EXPECTED_7 — once per breached clock `partner_book.tape.late` beside the ops_analyst escalation the breach pass opened; a second sweep adds nothing
     let partnerBookTapeLate = 0;
     try { partnerBookTapeLate = (await notifyPartnerBookTapeLate(this, nowIso)).late; } catch (e) { this.logger?.error("partner book tape-late notice failed", { at: nowIso, error: e }); }
+    // 35.2 rule 4: the staged-blob drain every sweep, one command per subject so each document.stored satisfies its own SM_DOC_WORM_DRAIN_1D — errors logged, never thrown
+    let documents: DocumentsSweepReport | null = null;
+    try { documents = await documentsSweepPass(this, nowIso); } catch (e) { this.logger?.error("documents sweep failed", { at: nowIso, error: e }); }
     const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
-    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls };
+    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls, documents };
   }
 
   async ready(): Promise<boolean> { try { await this.db.query("SELECT 1"); return true; } catch { return false; } }

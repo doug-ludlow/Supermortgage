@@ -49,7 +49,8 @@ const ENCODE = new Map<number, number>(); const DECODE = new Array<number>(256).
 for (let c = 0x20; c < 0x7f; c++) { ENCODE.set(c, c); DECODE[c] = c; }
 for (let c = 0xa0; c <= 0xff; c++) { ENCODE.set(c, c); DECODE[c] = c; }
 for (const [code, cp] of WIN_ANSI_HIGH) { ENCODE.set(cp, code); DECODE[code] = cp; }
-// the sequences a template's text may carry that have no WinAnsi glyph of their own: a non-breaking space renders as a space; a tab as a space
+// the control characters a template's text may carry (a tab, a line break) have no glyph: each renders as a space — the text layer says so (a
+// non-breaking space, U+00A0, is a WinAnsi glyph of its own and is kept: `wrap` never splits on it)
 ENCODE.set(0x09, 0x20); ENCODE.set(0x0a, 0x20); ENCODE.set(0x0d, 0x20);
 
 /** Encode one string to WinAnsi bytes; a character outside the encoding is refused naming the block. */
@@ -83,7 +84,7 @@ export function textWidth(encoded: Uint8Array, font: FontRef, pt: number): numbe
 
 // ───────── layout: blocks → text ops ─────────
 function wrap(text: string, font: FontRef, pt: number, maxWidth: number, blockId: string): string[] {
-  const words = text.split(/\s+/).filter((w) => w.length);
+  const words = text.split(/[ \t\r\n\f\v]+/).filter((w) => w.length);   // never on U+00A0: a non-breaking space stays inside its word
   const lines: string[] = []; let line = "";
   const width = (s: string) => textWidth(encodeWinAnsi(s, blockId), font, pt);
   for (const word of words) {
@@ -101,25 +102,35 @@ function wrap(text: string, font: FontRef, pt: number, maxWidth: number, blockId
   return lines.length ? lines : [""];
 }
 
+/**
+ * The layout flows: a block starts at its declared page and y, or below the last line already drawn on that page when the
+ * declared position would overprint it (a long amount-due box pushes the blocks under it down; the Form 1098 instructions
+ * follow one another); a block that runs past the bottom margin continues on the next page, below whatever that page
+ * already holds. The placement reports the page the block's first line was drawn on (rule 3: the placement is what was drawn).
+ */
 export function layoutBlocks(blocks: readonly BlockInput[]): { pages: PdfPage[]; placements: Placement[] } {
   const pages: TextOp[][] = [];
   const pageOps = (p: number): TextOp[] => { while (pages.length < p) pages.push([]); return pages[p - 1]!; };
   const placements: Placement[] = [];
+  const lastBaseline = new Map<number, number>();   // per page: the baseline of the lowest line drawn so far
+  const below = (page: number, y: number, pt: number): number => { const last = lastBaseline.get(page); return last === undefined ? y : Math.min(y, last - LEADING * pt); };
   for (const b of blocks) {
     const font: FontRef = b.bold ? "F2" : "F1";
     const pt = b.pt > 0 ? b.pt : 10;
     const lines = wrap(b.text, font, pt, BODY_W, b.id);
     let page = Math.max(1, Math.floor(b.page) || 1);
-    let y = PAGE_H - MARGIN - Math.min(Math.max(b.yFraction, 0), 1) * BODY_H - pt;
-    let first = true;
+    let y = below(page, PAGE_H - MARGIN - Math.min(Math.max(b.yFraction, 0), 1) * BODY_H - pt, pt);
+    let first = true; let drawnOn = page;
     for (const line of lines) {
-      if (y < MARGIN) { page += 1; y = PAGE_H - MARGIN - pt; }
+      while (y < MARGIN) { page += 1; y = below(page, PAGE_H - MARGIN - pt, pt); }
+      if (first) drawnOn = page;
       pageOps(page).push({ font, pt, x: MARGIN, y: round2(y), text: line, ...(first ? { block: b.id } : {}) });
+      lastBaseline.set(page, y);
       first = false;
       y -= LEADING * pt;
     }
     if (!lines.length) pageOps(page);
-    placements.push({ block_id: b.id, page: Math.max(1, Math.floor(b.page) || 1), y_fraction: b.yFraction, pt, bold: b.bold, lines: lines.length });
+    placements.push({ block_id: b.id, page: drawnOn, y_fraction: b.yFraction, pt, bold: b.bold, lines: lines.length });
   }
   if (!pages.length) pages.push([]);
   return { pages: pages.map((ops) => ({ ops })), placements };

@@ -13,7 +13,11 @@
  *                          reason, matter_ref?} — a human compliance/counsel actor releases (HOLD_RELEASE_HUMAN_ONLY).
  *   documents.dispose act  {document_id, disposal_run_id} — inside a 19.1 disposal run with the officer attestation only
  *                          (DISPOSE_NEEDS_OFFICER_ATTESTATION); a held or unverified row is refused.
- *   (the render, open, verify, e-sign and mail tools follow in their commit groups)
+ *   documents.verify  act  {op: "run", as_of_date?} — the daily integrity unit (global; SM_DOC_INTEGRITY_DAILY); {op: "one", document_id}
+ *                          — one row re-read and hashed (VERIFY_STORED_BYTES_ONLY: never re-rendered).
+ *   documents.open    read {document_id, purpose, party_id? | staff_user_id?, session_id?, ip?, user_agent?} → the bytes (base64), hash,
+ *                          served_from and text layer; a `document_access_log` row; `document.opened`.
+ *   (the e-sign and mail tools follow in their commit groups)
  *
  * Guardrails: BYTES_ARE_WRITE_ONCE, URI_SWAP_ONCE (the trigger's), VERIFY_STORED_BYTES_ONLY, HOLD_RELEASE_HUMAN_ONLY,
  * DISPOSE_NEEDS_OFFICER_ATTESTATION, NO_ENVELOPE_WITHOUT_CONSENT, NO_AGENT_SIGNS, NO_MONEY_FIELD, NO_PII_IN_DECISION.
@@ -25,9 +29,14 @@ import { AGENT, PROCESS, RULE_SET_VERSION, need, txOf, inTx, blobsOf, isUuid, as
 import { storeDocument, drainStagedBlobs } from "../../domain/operations-runtime/documents/store.ts";
 import { placeHold, releaseHold } from "../../domain/operations-runtime/documents/hold.ts";
 import { disposeDocument } from "../../domain/operations-runtime/documents/dispose.ts";
+import { integrityRun, verifyOne } from "../../domain/operations-runtime/documents/integrity.ts";
+import { openDocument, type OpenPurpose } from "../../domain/operations-runtime/documents/open.ts";
+import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { docsDecision } from "../../domain/operations-runtime/documents/decision.ts";
 import { render1098CopyB, boxesFromRow, SM_FILER, IRS_1098_TEMPLATE_CODE, IRS_1098_TEMPLATE_VERSION } from "../../domain/operations-runtime/documents/irs-1098.ts";
 import { GlyphUnsupported } from "../../infra/files/pdf.ts";
+import { RenderRefused } from "../../notices/service.ts";
+import { retentionFor } from "../../runtime/documents/notice-sink.ts";
 import { payloadHash } from "../../notices/render.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
 import type { Recipient, ChannelContext } from "../../notices/channel.ts";
@@ -43,6 +52,10 @@ export const NO_MONEY_FIELD = never("NO_MONEY_FIELD", "35.2 rule 12: 'No money m
   (i) => namesMoney(i["changes"]) || namesMoney(i["data"]) || namesMoney(i["overrides"]) || Object.keys(i).some(moneyKey), "a 35.2 tool never writes or corrects a money field; a figure belongs to the owning section's command");
 export const BYTES_ARE_WRITE_ONCE = never("BYTES_ARE_WRITE_ONCE", "35.2 guardrails: BYTES_ARE_WRITE_ONCE — a stored byte is never altered; a correction is a new document with supersedes_document_id",
   (i) => (has(i, "document_id") && (has(i, "bytes_base64") || has(i, "bytes"))) || i["replace"] === true || i["overwrite"] === true, "the bytes of an existing document are write-once; store a new document that supersedes it");
+/** Rule 1: the integrity unit compares stored bytes to the recorded hash and never re-renders — an input asking for a re-render or carrying a payload/template is refused. */
+export const VERIFY_STORED_BYTES_ONLY = never("VERIFY_STORED_BYTES_ONLY", "35.2 rule 1 / guardrails: VERIFY_STORED_BYTES_ONLY — the daily integrity unit re-reads and hashes stored bytes; it never re-renders, so a change of the writer, of node:zlib or of a template can never open a sev 1 on an old document",
+  (i) => i["re_render"] === true || has(i, "payload") || has(i, "template_code"), "documents.verify compares stored bytes to documents.sha256; it takes no payload, template or re_render");
+const OPEN_PURPOSES: ReadonlySet<string> = new Set(["borrower_view", "staff_view", "esign_view", "verify_portal", "evidence_pack", "integrity"]);
 export const HOLD_RELEASE_HUMAN_ONLY = guard("HOLD_RELEASE_HUMAN_ONLY", "35.2 rule 5 / 19.1 AI agent design: holds.release is not allowed — human only (compliance or counsel)",
   (i, ctx) => (str(i, "op") === "release" && !(ctx.actor.kind === "human" && hasRole(ctx.actor, ["compliance", "counsel"])) ? `a hold is released by a human compliance or counsel actor; ${ctx.actor.kind}:${ctx.actor.id} may not` : undefined));
 
@@ -85,10 +98,12 @@ async function renderHandler(i: ToolInput, ctx: CommandContext, rt: ToolRuntime)
   let n;
   try {
     n = notices.render({ templateCode, ...(s.loan_id ? { loanId: s.loan_id } : {}), ...(s.application_id ? { applicationId: s.application_id } : {}), recipients: (i["recipients"] as readonly Recipient[] | undefined) ?? [], payload, asOf, ...(documentId ? { renderedDocumentId: documentId } : {}), ...(typeof i["case_id"] === "string" ? { caseId: i["case_id"] } : {}) });
-  } catch (e) { if (e instanceof GlyphUnsupported) throw new CommandRefused("documents.render", "GLYPH_UNSUPPORTED", "35.2 rule 2: a payload character outside WinAnsi is refused naming the character and the block; nothing is silently substituted", e.message); throw e; }
-  if (i["send"] === true) n = await notices.send(n.id, (i["channel_context"] as ChannelContext | undefined) ?? {});
+  } catch (e) { if (e instanceof GlyphUnsupported || e instanceof RenderRefused) throw new CommandRefused("documents.render", "GLYPH_UNSUPPORTED", "35.2 rule 2: a payload character outside WinAnsi is refused naming the character and the block; nothing is silently substituted", e.message); throw e; }
+  // a held notice (7.1: the checklist failed) is not sent: the answer says `held` with the reason, the rendered row and its bytes stay for the reviewer
+  if (i["send"] === true && n.status !== "held") n = await notices.send(n.id, (i["channel_context"] as ChannelContext | undefined) ?? {});
+  const retention = retentionFor(runtime.noticeRegistry.template(templateCode).retention);
   const pdf = n.renderedDocumentId ? sink?.results.get(n.renderedDocumentId) : undefined;
-  return { document_id: n.renderedDocumentId ?? null, notice_id: n.id, status: n.status, held_reason: n.heldReason ?? null, template_code: templateCode, template_version: version.version, payload_hash: hash, existing: !!existing,
+  return { document_id: n.renderedDocumentId ?? null, notice_id: n.id, status: n.status, held_reason: n.heldReason ?? null, template_code: templateCode, template_version: version.version, payload_hash: hash, existing: !!existing, retention_class: retention,
     ...(pdf ? { sha256: pdf.sha256, byte_size: pdf.byte_size, page_count: pdf.page_count, placements: pdf.placements } : {}), checklist_passed: n.checklist.passed, deliveries: n.deliveries.map((d) => ({ attempt_no: d.attemptNo, channel: d.channel, vendor: d.vendor, vendor_piece_id: d.vendorPieceId })) };
 }
 /** The Form 1098 Copy B from the tax_forms_1098 row (35.2 rule 11): stored as a documents row under tax_4y; the figures are 7.1's. */
@@ -103,13 +118,13 @@ async function render1098(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): P
   const copy = render1098CopyB({ tax_year: Number(row.tax_year), boxes, filer: SM_FILER, payer: { name: payer.name, address: payer.address, tin_last4: payer.tin_last4 }, direct_access_phone: str(i, "direct_access_phone"), account_last4: str(i, "account_last4") || "0000", now: ctx.now });
   const r = await inTx(ctx, rt, async (tq) => storeDocument({ ...depsOf(ctx, rt), q: tq }, { kind: "irs_1098_copy_b", bytes: copy.bytes, mime_type: "application/pdf", retention_class: "tax_4y", loan_id: row.loan_id, template_code: IRS_1098_TEMPLATE_CODE, template_version: IRS_1098_TEMPLATE_VERSION, payload_hash: copy.payload_hash, page_count: copy.page_count, text_layer: true, locale: "en", metadata: { title: `Form 1098 ${row.tax_year} Copy B`, tax_form_1098_id: row.id, tax_year: row.tax_year } }));
   ctx.events.append({ type: "document.rendered", loanId: row.loan_id, aggregate: { kind: "document", id: r.document_id }, actor: ctx.actor, payload: { document_id: r.document_id, template_code: IRS_1098_TEMPLATE_CODE, template_version: IRS_1098_TEMPLATE_VERSION, payload_hash: copy.payload_hash, sha256: r.sha256, byte_size: r.byte_size, page_count: copy.page_count, tax_form_1098_id: row.id } });
-  return { document_id: r.document_id, sha256: r.sha256, byte_size: r.byte_size, page_count: copy.page_count, payload_hash: copy.payload_hash, storage_status: r.storage_status, placements: copy.placements, template_code: IRS_1098_TEMPLATE_CODE, template_version: IRS_1098_TEMPLATE_VERSION, tax_year: row.tax_year, box1_cents: boxes.box1_cents.toString(), box2_cents: boxes.box2_cents.toString(), existing: r.existing };
+  return { document_id: r.document_id, sha256: r.sha256, byte_size: r.byte_size, page_count: copy.page_count, payload_hash: copy.payload_hash, storage_status: r.storage_status, retention_class: "tax_4y", placements: copy.placements, template_code: IRS_1098_TEMPLATE_CODE, template_version: IRS_1098_TEMPLATE_VERSION, tax_year: row.tax_year, box1_cents: boxes.box1_cents.toString(), box2_cents: boxes.box2_cents.toString(), existing: r.existing };
 }
 
 export const TOOLS_35_2: readonly ToolDef[] = defineTools(PROCESS, AGENT, [
   { name: "documents.render", kind: "act", ruleSetVersion: RULE_SET_VERSION, guardrails: [],
     handler: compute(async (i, ctx, rt) => refusing("documents.render", () => renderHandler(i, ctx, rt))),
-    decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "document", id: String(o["document_id"] ?? "") }, action: "render", sha256: typeof o["sha256"] === "string" ? o["sha256"] : null, retention_class: str(i, "document_kind") === "irs_1098_copy_b" ? "tax_4y" : "life_of_loan_plus_4y", ...scopeOf(ctx), counts: { page_count: Number(o["page_count"] ?? 0) }, rationale: `rendered ${str(i, "document_kind") || str(i, "template_code")} ${String(o["template_version"] ?? "")} (payload ${String(o["payload_hash"] ?? "").slice(0, 12)}…)${o["notice_id"] ? ` for notice ${String(o["notice_id"])} (${String(o["status"])})` : ""}${o["existing"] === true ? "; idempotent: the row already existed at this clock" : ""}` }); } },
+    decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "document", id: String(o["document_id"] ?? "") }, action: "render", sha256: typeof o["sha256"] === "string" ? o["sha256"] : null, retention_class: typeof o["retention_class"] === "string" ? o["retention_class"] : str(i, "document_kind") === "irs_1098_copy_b" ? "tax_4y" : null, ...scopeOf(ctx), counts: { page_count: Number(o["page_count"] ?? 0) }, rationale: `rendered ${str(i, "document_kind") || str(i, "template_code")} ${String(o["template_version"] ?? "")} (payload ${String(o["payload_hash"] ?? "").slice(0, 12)}…)${o["notice_id"] ? ` for notice ${String(o["notice_id"])} (${String(o["status"])})` : ""}${o["existing"] === true ? "; idempotent: the row already existed at this clock" : ""}` }); } },
   { name: "documents.store", kind: "act", ruleSetVersion: RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD, BYTES_ARE_WRITE_ONCE],
     handler: compute(async (i, ctx, rt) => refusing("documents.store", async () => {
       const op = str(i, "op") || "store";
@@ -142,6 +157,36 @@ export const TOOLS_35_2: readonly ToolDef[] = defineTools(PROCESS, AGENT, [
       throw new RangeError(`documents.hold op ${op} is not place or release`);
     })),
     decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "document", id: str(i, "document_id") }, action: `hold.${str(i, "op") || "place"}`, hold: o["legal_hold"] === true, ...scopeOf(ctx), counts: { open_matters: Array.isArray(o["open_matters"]) ? (o["open_matters"] as unknown[]).length : 0 }, rationale: `${str(i, "op") || "place"}: document_holds row ${String(o["hold_id"] ?? "")} by ${ctx.actor.kind}:${ctx.actor.id}${ctx.actor.role ? ` (${ctx.actor.role})` : ""}` }); } },
+  { name: "documents.verify", kind: "act", ruleSetVersion: RULE_SET_VERSION, humanRoles: ["ops_analyst", "officer", "ciso"], guardrails: [NO_MONEY_FIELD, VERIFY_STORED_BYTES_ONLY],
+    handler: compute(async (i, ctx, rt) => refusing("documents.verify", async () => {
+      need(i, "op");
+      const op = str(i, "op");
+      if (op === "run") {
+        if (ctx.loanId || ctx.applicationId) throw new RangeError("documents.verify{op: run} is the platform's daily unit: a global command (no loan, no application)");
+        const deferWrite = rt.services["deferWrite"] as ((fn: (q: import("../../infra/db/client.ts").Queryable) => Promise<void>) => void) | undefined;
+        if (!deferWrite) throw new PortUnavailable("service:deferWrite");
+        const asOf = str(i, "as_of_date") || String(wallClock(Date.parse(ctx.now), "America/New_York").date);   // the environment day at 02:30 America/New_York
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new RangeError("as_of_date is YYYY-MM-DD");
+        return inTx(ctx, rt, async (q) => { const r = await integrityRun({ ...depsOf(ctx, rt), q, deferWrite }, { as_of_date: asOf }); return { op: "run", ...r, findings: r.findings.map((f) => ({ document_id: f.document_id, finding: f.finding, expected_sha256: f.expected_sha256, actual_sha256: f.actual_sha256, escalation_id: f.escalation_id })) }; });
+      }
+      if (op === "one") { need(i, "document_id"); return inTx(ctx, rt, async (q) => ({ op: "one", ...(await verifyOne({ ...depsOf(ctx, rt), q }, { document_id: str(i, "document_id") })) })); }
+      throw new RangeError(`documents.verify op ${op} is not run or one`);
+    })),
+    decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>;
+      return o["op"] === "run" ? docsDecision({ subject: { kind: "integrity_run", id: String(o["run_id"] ?? "") }, action: "verify", counts: { documents_checked: Number(o["documents_checked"] ?? 0), verified: Number(o["verified"] ?? 0), mismatches: Number(o["mismatches"] ?? 0), missing: Number(o["missing"] ?? 0), unreadable: Number(o["unreadable"] ?? 0), skipped_staged: Number(o["skipped_staged"] ?? 0), skipped_foreign: Number(o["skipped_foreign"] ?? 0) }, rationale: `integrity run ${String(o["as_of_date"])} (${String(o["scope"])}): every stored object re-read and hashed against documents.sha256; nothing re-rendered; report document ${String(o["report_document_id"] ?? "")}` })
+        : docsDecision({ subject: { kind: "document", id: str(i, "document_id") }, action: "verify.one", ...scopeOf(ctx), sha256: typeof o["expected_sha256"] === "string" ? o["expected_sha256"] : null, rationale: `re-read and hashed: ${String(o["status"])}${o["escalation_id"] ? ` (sev 1 ${String(o["escalation_id"])} to ciso)` : ""}` }); } },
+  { name: "documents.open", kind: "read", humanRoles: ["ops_analyst", "officer", "compliance", "ciso", "counsel"], guardrails: [],
+    handler: compute(async (i, ctx, rt) => refusing("documents.open", async () => {
+      need(i, "document_id", "purpose");
+      const purpose = str(i, "purpose"); if (!OPEN_PURPOSES.has(purpose)) throw new RangeError(`documents.open purpose ${purpose} is not one the access log records`);
+      const r = await openDocument({ q: txOf(ctx, rt), blobs: blobsOf(rt) }, { document_id: str(i, "document_id"), purpose: purpose as OpenPurpose, party_id: str(i, "party_id") || null, staff_user_id: str(i, "staff_user_id") || (ctx.actor.kind === "human" ? ctx.actor.id : null), session_id: str(i, "session_id") || null, ip: str(i, "ip") || null, user_agent: str(i, "user_agent") || null });
+      if (r.kind === "unknown") throw new RangeError(`documents.open: no documents row ${str(i, "document_id")}`);
+      if (r.kind === "tombstone") return { document_id: r.row.id, tombstone: true, sha256: r.sha256, disposal_run_id: r.disposal_run_id, disposed_at: r.disposed_at };
+      if (r.kind === "unavailable") throw new DocumentsRefused("DOCUMENT_CONTENT_UNAVAILABLE", "35.2 rule 7: the viewer serves stored bytes — none are reachable for this row (the store is down and no staged copy remains)", `document ${r.row.id} has no readable bytes`);
+      if (r.kind === "mismatch") throw new DocumentsRefused("INTEGRITY_FAILED", "35.2 rule 7: a served mismatch is refused INTEGRITY_FAILED and raises the same sev 1 as the daily run (documents.verify{op: one})", `document ${r.row.id}: expected ${r.expected_sha256}, read ${r.actual_sha256}`);
+      ctx.events.append({ type: "document.opened", ...(r.row.loan_id ? { loanId: r.row.loan_id } : {}), ...(r.row.application_id ? { applicationId: r.row.application_id } : {}), aggregate: { kind: "document", id: r.row.id }, actor: ctx.actor, payload: { document_id: r.row.id, purpose, party_id: str(i, "party_id") || null, staff_user_id: str(i, "staff_user_id") || (ctx.actor.kind === "human" ? ctx.actor.id : null), sha256: r.sha256, byte_size: r.byte_size, served_from: r.served_from, access_log_id: r.access_log_id } });
+      return { document_id: r.row.id, tombstone: false, mime_type: r.mime_type, sha256: r.sha256, byte_size: r.byte_size, served_from: r.served_from, text_layer: r.text, bytes_base64: r.bytes.toString("base64"), access_log_id: r.access_log_id, storage_status: r.row.storage_status, verify_status: r.row.verify_status };
+    })) },
   { name: "documents.dispose", kind: "act", ruleSetVersion: RULE_SET_VERSION, humanRoles: ["officer", "compliance"], guardrails: [NO_MONEY_FIELD],
     handler: compute(async (i, ctx, rt) => refusing("documents.dispose", async () => { need(i, "document_id", "disposal_run_id"); return inTx(ctx, rt, async (q) => disposeDocument({ ...depsOf(ctx, rt), q }, { document_id: str(i, "document_id"), disposal_run_id: str(i, "disposal_run_id") })); })),
     decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "document", id: str(i, "document_id") }, action: "dispose", sha256: String(o["sha256"] ?? ""), ...scopeOf(ctx), rationale: `disposed under 19.1 run ${str(i, "disposal_run_id")} (officer attestation and WORM check on the log); the row is the tombstone` }); } },

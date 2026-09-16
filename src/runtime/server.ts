@@ -69,6 +69,7 @@ import { isUuid } from "../infra/db/client.ts";
 import { plainDate } from "../kernel/calendar/date.ts";
 import type { Logger } from "./log.ts";
 import { createBorrowerRouter, parseMultipart, type BorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
+import { handleVerifyRoute } from "./documents/verify-route.ts";
 import { holdsOf, importPartnerBook, listPartnerBookImports, partnerBookReport, partnerBookStatus, resolvePartnerBookLoan, seedPartnerBookDemo, type PartnerBookImportInput } from "./partner-book.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 import { OffsetClock, advanceDemoClock, demoClockStatus } from "./demo-clock.ts";
@@ -199,6 +200,8 @@ export function createApiServer(opts: ServerOptions): Server {
         res.writeHead(302, { location: "/ops", "set-cookie": `sm_token=${encodeURIComponent(t)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200` }); res.end();
         logger.info("http", { method, path: "/login", status: 302, ms: Date.now() - started }); return;
       }
+      // 35.2 / 16.1 rule 9: the payoff verification portal is public — the token printed on the statement is the only key
+      if (await handleVerifyRoute(runtime, req, res, url, method)) { logger.info("http", { method, path, status: res.statusCode, ms: Date.now() - started }); return; }
       // the borrower API authenticates its own sessions (and the vendor webhook its signature); the ops token is never accepted there
       if (await borrower.handle(req, res, url, method)) return;
       // 32.14 §6.3 / 34.1: the ops console page lives at /ops and its JSON API at /ops/api/* (and the legacy /api/*); the console authenticates its own staff sessions (src/console/server.ts) — the ops token is one way in only for the deploy workflow's header actor

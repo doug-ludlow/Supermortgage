@@ -83,13 +83,20 @@ export async function storeDocument(deps: DocsDeps, i: StoreInput): Promise<Stor
   const id = i.id ?? randomUUID();
   const vendorHeld = !i.bytes;
   const storageUri = vendorHeld ? i.vendor_storage_uri! : `${WORM_PENDING}${id}`;
-  await q.query(
+  const inserted = await q.query<{ id: string }>(
     `INSERT INTO documents (id, loan_id, application_id, kind, sha256, byte_size, storage_uri, mime_type, retention_class, metadata, created_at, page_count, supersedes_document_id, received_from,
        storage_status, stored_generation, render_engine, render_version, template_code, template_version, payload_hash, text_layer, locale, doc_class, source_channel, sender_identity, received_at, subject_borrower_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::retention_class, $10::jsonb, $11::timestamptz, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26::jsonb, $27::timestamptz, $28)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::retention_class, $10::jsonb, $11::timestamptz, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26::jsonb, $27::timestamptz, $28)
+     ON CONFLICT (id) DO NOTHING RETURNING id`,
     [id, i.loan_id ?? null, i.application_id ?? null, i.kind, sha256, byteSize, storageUri, i.mime_type, i.retention_class, toJson(i.metadata ?? {}), deps.now, i.page_count ?? null, i.supersedes_document_id ?? null, i.received_from ?? null,
       vendorHeld ? "stored" : "staged", vendorHeld ? "vendor" : null, i.template_code ? RENDER_ENGINE : null, i.template_code ? RENDER_VERSION : null, i.template_code ?? null, i.template_version ?? null, i.payload_hash ?? null, i.text_layer ?? null, i.locale ?? null,
       i.intake?.doc_class ?? null, i.intake?.source_channel ?? null, toJson(i.intake?.sender_identity ?? {}), i.intake?.received_at ?? null, i.intake?.subject_borrower_id ?? null]);
+  // a caller-named id that already has a row (a retry, a second sink under one id): the same bytes are the same document; different bytes are refused — never a silent second INSERT, never an overwrite
+  if (i.id && !inserted.length) {
+    const had = (await readDocument(q, id))!;
+    if (had.sha256 !== sha256) throw new DocumentsRefused("DOCUMENT_ID_TAKEN", "35.2 guardrails: BYTES_ARE_WRITE_ONCE — a documents row is never re-written under its id; a different rendering is a new document", `document ${id} already holds sha256 ${had.sha256}, not ${sha256}`);
+    return { document_id: id, sha256, byte_size: Number(had.byte_size), storage_status: had.storage_status, storage_uri: had.storage_uri, stored_generation: had.stored_generation, existing: true, drain: null };
+  }
   if (vendorHeld) return { document_id: id, sha256, byte_size: byteSize, storage_status: "stored", storage_uri: storageUri, stored_generation: "vendor", existing: false, drain: null };
   await q.query(`INSERT INTO document_blobs (document_id, sha256, byte_size, mime_type, content, staged_at) VALUES ($1, $2, $3, $4, $5, $6::timestamptz)`, [id, sha256, byteSize, i.mime_type, i.bytes, deps.now]);
   const key = docKey({ loan_id: i.loan_id ?? null, application_id: i.application_id ?? null });

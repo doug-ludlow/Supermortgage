@@ -28,6 +28,7 @@
 import type { Queryable } from "../infra/db/client.ts";
 import { EntityStore } from "../app/tools.ts";
 import { NoticeService } from "../notices/service.ts";
+import { noticeServiceFor } from "./documents/notice-sink.ts";
 import type { Recipient } from "../notices/channel.ts";
 import type { Actor } from "../kernel/events/index.ts";
 import { plainDate as D, addDays, addMonths, type PlainDate } from "../kernel/calendar/date.ts";
@@ -211,8 +212,9 @@ export async function sendPeriodicStatement(rt: Runtime, loanId: string, input: 
   const facts = await loanCashState(rt, loanId, statementDate); const parties = await servicingParties(rt, loanId);
   const suspect: { party_id: string; consent_id: string | null }[] = [];
   let result: StatementRunResult | null = null;
+  const late: ((q: Queryable) => Promise<void>)[] = [];   // 35.2: the sink's document and notice rows, committed with the run
   const r = await rt.uow.run({ loanId, ...(facts.loan.origination_application_id ? { applicationId: facts.loan.origination_application_id } : {}) }, async (ctx) => {
-    const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery! });
+    const notices = noticeServiceFor(rt, ctx, STATEMENT_AGENT, (fn) => { late.push(fn); }).notices ?? new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery! });
     const cycles = new StatementCycleService({ events: ctx.events, clock: ctx.clock, notices });
     const recipients = recipientsOf(parties);
     // comment 41(c)-3: the availability e-mail goes to every party whose active consent covers periodic statements; a hard bounce flips that party's consent to suspect (7.4 rule 8) before the statement's own channel decision
@@ -243,7 +245,7 @@ export async function sendPeriodicStatement(rt: Runtime, loanId: string, input: 
     }
     result = { notice_id: rendered.notice.id, availability_notice_id: availabilityId, channel, bounced_party_ids: bounced, mailed_at: mailedAt, statement_date: statementDate, events: [] };
     return result;
-  }, { clock: rt.clock, commit: async (q) => { for (const x of suspect) await q.query(`UPDATE consents SET status = 'suspect' WHERE party_id = $1 AND kind = 'esign' AND status = 'active'`, [x.party_id]); } });
+  }, { clock: rt.clock, commit: async (q) => { for (const x of suspect) await q.query(`UPDATE consents SET status = 'suspect' WHERE party_id = $1 AND kind = 'esign' AND status = 'active'`, [x.party_id]); for (const fn of late) await fn(q); } });
   return { ...(result as unknown as StatementRunResult), events: r.events.map((e) => ({ type: e.type, payload: e.payload as Record<string, unknown> })) };
 }
 
@@ -259,8 +261,9 @@ export async function furnishForm1098(rt: Runtime, loanId: string, input: { tax_
   const upbJan1 = (await rt.db.query<{ s: string }>(`SELECT coalesce(sum(l.amount_cents), 0)::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id WHERE l.scope = 'loan' AND l.loan_id = $1 AND l.account = 'principal' AND e.effective_date < $2::date`, [loanId, `${y}-01-01`]))[0]!.s;
   const prop = (await rt.db.query<Row>(`SELECT pr.address_line1, pr.city, pr.state, pr.postal_code FROM loans l JOIN properties pr ON pr.id = l.property_id WHERE l.id = $1`, [loanId]))[0];
   let result: Form1098Result | null = null;
+  const late1098: ((q: Queryable) => Promise<void>)[] = [];
   await rt.uow.run({ loanId, ...(facts.loan.origination_application_id ? { applicationId: facts.loan.origination_application_id } : {}) }, async (ctx) => {
-    const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery! });
+    const notices = noticeServiceFor(rt, ctx, STATEMENT_AGENT, (fn) => { late1098.push(fn); }).notices ?? new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery! });
     const cycles = new StatementCycleService({ events: ctx.events, clock: ctx.clock, notices });
     const gate = requestForm1098Furnish({ events: ctx.events }, { loan_id: loanId, tax_year: y, party_id: payer.party_id, channel: "electronic", consents: parties.flatMap((p) => (p.irs_estatement ? [p.irs_estatement] : [])) });
     const out = await cycles.furnish1098(loanId, { tax_year: y, interest_received_cents: c(interest), upb_jan1_cents: c(upbJan1), furnished_on: on, recipients: recipientsOf(parties, "irs_estatement"),
@@ -268,6 +271,6 @@ export async function furnishForm1098(rt: Runtime, loanId: string, input: { tax_
     if (out.channel === "paper") runProduction(rt, nowIso);
     result = { notice_id: out.notice.id, channel: out.channel, gate_open: gate.gate_open, box1_cents: s(out.box1_cents), box2_cents: s(out.box2_cents), furnished_on: on };
     return result;
-  }, { clock: rt.clock });
+  }, { clock: rt.clock, commit: async (q) => { for (const fn of late1098) await fn(q); } });
   return result as unknown as Form1098Result;
 }

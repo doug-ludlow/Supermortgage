@@ -69,6 +69,7 @@ import { DirectoryRefused } from "../runtime/directory/unmask.ts";
 import { DirectorySearchRefused } from "../runtime/directory/search.ts";
 import { bookOpsRoutes, type BookOpsRoute } from "../runtime/book-ops/routes.ts";
 import { controlsRoutes, matchControlsRoute, type ControlsRoute } from "../runtime/controls/routes.ts";
+import { documentStaffRoutes } from "../runtime/documents/staff-routes.ts";
 import { portalRoutes } from "../runtime/portal/routes.ts";
 import { FakeBlobStore, type BlobStorePort } from "../runtime/borrower/vendors/fake-blob-store.ts";
 
@@ -202,7 +203,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
   // 34.5's two reads share 34.2's table shape and dispatch (the role gate, the staff context, the outcome onto the action log)
   const DIRECTORY: readonly DirectoryRoute[] = opts.runtime ? [...directoryRoutes({ runtime: opts.runtime }), ...portalRoutes({ runtime: opts.runtime })] : [];
   const BOOK: readonly BookOpsRoute[] = opts.runtime ? bookOpsRoutes({ runtime: opts.runtime }) : [];
-  const CONTROLS: readonly ControlsRoute[] = opts.runtime ? controlsRoutes({ runtime: opts.runtime, blobs }) : [];
+  const CONTROLS: readonly ControlsRoute[] = opts.runtime ? [...controlsRoutes({ runtime: opts.runtime, blobs }), ...documentStaffRoutes({ runtime: opts.runtime })] : [];   // 35.2: the staff document view rides 34.4's dispatch
   const SECTION34_PREFIXES = ["/api/directory", "/api/partner-book/", "/api/controls", "/api/portal/"];   // the trailing slash: the legacy /api/portal-tasks/* acts are not 34.5's
   let escalatesTo: Map<string, readonly string[]> | null = null;
   /** The roles a bus tool admits on the human path (src/app/tools.ts toolCommand's default: ops_analyst + officer + the process's escalation roles). */

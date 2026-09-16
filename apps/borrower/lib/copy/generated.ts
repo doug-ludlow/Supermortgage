@@ -631,6 +631,7 @@ export const COPY = {
   "credit.freeze.lift": { key: "credit.freeze.lift", kind: "StatusCard", text: "Your credit file is frozen, so the bureau couldn't share it. Lift the freeze with the bureau, then tap Try again. Nothing else changes.", notes: "S4: a freeze is not a decline; no adverse inference.", extras: [], section: "Entry, sign-up and sign-in (32.14)" },
   "deep_link.unknown": { key: "deep_link.unknown", kind: "refusal", text: "That link doesn't work. Sign in and we'll find your place.", notes: "S5: `GET /v1/borrower/deeplink/{token}` answers 404.", extras: [], options: ["Sign in"], section: "Entry, sign-up and sign-in (32.14)" },
   "deep_link.expired": { key: "deep_link.expired", kind: "refusal", text: "That link has expired. Sign in and we'll take you there.", notes: "S5: 410.", extras: [], options: ["Sign in"], section: "Entry, sign-up and sign-in (32.14)" },
+  "document.unavailable": { key: "document.unavailable", kind: "line", text: "This document is no longer available.", notes: "35.2 edge cases: a request to open a disposed document answers 410 with the tombstone; the borrower copy replaces the viewer body.", extras: [], section: "Entry, sign-up and sign-in (32.14)" },
   "entry.step.continue": { key: "entry.step.continue", kind: "button", text: "Continue", notes: "S1: the one submit for the state select and the two estimate fields (chips resolve on tap; a select or typed field needs an explicit submit for keyboard users, WCAG 3.2.2).", extras: [], section: "Entry, sign-up and sign-in (32.14)" },
   "entry.voice.code_texted": { key: "entry.voice.code_texted", kind: "spoken line", text: "I've texted a six-digit code to this number. Enter it on your keypad to continue.", notes: "32.14 §4 voice entry: consents are never taken by voice; the identity code goes to the calling number.", extras: [], section: "Entry, sign-up and sign-in (32.14)" },
   "entry.sms.options_hint": { key: "entry.sms.options_hint", kind: "line", text: "Reply with a number.", notes: "32.14 §4 SMS entry: the options of a ChoiceCard are spelled \"1) … 2) … 3) …\" from the copy line's options.", extras: [], section: "Entry, sign-up and sign-in (32.14)" },
@@ -734,4 +735,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 719;
+export const COPY_KEY_COUNT = 720;

@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8070/8756 (92.2%): tids 2252/2458, tables 767/848, timers 2043/2097, notices 308/308, tools 1437/1578, figures 1263/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8086/8756 (92.3%): tids 2256/2458, tables 770/848, timers 2044/2097, notices 308/308, tools 1439/1578, figures 1269/1467; processes at 100%: 192/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2252
+   "built": 2256
   },
   "tables": {
    "spec": 848,
-   "built": 767
+   "built": 770
   },
   "timers": {
    "spec": 2097,
-   "built": 2043
+   "built": 2044
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1437
+   "built": 1439
   },
   "figures": {
    "spec": 1467,
-   "built": 1263
+   "built": 1269
   },
   "units": {
    "spec": 8756,
-   "built": 8070
+   "built": 8086
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 46,
+   "built": 62,
    "processes": 12,
    "done": 0
   }
@@ -8440,50 +8440,42 @@
    },
    "figures": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,345.02",
      "$1,612.34",
      "$2,045.12",
      "$248,043.23",
-     "$248,310.55",
      "$267.32",
      "$432.78"
     ]
    },
    "units": {
     "spec": 42,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.4
   },
   {
    "process": "35.2",
    "title": "Documents and artifacts: the object store, the PDF writer, stored-byte integrity, legal holds, e-sign envelopes, the borrower viewer and print/mail manifests",
    "tids": {
     "spec": 18,
-    "built": 8,
-    "todo": 10,
+    "built": 12,
+    "todo": 6,
     "missing": [
      7,
-     9,
-     10,
-     11,
      13,
      14,
      15,
-     16,
      17,
      18
     ]
    },
    "tables": {
     "spec": 12,
-    "built": 4,
+    "built": 7,
     "missing": [
-     "document_access_log",
-     "document_integrity_findings",
-     "document_integrity_runs",
      "esign_envelope_documents",
      "esign_envelopes",
      "esign_signature_events",
@@ -8493,10 +8485,9 @@
    },
    "timers": {
     "spec": 4,
-    "built": 1,
+    "built": 2,
     "armable": 4,
     "missing": [
-     "SM_DOC_INTEGRITY_DAILY",
      "SM_ESIGN_ENVELOPE_EXPIRY_30",
      "SM_MAIL_MANIFEST_2BD"
     ]
@@ -8508,10 +8499,8 @@
    },
    "tools": {
     "spec": 13,
-    "built": 4,
+    "built": 6,
     "missing": [
-     "documents.open",
-     "documents.verify",
      "esign.envelope.create",
      "esign.envelope.send",
      "esign.envelope.sign",
@@ -8528,9 +8517,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 28
+    "built": 38
    },
-   "pct": 48.3
+   "pct": 65.5
   },
   {
    "process": "35.3",
@@ -8601,12 +8590,11 @@
    },
    "figures": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,345.02",
      "$1,612.34",
      "$2,125.74",
-     "$248,310.55",
      "$267.32",
      "$432.78",
      "$80.62"
@@ -8614,9 +8602,9 @@
    },
    "units": {
     "spec": 40,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.5
   },
   {
    "process": "35.4",
@@ -9141,7 +9129,7 @@
    },
    "figures": {
     "spec": 22,
-    "built": 0,
+    "built": 3,
     "missing": [
      "$1,345.02",
      "$1,352.94",
@@ -9151,11 +9139,9 @@
      "$2,192.57",
      "$2,412.90",
      "$227.23",
-     "$248,310.55",
      "$249,546.77",
      "$249,774.00",
      "$250,390.82",
-     "$34.00",
      "$44.22",
      "$556,852.07",
      "$560,000.00",
@@ -9163,15 +9149,14 @@
      "$619.08",
      "$700.00",
      "$79.01",
-     "$82.17",
      "$93.97"
     ]
    },
    "units": {
     "spec": 63,
-    "built": 0
+    "built": 3
    },
-   "pct": 0.0
+   "pct": 4.8
   },
   {
    "process": "35.9",
@@ -9571,10 +9556,9 @@
    },
    "figures": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,250.00",
-     "$248,310.55",
      "$3,412.92",
      "$3,417.92",
      "$5.00",
@@ -9584,9 +9568,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 2
+    "built": 3
    },
-   "pct": 3.4
+   "pct": 5.2
   }
  ]
 }

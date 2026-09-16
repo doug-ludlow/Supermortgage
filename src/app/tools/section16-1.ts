@@ -204,21 +204,22 @@ export const TOOLS_16_1: readonly ToolDef[] = defineTools("16.1", AGENT, [
           if (vault) payload = { ...payload, wire_bank: vault.bank_name, wire_aba: vault.aba, wire_account_masked: `****${String(vault.account_last4 ?? "")}` };
         }
       }
-      const svc = rt.notices; let noticeId: string | null = null; let checklistPassed: boolean | null = null; let payloadHash: string | null = null;
+      const svc = rt.notices; let noticeId: string | null = null; let checklistPassed: boolean | null = null; let payloadHash: string | null = null; let renderedDocumentId: string | null = null;
       if (svc) {
         const n = svc.render({ templateCode: template, loanId, recipients: recipients.map(toRecipient), payload, asOf: now });
         const sent = await svc.send(n.id, (i.channel_context as Parameters<typeof svc.send>[1] | undefined) ?? {});
         if (sent.status !== "sent") throw new RangeError(`notice ${n.id} (${template}) was not sent: ${sent.heldReason ?? sent.status}`);
-        noticeId = sent.id; checklistPassed = sent.checklist.passed; payloadHash = sent.payloadHash;
+        noticeId = sent.id; checklistPassed = sent.checklist.passed; payloadHash = sent.payloadHash; renderedDocumentId = sent.renderedDocumentId ?? null;
       }
       const common = { template, notice_id: noticeId, statement_id: sid || null, recipients: recipients.map((r) => ({ party_id: r.party_id, channel: r.channel })), sequence: str(i, "sequence") || null, updated, state };
       ctx.events.append({ type: "notice.sent", loanId, actor: ctx.actor, payload: common });
       if (STATEMENT_TEMPLATES.test(template)) {
-        const evidence = str(i, "delivery_evidence_document_id") || null;
+        const supplied = str(i, "delivery_evidence_document_id") || null;
+        const evidence = supplied ?? renderedDocumentId;   // 35.2: the statement's own rendered documents row is the delivery evidence unless the caller names other evidence
         if (statementRow && !updated) rt.store.put("payoff_statements", sid, { ...statementRow, status: "sent", sent_on: statementRow.sent_on ?? now, notice_id: statementRow.notice_id ?? noticeId, delivered_to: [...((statementRow.delivered_to as unknown[] | undefined) ?? []), ...recipients.map((r) => ({ party_id: r.party_id, channel: r.channel, ...(r.email ? { email: r.email } : {}), ...(r.address ? { address: r.address } : {}), sent_at: ctx.now, notice_id: noticeId, evidence_document_id: evidence }))] }, ctx.actor, ctx.now);
         if (updateRow) rt.store.put("payoff_statement_updates", sid, { ...updateRow, status: "sent", sent_on: now, notice_id: noticeId, delivered_to: recipients.map((r) => ({ party_id: r.party_id, channel: r.channel, ...(r.email ? { email: r.email } : {}), ...(r.address ? { address: r.address } : {}), sent_at: ctx.now, notice_id: noticeId, evidence_document_id: evidence })) }, ctx.actor, ctx.now);
         ctx.events.append({ type: "payoff.statement.sent", loanId, actor: ctx.actor, payload: { ...common, all_prior_recipients: allPrior ?? false, prior_recipient_count: priorCount, sent_on: now } });
-        if (evidence) ctx.events.append({ type: "payoff.statement.delivered", loanId, actor: ctx.actor, payload: { ...common, evidence_document_id: evidence, received_at: str(i, "received_at") || ctx.now } });
+        if (supplied) ctx.events.append({ type: "payoff.statement.delivered", loanId, actor: ctx.actor, payload: { ...common, evidence_document_id: supplied, received_at: str(i, "received_at") || ctx.now } });
       }
       if (template === "NTC_FNMA_NIB_BALANCE_NOTICE" && str(i, "sequence") === "second") ctx.events.append({ type: "payoff.nib_maturity.resolved", loanId, actor: ctx.actor, payload: { outcome: "second_notice_sent", notice_id: noticeId, template } });
       if (template === "NTC_PAYOFF_AUTHORIZATION_REQUEST") {

@@ -8,6 +8,7 @@
  * and satisfy from the event log like everything else.
  */
 import { randomUUID } from "node:crypto";
+import { GlyphUnsupported } from "../infra/files/pdf.ts";
 import type { EventStore, Actor } from "../kernel/events/index.ts";
 import type { PlainDate } from "../kernel/calendar/date.ts";
 import { addBusinessDays, federal, type Calendar } from "../kernel/calendar/business.ts";
@@ -64,9 +65,17 @@ export interface NoticeServiceDeps {
 
 /** 35.2 rule 3: the sink renders the block model to bytes and returns the layout facts (the writer's placements projected back onto the blocks) beside the document's identity; it may refuse (GLYPH_UNSUPPORTED) — then nothing is written. */
 export interface ArtifactSink {
+  /** The same render twice in one command is one document (35.2 edge case): the id for (template, version, payload hash, subject) — stable within the command. */
+  idFor?(key: { templateCode: string; version: string; payloadHash: string; loanId?: string; applicationId?: string }): string;
   rendered(input: { documentId: string; templateCode: string; version: TemplateVersion; payload: Record<string, unknown>; loanId?: string; applicationId?: string; caseId?: string }, rendered: Rendered): { document_id: string; sha256: string; byte_size: number; page_count: number; blocks: Rendered["blocks"] };
 }
 
+/** 35.2 rule 2: a payload character outside WinAnsi refuses the render (naming the character and the block) on every path that renders — a typed refusal, never a bare Error. */
+export class RenderRefused extends Error {
+  readonly code = "GLYPH_UNSUPPORTED"; readonly citation = "35.2 rule 2: a character outside WinAnsi is refused naming the character and the block; nothing is silently substituted";
+  readonly templateCode: string; readonly blockId: string; readonly char: string;
+  constructor(templateCode: string, cause: GlyphUnsupported) { super(`${templateCode}: ${cause.message}`); this.name = "RenderRefused"; this.templateCode = templateCode; this.blockId = cause.block_id; this.char = cause.char; }
+}
 export class NoticeHeld extends Error {
   readonly notice: Notice;
   constructor(n: Notice) { super(`notice ${n.id} (${n.templateCode}) is held: ${n.heldReason}`); this.name = "NoticeHeld"; this.notice = n; }
@@ -90,8 +99,10 @@ export class NoticeService {
     // 35.2: the bytes and the layout facts — the writer's placements are what the layout rules measure (rule 3); a refused glyph propagates and nothing is written
     let renderedDocumentId = input.renderedDocumentId;
     if (this.deps.artifacts) {
-      const documentId = input.renderedDocumentId ?? randomUUID();
-      const artifact = this.deps.artifacts.rendered({ documentId, templateCode: t.code, version: v, payload: input.payload, ...(input.loanId ? { loanId: input.loanId } : {}), ...(input.applicationId ? { applicationId: input.applicationId } : {}), ...(input.caseId ? { caseId: input.caseId } : {}) }, rendered);
+      const documentId = input.renderedDocumentId ?? this.deps.artifacts.idFor?.({ templateCode: t.code, version: v.version, payloadHash: rendered.payloadHash, ...(input.loanId ? { loanId: input.loanId } : {}), ...(input.applicationId ? { applicationId: input.applicationId } : {}) }) ?? randomUUID();
+      let artifact: ReturnType<ArtifactSink["rendered"]>;
+      try { artifact = this.deps.artifacts.rendered({ documentId, templateCode: t.code, version: v, payload: input.payload, ...(input.loanId ? { loanId: input.loanId } : {}), ...(input.applicationId ? { applicationId: input.applicationId } : {}), ...(input.caseId ? { caseId: input.caseId } : {}) }, rendered);
+      } catch (e) { if (e instanceof GlyphUnsupported) throw new RenderRefused(t.code, e); throw e; }
       rendered = { ...rendered, blocks: artifact.blocks };
       renderedDocumentId = artifact.document_id;
     }

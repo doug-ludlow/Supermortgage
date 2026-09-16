@@ -5,6 +5,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { createRequire } from "node:module";
+import { cpSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { connect, type Db, type Queryable } from "../../infra/db/client.ts";
 import { testDatabase } from "../../infra/db/test-db.ts";
 import { PgLoanRepository, type Fixture } from "../../infra/db/loans.ts";
@@ -23,12 +27,20 @@ import { NoticeService } from "../../notices/service.ts";
 import { render, money } from "../../notices/render.ts";
 import { evaluateChecklist } from "../../notices/checklist.ts";
 import { publishSection10 } from "../pmi/spec-harness.ts";
-import { textLayer, GlyphUnsupported } from "../../infra/files/pdf.ts";
+import { textLayer, GlyphUnsupported, writerStats } from "../../infra/files/pdf.ts";
+import { createApiServer, listen } from "../../runtime/server.ts";
+import { createLogger } from "../../runtime/log.ts";
+import { createBorrowerRouter } from "../../runtime/borrower/routes.ts";
+import { PgBorrowerUiRepository } from "../../infra/db/borrower-ui.ts";
+import { decodeEntityData } from "../../infra/db/entities.ts";
+import { zonedEpochMs } from "../../kernel/calendar/zoned.ts";
+import { acquireBrowserLock, type TestLock } from "../../infra/db/test-lock.ts";
 import { renderNoticePdf, blocksFromPlacements, payloadHash } from "./documents/render.ts";
 import { MemoryArtifactSink } from "../../runtime/documents/notice-sink.ts";
 import { LEGEND_1, LEGEND_2, SM_FILER } from "./documents/irs-1098.ts";
 import { monthlyInterest, ratePercent } from "../../kernel/money/cents.ts";
 import type { Recipient } from "../../notices/channel.ts";
+import { FIGURE_KEYS } from "../payoff/ops-16-1.ts";
 
 // ───────── the harness: this file's own database, one runtime over it, the FAKE object store (document_blobs), the FAKE ports
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
@@ -39,6 +51,32 @@ const COMPLIANCE: Actor = { kind: "human", id: "u-comp-1", role: "compliance" };
 const OFFICER: Actor = { kind: "human", id: "u-off-1", role: "officer" };
 const ANALYST: Actor = { kind: "human", id: "u-ops-1", role: "ops_analyst" };
 let db: Db; let runtime: Runtime; let blobs: PgFakeBlobStore; let printMail: FakePrintMail | undefined;
+// the HTTP seam (T9, T10, T16): the API server over the runtime — the borrower router (session-bound signed URLs), the console (the staff view) and the public verify portal
+const TOKEN = "ops-" + randomUUID();
+const logger = createLogger("json", (line) => { if (process.env["FLOW_DEBUG"] && /"status":[45]|error/.test(line)) process.stderr.write(line + "\n"); });
+let base = ""; let closeServer: () => Promise<void> = async () => undefined;
+type Reply = { status: number; body: Record<string, unknown>; headers: Headers };
+async function api(method: string, path: string, body?: unknown, token?: string, extraHeaders: Record<string, string> = {}): Promise<Reply> {
+  const r = await fetch(base + path, { method, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), "content-type": "application/json", ...extraHeaders }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+  const text = await r.text();
+  return { status: r.status, body: text ? (JSON.parse(text) as Record<string, unknown>) : {}, headers: r.headers };
+}
+/** An L1 session through the FAKE code path (borrower.test.ts precedent); the party then owns `loanId` through a `borrowers` row carrying the partner's supplement (33.1 rule 6), which is what the L2 step matches. */
+async function signInL2(email: string, f: { tin_last4: string; dob: string; loanId: string }): Promise<{ token: string; party_id: string; session_id: string }> {
+  const req = await api("POST", "/v1/borrower/auth/otp", { action: "request", channel: "email", destination: email }); assert.equal(req.status, 200, JSON.stringify(req.body)); assert.equal(req.body["delivery"], "FAKE");
+  const ver = await api("POST", "/v1/borrower/auth/otp", { action: "verify", challenge_id: req.body["challenge_id"], code: req.body["fake_code"] }); assert.equal(ver.status, 200, JSON.stringify(ver.body));
+  const partyId = (ver.body["party"] as { party_id: string }).party_id; const sessionId = (ver.body["session"] as { session_id: string }).session_id; const token = ver.body["token"] as string;
+  const b = await one<{ id: string }>(`INSERT INTO borrowers (legal_name, tin_last4, date_of_birth, party_id) VALUES ($1, $2, $3::date, $4) RETURNING id`, [`Borrower ${email.split("@")[0]}`, f.tin_last4, f.dob, partyId]);
+  await db.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [f.loanId, b.id]);
+  const l2 = await api("POST", "/v1/borrower/auth/l2", { ssn_last4: f.tin_last4, date_of_birth: f.dob }, token); assert.equal(l2.status, 200, JSON.stringify(l2.body)); assert.equal(l2.body["level"], "L2");
+  return { token, party_id: partyId, session_id: sessionId };
+}
+/** A second L1 session of the same party (a stolen URL is mis-signed for it). */
+async function signInAgain(email: string): Promise<string> {
+  const req = await api("POST", "/v1/borrower/auth/otp", { action: "request", channel: "email", destination: email });
+  const ver = await api("POST", "/v1/borrower/auth/otp", { action: "verify", challenge_id: req.body["challenge_id"], code: req.body["fake_code"] }); assert.equal(ver.status, 200, JSON.stringify(ver.body));
+  return ver.body["token"] as string;
+}
 let n = 0;
 const uniq = (): string => `${Date.now() % 1_000_000}${(n++).toString().padStart(3, "0")}`.padStart(10, "0");
 const sha256 = (b: Buffer | string): string => createHash("sha256").update(b).digest("hex");
@@ -86,9 +124,58 @@ test.before(async () => {
   blobs = new PgFakeBlobStore(db);
   const ports = fakePorts(); printMail = ports.printMail as FakePrintMail;
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock, ports, blobs });
+  const server = createApiServer({ runtime, apiToken: TOKEN, logger, borrower: { environment: "test", rpId: "localhost", allowedOrigins: ["http://localhost", "http://127.0.0.1"], urlSecret: "test-secret" } });
+  base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
+  closeServer = () => new Promise((resolve) => server.close(() => resolve()));
 });
-test.after(async () => { if (!skip) await db.end(); });
-void ANALYST;
+test.after(async () => { if (!skip) { await stopShell(); await closeServer(); await browserLock?.release(); await db.end(); } });
+
+// ───────── the borrower app for T16: the built Next.js shell on runtime B's API, driven with Playwright (the 32-13 precedent) ─────────
+const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+const APP_DIR = `${ROOT}apps/borrower/`; const DIST = ".next-t13"; const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+interface Locator { getAttribute(name: string): Promise<string | null>; innerText(): Promise<string>; waitFor(o?: { state?: string; timeout?: number }): Promise<void>; count(): Promise<number>; }
+interface Page { on(event: string, fn: (x: { text(): string; message?: string }) => void): void; goto(url: string, o?: { waitUntil?: string; timeout?: number }): Promise<unknown>; locator(sel: string): Locator; getByTestId(id: string): Locator; close(): Promise<void>; }
+interface Context { addCookies(c: object[]): Promise<void>; newPage(): Promise<Page>; close(): Promise<void> }
+interface Browser { newContext(o: object): Promise<Context>; close(): Promise<void> }
+let appProc: ChildProcess | null = null; let appBase = ""; let browser: Browser | null = null; let appLog = ""; let browserLock: TestLock | undefined;
+/** The shell can be driven only where the app's dependencies and Chromium are installed; elsewhere T16's page assertion is the reduced, source-level one (logged as such). */
+const shellAvailable = (): boolean => existsSync(`${APP_DIR}node_modules/playwright`) && existsSync(`${APP_DIR}node_modules/.bin/next`) && existsSync(CHROME);
+function newestSource(dir: string): number {
+  let newest = 0;
+  for (const name of readdirSync(dir)) { if (name === "node_modules" || name.startsWith(".next") || name === "tests" || name === "playwright-report" || name === "test-results") continue; const p = `${dir}/${name}`; const st = statSync(p); if (st.isDirectory()) newest = Math.max(newest, newestSource(p)); else if (/\.(ts|tsx|css|json|mjs|mts)$/.test(name)) newest = Math.max(newest, st.mtimeMs); }
+  return newest;
+}
+function ensureBuild(): void {
+  const buildId = `${APP_DIR}${DIST}/BUILD_ID`;
+  if (!existsSync(buildId) || statSync(buildId).mtimeMs < newestSource(APP_DIR.replace(/\/$/, ""))) {
+    const r = spawnSync("npx", ["next", "build"], { cwd: APP_DIR, env: { ...process.env, NEXT_DIST_DIR: DIST, NEXT_TELEMETRY_DISABLED: "1" }, stdio: "pipe", timeout: 300_000, encoding: "utf8" });
+    assert.equal(r.status, 0, `next build failed:\n${r.stdout}\n${r.stderr}`);
+  }
+  cpSync(`${APP_DIR}${DIST}/static`, `${APP_DIR}${DIST}/standalone/${DIST}/static`, { recursive: true });
+}
+async function shell(apiBase: string): Promise<string> {
+  if (appBase) return appBase;
+  ensureBuild();
+  const port = 3400 + Math.floor(Math.random() * 400);
+  appProc = spawn(process.execPath, [`${APP_DIR}${DIST}/standalone/server.js`], { cwd: `${APP_DIR}${DIST}/standalone`, env: { ...process.env, PORT: String(port), HOSTNAME: "127.0.0.1", API_BASE_URL: apiBase, NODE_ENV: "production" }, stdio: ["ignore", "pipe", "pipe"] });
+  appProc.stdout?.on("data", (d: Buffer) => { appLog += d.toString(); }); appProc.stderr?.on("data", (d: Buffer) => { appLog += d.toString(); });
+  appBase = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) { try { const r = await fetch(`${appBase}/app`, { redirect: "manual" }); if (r.status < 500) return appBase; } catch { /* not up yet */ } await new Promise((r) => setTimeout(r, 250)); }
+  throw new Error(`the borrower app did not start on ${appBase}:\n${appLog.slice(-2000)}`);
+}
+async function stopShell(): Promise<void> { await browser?.close().catch(() => undefined); browser = null; appProc?.kill(); appProc = null; }
+async function pageFor(apiBase: string, token: string, path: string): Promise<{ page: Page; ctx: Context }> {
+  await shell(apiBase);
+  process.env["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/pw-browsers";
+  if (!browser) { const pw = createRequire(import.meta.url)(`${APP_DIR}node_modules/playwright`) as { chromium: { launch(o: object): Promise<Browser> } }; browser = await pw.chromium.launch({ headless: true, executablePath: CHROME }); }
+  const ctx = await browser.newContext({ viewport: { width: 1024, height: 800 } });
+  await ctx.addCookies([{ name: "sm_borrower_session", value: token, domain: "127.0.0.1", path: "/app", httpOnly: true, secure: false, sameSite: "Strict" }]);
+  const page = await ctx.newPage();
+  await page.goto(`${appBase}${path}`, { waitUntil: "load", timeout: 60_000 });
+  return { page, ctx };
+}
+void ANALYST; void spawnSync;
 
 test("35.2-T1: Given the `NTC_REGZ_41_STMT_STD` template at its counsel-approved version and worked example A's payload, when `documents.render` runs twice with the clock at 2026-09-17T05:00:00Z, then the two PDFs are byte-identical with one `sha256`, the file begins `%PDF-1.4`, every page's content stream carries a text layer from which the rendered `text` is recovered in reading order, and changing one payload field (the late charge) changes the hash.", {}, async () => {
   const v = activeStatementVersion();
@@ -101,10 +188,13 @@ test("35.2-T1: Given the `NTC_REGZ_41_STMT_STD` template at its counsel-approved
   assert.equal(tl.pages.length, p1.page_count); assert.ok(p1.page_count >= 2, "the statement's transactions and counselor blocks are on page 2");
   for (const page of tl.pages) assert.ok(page.length > 0, "every page's content stream carries a text layer");
   assert.equal(tl.text, p1.text, "the rendered text is recovered in reading order (block order, line order)");
+  const model = render(v.source, PAYLOAD_A);
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+  assert.deepEqual(Object.fromEntries(tl.blocks.map((b) => [b.id, norm(b.text)])), Object.fromEntries(model.blocks.map((b) => [b.id, norm(b.text)])), "the text layer is the block model's text, block for block (never the writer's own reconstruction)");
   const order = tl.blocks.map((b) => b.id);
   assert.deepEqual(order.slice(0, 3), ["amount_due", "late_fee", "explanation"], "reading order follows the block model");
   assert.equal(p1.payload_hash, payloadHash(PAYLOAD_A));
-  const changed = renderNoticePdf(v, { ...PAYLOAD_A, late_fee_cents: 11_672n, late_charges_due_cents: 11_672n, fees_since_last_cents: 11_672n, amount_due_cents: AMOUNT_DUE + 1n, computed_amount_due_cents: AMOUNT_DUE + 1n }, { now: T0 });
+  const changed = renderNoticePdf(v, { ...PAYLOAD_A, late_charges_due_cents: 11_672n }, { now: T0 });
   assert.notEqual(changed.sha256, p1.sha256, "changing one payload field (the late charge) changes the hash");
 });
 test("35.2-T2: Given worked example A rendered through the command path, then a `documents` row exists with `mime_type = application/pdf`, `kind = rendered_notice`, `sha256` and `byte_size` equal to the bytes, `page_count ≥ 1`, `retention_class = life_of_loan_plus_4y`, `payload_hash` equal to the canonical payload hash, `notices.document_id` equals that row, exactly one `notice_checklist_results` row exists for the notice across render-then-send, and the text layer contains `$2,334.29`, `$612.50`, `$2,946.79`, `$116.71` and `$6,010.29` each exactly once in the amount-due box.", { skip }, async () => {
@@ -131,6 +221,7 @@ test("35.2-T2: Given worked example A rendered through the command path, then a 
   // the same payload rendered again at the same clock is the same row (edge case: a retry is one document)
   const again = await run("documents.render", { template_code: STMT, payload: PAYLOAD_A, recipients: [BEA()] }, RECORDS, { loanId: f.loanId });
   assert.equal((again.output as { document_id: string; existing: boolean }).document_id, id); assert.equal((again.output as { existing: boolean }).existing, true);
+  assert.equal((again.output as { sha256: string }).sha256, out.sha256, "documents.render twice at one clock: byte-identical (one sha256)"); assert.equal((await one<{ sha256: string }>(`SELECT sha256 FROM documents WHERE id = $1`, [id])).sha256, out.sha256);
   assert.equal(await count(`FROM documents WHERE template_code = $1 AND payload_hash = $2 AND loan_id = $3`, [STMT, payloadHash(PAYLOAD_A), f.loanId]), 1);
 });
 test("35.2-T3: Given 10.4's annual PMI disclosure for an MN property, when it renders, then the writer's placements report every body block at ≥ 12 pt and page 1, 10.4's checklist passes from those placements alone (no browser is started), and given the same template with a 10 pt body the checklist fails `layout` and the notice is `held`.", {}, async () => {
@@ -292,9 +383,134 @@ test("35.2-T8: Given a Spanish-language notice whose payload contains `ñ`, `á`
     assert.equal(await count(`FROM documents`), docs0); assert.equal(await count(`FROM notices`), notices0); assert.equal(await count(`FROM loan_events WHERE loan_id = $1`, [f.loanId]), events0); assert.equal(await count(`FROM document_blobs`), blobs0);
   }
 });
-test("35.2-T9: Given a borrower session at L2 whose party owns a stored statement, when the app requests `GET /v1/borrower/documents/{id}` and then the signed `…/content` URL, then the response is the stored bytes with `Content-Type: application/pdf`, `Cache-Control: private, no-store`, a hash equal to `documents.sha256`, a `document_access_log{purpose=borrower_view}` row and a `ui_events{document_opened}` row; a session of another party receives 404; an expired or altered signature receives 401; a `staged` document is served from `document_blobs` with `served_from = staged_blob`.", { todo: true });
-test("35.2-T10: Given 16.1 renders `NTC_REGZ_36C3_PAYOFF_STMT` for the fixture loan, then the PDF's text layer contains the 12-character verification token and the wire fraud warning, `payoff_statements.delivered_to[].evidence_document_id` names the `documents` row, and `GET /verify/{token}` answers the statement hash equal to that row's `sha256`, its good-through date and total, and writes `document_access_log{purpose=verify_portal}`.", { todo: true });
-test("35.2-T11: Given the FAKE store is told to alter one stored object's bytes, when the daily integrity unit completes, then a `document_integrity_runs` row counts it, a `document_integrity_findings{mismatch}` row carries the expected and actual hashes, `documents.verify_status = mismatch`, `document.integrity.mismatch` is logged, a sev 1 escalation to `ciso` exists, `documents.dispose` on it is refused (19.1-T12), the run never re-rendered anything (the writer is not invoked), and `document.integrity.run_completed` satisfies today's `SM_DOC_INTEGRITY_DAILY` and re-arms it for tomorrow at 02:30 ET.", { todo: true });
+test("35.2-T9: Given a borrower session at L2 whose party owns a stored statement, when the app requests `GET /v1/borrower/documents/{id}` and then the signed `…/content` URL, then the response is the stored bytes with `Content-Type: application/pdf`, `Cache-Control: private, no-store`, a hash equal to `documents.sha256`, a `document_access_log{purpose=borrower_view}` row and a `ui_events{document_opened}` row; a session of another party receives 404; an expired or altered signature receives 401; a `staged` document is served from `document_blobs` with `served_from = staged_blob`.", { skip }, async () => {
+  clock.set(T0);
+  const f = await loanFixture(); const emailA = `avery-${uniq()}@example.test`;
+  const a = await signInL2(emailA, { tin_last4: "6789", dob: "1985-06-15", loanId: f.loanId });
+  const id = ((await run("documents.render", { template_code: STMT, payload: PAYLOAD_A, recipients: [BEA()] }, RECORDS, { loanId: f.loanId })).output as { document_id: string }).document_id;
+  const row = await one<{ sha256: string; storage_status: string }>(`SELECT sha256, storage_status FROM documents WHERE id = $1`, [id]); assert.equal(row.storage_status, "stored");
+  // the link: signed for this session, five minutes, with the row's hash and the bytes' own text layer
+  const link = await api("GET", `/v1/borrower/documents/${id}`, undefined, a.token);
+  assert.equal(link.status, 200, JSON.stringify(link.body));
+  const url = link.body["url"] as string; assert.match(url, /^\/v1\/borrower\/documents\/[0-9a-f-]+\/content\?exp=\d+&sig=/);
+  assert.equal(link.body["sha256"], row.sha256); assert.ok(String(link.body["text_layer"]).includes("$6,010.29"), "the text layer rides with the link"); assert.equal(link.body["template_version"], "1.2.0");
+  // the bytes: the stored ones, hashed on the way out
+  const res = await fetch(base + url, { headers: { authorization: `Bearer ${a.token}` } });
+  assert.equal(res.status, 200); assert.equal(res.headers.get("content-type"), "application/pdf"); assert.equal(res.headers.get("cache-control"), "private, no-store");
+  assert.ok((res.headers.get("content-disposition") ?? "").startsWith("inline")); assert.equal(res.headers.get("x-document-sha256"), row.sha256);
+  const bytes = Buffer.from(await res.arrayBuffer()); assert.equal(sha256(bytes), row.sha256, "a hash equal to documents.sha256"); assert.ok(bytes.equals((await blobs.get(id))!.bytes));
+  const log = await db.query<{ sha256_served: string; served_from: string; party_id: string; session_id: string; byte_size_served: bigint }>(`SELECT sha256_served, served_from, party_id, session_id, byte_size_served FROM document_access_log WHERE document_id = $1 AND purpose = 'borrower_view'`, [id]);
+  assert.equal(log.length, 1); assert.equal(log[0]!.sha256_served, row.sha256); assert.equal(log[0]!.served_from, "object_store"); assert.equal(log[0]!.party_id, a.party_id); assert.equal(log[0]!.session_id, a.session_id); assert.equal(Number(log[0]!.byte_size_served), bytes.length);
+  const opened = (await new PgBorrowerUiRepository(db).uiEvents(a.party_id, "document_opened")).filter((e) => e.payload["document_id"] === id);
+  assert.ok(opened.some((e) => e.payload["route"] === "content" && e.session_id === a.session_id), "ui_events{document_opened} for the serve");
+  assert.equal((await db.query(`SELECT 1 FROM loan_events WHERE loan_id = $1 AND type = 'document.opened' AND payload->>'document_id' = $2 AND payload->>'purpose' = 'borrower_view'`, [f.loanId, id])).length, 1, "document.opened on the loan's log, committed with the access row");
+  // another party: 404 on the link and on the content URL (ownership before the signature) — the same answer an unknown id gets; never a 403 that confirms the document exists
+  const g = await loanFixture(); const b = await signInL2(`blake-${uniq()}@example.test`, { tin_last4: "1111", dob: "1979-01-02", loanId: g.loanId });
+  const other = await api("GET", `/v1/borrower/documents/${id}`, undefined, b.token); assert.equal(other.status, 404); assert.equal(other.body["code"], "NOT_YOUR_DOCUMENT");
+  const otherContent = await api("GET", url, undefined, b.token); assert.equal(otherContent.status, 404); assert.equal(otherContent.body["code"], "NOT_YOUR_DOCUMENT");
+  assert.equal((await api("GET", `/v1/borrower/documents/${randomUUID()}`, undefined, b.token)).status, 404);
+  // an expired URL, an altered signature, a stolen URL on another session of the same party: 401
+  const expired = await api("GET", url.replace(/exp=\d+/, "exp=1"), undefined, a.token); assert.equal(expired.status, 401); assert.equal(expired.body["code"], "DEEP_LINK_EXPIRED");
+  const altered = await api("GET", url.replace(/sig=(.)/, (_m, c: string) => `sig=${c === "A" ? "B" : "A"}`), undefined, a.token); assert.equal(altered.status, 401); assert.equal(altered.body["code"], "URL_SIGNATURE");
+  const stolen = await api("GET", url, undefined, await signInAgain(emailA)); assert.equal(stolen.status, 401); assert.equal(stolen.body["code"], "URL_SIGNATURE");
+  assert.equal(await count(`FROM document_access_log WHERE document_id = $1`, [id]), 1, "a refused request serves nothing and logs no access");
+  // a staged document (the store was down when it was written) is served from document_blobs
+  blobs.outage = true;
+  const staged = ((await run("documents.store", storeInput("t9-staged", { kind: "rendered_notice" }), RECORDS, { loanId: f.loanId })).output as { document_id: string; storage_status: string });
+  blobs.outage = false; assert.equal(staged.storage_status, "staged");
+  const link2 = await api("GET", `/v1/borrower/documents/${staged.document_id}`, undefined, a.token); assert.equal(link2.status, 200, JSON.stringify(link2.body));
+  const res2 = await fetch(base + (link2.body["url"] as string), { headers: { authorization: `Bearer ${a.token}` } });
+  assert.equal(res2.status, 200); assert.equal(res2.headers.get("x-served-from"), "staged_blob"); assert.ok(Buffer.from(await res2.arrayBuffer()).equals(PDF_BYTES("t9-staged")));
+  assert.equal((await one<{ served_from: string }>(`SELECT served_from FROM document_access_log WHERE document_id = $1 AND purpose = 'borrower_view'`, [staged.document_id])).served_from, "staged_blob");
+  // the staff view through the console: the same bytes, a staff_view row naming the staff user
+  const staff = await fetch(`${base}/ops/api/documents/${id}/content`, { headers: { authorization: `Bearer ${TOKEN}`, "x-actor-id": "u-ops-1", "x-actor-role": "ops_analyst" } });
+  const sb = (await staff.json()) as Record<string, unknown>; assert.equal(staff.status, 200, JSON.stringify(sb));
+  assert.equal(sb["sha256"], row.sha256); assert.equal(sha256(Buffer.from(String(sb["bytes_base64"]), "base64")), row.sha256); assert.ok(String(sb["text_layer"]).includes("$6,010.29"));
+  assert.equal((await one<{ staff_user_id: string | null }>(`SELECT staff_user_id FROM document_access_log WHERE document_id = $1 AND purpose = 'staff_view'`, [id])).staff_user_id, "u-ops-1");
+  assert.equal((await fetch(`${base}/ops/api/documents/${id}/content`, { headers: { authorization: `Bearer ${TOKEN}`, "x-actor-id": "u-aud-1", "x-actor-role": "auditor" } })).status, 403, "a role documents.open does not admit");
+});
+test("35.2-T10: Given 16.1 renders `NTC_REGZ_36C3_PAYOFF_STMT` for the fixture loan, then the PDF's text layer contains the 12-character verification token and the wire fraud warning, `payoff_statements.delivered_to[].evidence_document_id` names the `documents` row, and `GET /verify/{token}` answers the statement hash equal to that row's `sha256`, its good-through date and total, and writes `document_access_log{purpose=verify_portal}`.", { skip }, async () => {
+  clock.set(T0);
+  const f = await loanFixture();
+  const PAYOFF: Actor = { kind: "agent", id: "payoff-release" };
+  const run16 = (name: string, input: ToolInput): Promise<ExecuteResponse> => runtime.execute({ process: "16.1", name, loanId: f.loanId, actor: PAYOFF, input });
+  const quoteId = `pq-${uniq()}`; const statementId = `ps-${uniq()}`;
+  // 16.1's worked example A on the fixture loan: the quote, the minted token, the accuracy gate, the statement — 16.1's own steps (16-1.spec.test.ts issue())
+  const q = (await run16("computePayoffQuote", { loan_id: f.loanId, quote_id: quoteId, request_id: `pr-${uniq()}`, channel: "email", received_on: "2026-09-14", requester_type: "borrower", upb_cents: 24_831_055n, rate_pct: "6.500", lpi_due: "2026-09-01", good_through: "2026-10-15", late_charges_cents: 8_217n, recording_fee_cents: 3_400n, state: "OH", ledger_snapshot_id: "ledger-hwm-88121" })).output as { hash: string; total_cents: bigint };
+  const tok = (await run16("mintVerificationToken", { loan_id: f.loanId, statement_hash: q.hash, wire_instruction_version_id: "wire-v4" })).output as { token: string };
+  assert.match(tok.token, /^[A-HJ-NP-Z2-9]{12}$/, "the 12-character token from 16.1's alphabet");
+  await run16("assertAccuracyGate", { loan_id: f.loanId, quote_id: quoteId, ledger_clean: true, rate_segments_final: true });
+  await run16("renderStatement", { loan_id: f.loanId, quote_id: quoteId, statement_id: statementId, wire_instruction_version_id: "wire-v4", active_wire_instruction_version_id: "wire-v4", verification_token: tok.token });
+  const display = Object.fromEntries(Object.entries(registryWithAuthored().activeVersion("NTC_REGZ_36C3_PAYOFF_STMT", D("2026-09-17"))!.samplePayload).filter(([k]) => !(FIGURE_KEYS as readonly string[]).includes(k)));   // 16-1.spec.test.ts DISPLAY(): the figures come from the rows
+  const sent = await run16("sendNotice", { loan_id: f.loanId, template_code: "NTC_REGZ_36C3_PAYOFF_STMT", statement_id: statementId, recipients: [{ party_id: BEA().partyId, channel: "mail", address: "1 Test St, Testville OH 43001" }], payload: display });
+  const so = sent.output as { notice_id: string; checklist_passed: boolean }; assert.ok(so.notice_id, "the statement went out as a notice");
+  // the statement row names its rendered documents row as the delivery evidence
+  const stmt = decodeEntityData((await one<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'payoff_statements' AND id = $1`, [statementId])).data);
+  const delivered = stmt["delivered_to"] as { evidence_document_id: string | null; channel: string }[]; assert.equal(delivered.length, 1);
+  const docId = delivered[0]!.evidence_document_id; assert.ok(docId, "delivered_to[].evidence_document_id names the documents row");
+  const doc = await one<{ sha256: string; template_code: string; kind: string; storage_status: string }>(`SELECT sha256, template_code, kind, storage_status FROM documents WHERE id = $1`, [docId]);
+  assert.equal(doc.template_code, "NTC_REGZ_36C3_PAYOFF_STMT"); assert.equal(doc.kind, "rendered_notice"); assert.equal(doc.storage_status, "stored");
+  assert.equal((await one<{ document_id: string | null }>(`SELECT document_id FROM notices WHERE id = $1`, [so.notice_id])).document_id, docId);
+  // the text layer: the token and the wire-fraud warning, on the page
+  const text = textLayer((await blobs.get(docId))!.bytes).text.replace(/\s+/g, " ");
+  assert.ok(text.includes(`Verification token ${tok.token}`), `the token is printed: ${text.slice(0, 200)}`);
+  assert.match(text, /never change wire instructions by e-?mail/i, "the wire fraud warning");
+  assert.equal(String(stmt["total_cents"]), String(q.total_cents)); assert.equal(String(stmt["good_through"]), "2026-10-15");
+  // the public portal: the statement's hash (the row's — the served bytes re-hashed), the good-through date and the total; never a name or an address
+  const v = await fetch(`${base}/verify/${tok.token}`); const vb = (await v.json()) as Record<string, unknown>;
+  assert.equal(v.status, 200, JSON.stringify(vb));
+  assert.equal(vb["verified"], true); assert.equal(vb["statement_sha256"], doc.sha256); assert.equal(vb["document_id"], docId); assert.equal(vb["statement_id"], statementId);
+  assert.equal(String(vb["good_through"]), String(stmt["good_through"])); assert.equal(String(vb["total_cents"]), String(stmt["total_cents"])); assert.equal(vb["wire_instruction_version_id"], "wire-v4");
+  for (const k of Object.keys(vb)) assert.ok(!/name|address|account|tin|ssn|email|phone/i.test(k), `the portal answers no identity: ${k}`);
+  assert.equal(await count(`FROM document_access_log WHERE document_id = $1 AND purpose = 'verify_portal'`, [docId]), 1);
+  assert.equal((await fetch(`${base}/verify/ZZZZZZZZZZZZ`)).status, 404); assert.equal((await fetch(`${base}/verify/not-a-token`)).status, 404);
+});
+test("35.2-T11: Given the FAKE store is told to alter one stored object's bytes, when the daily integrity unit completes, then a `document_integrity_runs` row counts it, a `document_integrity_findings{mismatch}` row carries the expected and actual hashes, `documents.verify_status = mismatch`, `document.integrity.mismatch` is logged, a sev 1 escalation to `ciso` exists, `documents.dispose` on it is refused (19.1-T12), the run never re-rendered anything (the writer is not invoked), and `document.integrity.run_completed` satisfies today's `SM_DOC_INTEGRITY_DAILY` and re-arms it for tomorrow at 02:30 ET.", { skip }, async () => {
+  const f = await loanFixture();
+  const id = ((await run("documents.store", storeInput("t11"), RECORDS, { loanId: f.loanId })).output as { document_id: string }).document_id;
+  // day one, 02:30 America/New_York: every stored object re-read and hashed; the clock armed on the global subject
+  clock.set("2026-09-17T06:30:00.000Z");
+  const r1 = await run("documents.verify", { op: "run" });
+  const o1 = r1.output as { run_id: string; as_of_date: string; scope: string; mismatches: number; missing: number; documents_checked: number; verified: number; report_document_id: string };
+  assert.equal(o1.as_of_date, "2026-09-17"); assert.equal(o1.scope, "full"); assert.equal(o1.mismatches, 0); assert.equal(o1.missing, 0); assert.ok(o1.documents_checked >= 1); assert.equal(o1.verified, o1.documents_checked);
+  const t1 = r1.timers.find((t) => t.code === "SM_DOC_INTEGRITY_DAILY"); assert.ok(t1, "SM_DOC_INTEGRITY_DAILY is armed by the completion"); assert.equal(t1.status, "armed"); assert.equal(t1.subject.kind, "global"); assert.equal(t1.anchorDate, "2026-09-17");
+  assert.equal((await one<{ verify_status: string }>(`SELECT verify_status FROM documents WHERE id = $1`, [id])).verify_status, "verified");
+  // the store alters the object; day two's run finds it
+  await blobs.corrupt(id);
+  const altered = (await blobs.get(id))!.bytes; assert.notEqual(sha256(altered), sha256(PDF_BYTES("t11")));
+  clock.set("2026-09-18T06:30:00.000Z");
+  const before = writerStats().renders;
+  const r2 = await run("documents.verify", { op: "run" });
+  assert.equal(writerStats().renders, before, "the run never re-rendered anything: the writer was not invoked");
+  const o2 = r2.output as typeof o1;
+  assert.equal(o2.as_of_date, "2026-09-18"); assert.equal(o2.mismatches, 1); assert.ok(o2.documents_checked >= 1);
+  const runRow = await one<{ scope: string; documents_checked: number; mismatches: number; report_document_id: string | null; finished_at: string }>(`SELECT scope, documents_checked, mismatches, report_document_id, finished_at FROM document_integrity_runs WHERE id = $1`, [o2.run_id]);
+  assert.equal(runRow.scope, "full"); assert.equal(runRow.mismatches, 1); assert.equal(runRow.documents_checked, o2.documents_checked); assert.ok(runRow.report_document_id);
+  const report = await one<{ mime_type: string; kind: string; retention_class: string }>(`SELECT mime_type, kind, retention_class::text AS retention_class FROM documents WHERE id = $1`, [runRow.report_document_id]);
+  assert.equal(report.mime_type, "application/x-ndjson"); assert.equal(report.kind, "integrity_report"); assert.equal(report.retention_class, "corporate_7y");
+  const finding = await one<{ finding: string; expected_sha256: string; actual_sha256: string; stored_generation: string; escalation_id: string | null; staged_copy_exists: boolean }>(`SELECT finding, expected_sha256, actual_sha256, stored_generation, escalation_id, staged_copy_exists FROM document_integrity_findings WHERE run_id = $1 AND document_id = $2`, [o2.run_id, id]);
+  assert.equal(finding.finding, "mismatch"); assert.equal(finding.expected_sha256, sha256(PDF_BYTES("t11"))); assert.equal(finding.actual_sha256, sha256(altered)); assert.equal(finding.stored_generation, "1"); assert.ok(finding.escalation_id); assert.equal(finding.staged_copy_exists, true);
+  const d = await one<{ verify_status: string; last_verified_at: string; storage_status: string }>(`SELECT verify_status, last_verified_at, storage_status FROM documents WHERE id = $1`, [id]);
+  assert.equal(d.verify_status, "mismatch"); assert.equal(d.last_verified_at, "2026-09-18T06:30:00.000Z"); assert.equal(d.storage_status, "stored");
+  const ev = r2.events.find((e) => e.type === "document.integrity.mismatch" && e.payload["document_id"] === id); assert.ok(ev, "document.integrity.mismatch is logged");
+  assert.equal(ev.payload["expected_sha256"], finding.expected_sha256); assert.equal(ev.payload["actual_sha256"], finding.actual_sha256); assert.equal(ev.payload["escalation_id"], finding.escalation_id); assert.equal(ev.loanId, f.loanId);
+  const esc = await one<{ kind: string; owner_role: string; status: string; severity: string }>(`SELECT kind, owner_role, status, severity FROM escalations WHERE id = $1`, [finding.escalation_id]);
+  assert.equal(esc.kind, "sev1"); assert.equal(esc.owner_role, "ciso"); assert.equal(esc.status, "open");
+  // 19.1-T12: disposal of a mismatched object is refused before anything else is asked
+  await refused(run("documents.dispose", { document_id: id, disposal_run_id: randomUUID() }, OFFICER, { loanId: f.loanId }), "WORM_INTEGRITY_FAILED_SEV1");
+  // the report lists the finding; the run's completion satisfies today's clock and re-arms it for tomorrow 02:30 ET
+  const ndjson = (await blobs.get(runRow.report_document_id!))!.bytes.toString("utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+  assert.equal(ndjson[0]!["run_id"], o2.run_id); assert.ok(ndjson.slice(1).some((l) => l["document_id"] === id && l["finding"] === "mismatch"));
+  assert.ok(r2.events.some((e) => e.type === "document.integrity.run_completed" && e.payload["run_id"] === o2.run_id && e.payload["mismatches"] === 1));
+  const timers = await db.query<{ status: string; anchor_date: string; due_at: string | null; subject_kind: string }>(`SELECT status, anchor_date::text AS anchor_date, due_at, subject_kind FROM timers WHERE code = 'SM_DOC_INTEGRITY_DAILY' ORDER BY armed_at`);
+  assert.deepEqual(timers.map((t) => [t.status, t.anchor_date, t.subject_kind]), [["satisfied", "2026-09-17", "global"], ["armed", "2026-09-18", "global"]]);
+  assert.equal(Date.parse(timers[1]!.due_at!), zonedEpochMs(D("2026-09-19"), "02:30", "America/New_York"), "tomorrow at 02:30 America/New_York");
+  // a later run never returns the object to verified
+  clock.set("2026-09-19T06:30:00.000Z"); blobs.restore(id);
+  await run("documents.verify", { op: "run" });
+  assert.equal((await one<{ verify_status: string }>(`SELECT verify_status FROM documents WHERE id = $1`, [id])).verify_status, "mismatch", "a mismatch never returns to verified by a later run");
+  clock.set(T0);
+});
 test("35.2-T12: Given worked example B's `tax_forms_1098` row, when `documents.render{document_kind=irs_1098_copy_b}` runs, then the PDF's text layer shows `$5,743.99` in Box 1 and `$400,000.00` in Box 2, the payer TIN as `XXX-XX-1234`, the recipient/lender TIN in full and no other full TIN, the tax year, form number and form name together in one area, a direct-access telephone number, the two Pub. 1179 §4.4.1 legends, and the row's `box1_cents = 574399` and `box2_cents = 40000000` are what the page reproduces; the monthly interest figures `$1,916.67`, `$1,914.67` and `$1,912.65` are the 2.1 allocations the box sums.", { skip }, async () => {
   // worked example B: 2.1's allocation, rounded half-up to the cent once per month
   const rate = ratePercent("5.750");
@@ -330,6 +546,48 @@ test("35.2-T12: Given worked example B's `tax_forms_1098` row, when `documents.r
 test("35.2-T13: Given a borrower with an active E-SIGN consent covering `disclosure_ack` and a rendered CD, when `esign.envelope.create` and `esign.envelope.send` run, then the envelope is `sent`, `esign.envelope.sent` is logged and `SM_ESIGN_ENVELOPE_EXPIRY_30` is armed on `sent_at`; when the FAKE signer signs every required field through an L2 session, then `esign_signature_events` holds `viewed`, `authenticated`, `consent_affirmed`, one `field_signed` per field and `completed`, each with `auth_method`, `ip`, `user_agent` and a valid hash chain, a signed `documents` row exists with `supersedes_document_id` = the unsigned row and a different `sha256`, `esign_envelope_documents.signed_document_id` is set once, `evidence_document_id` names an audit-trail PDF whose text lists every event, and `esign.envelope.completed` satisfies the clock.", { todo: true });
 test("35.2-T14: Given a party with no active E-SIGN consent, when `esign.envelope.send` runs, then it is refused `NO_ENVELOPE_WITHOUT_CONSENT` and nothing is written; given a sent envelope whose signer emits `consent.esign.withdrawn`, then the envelope is `voided` with the reason and an audit-trail PDF; given a sent envelope untouched for 30 calendar days, then the breach voids it as `expired`, logs `esign.envelope.expired` and opens an `ops_analyst` escalation; a `completed` envelope refuses `esign.envelope.void`.", { todo: true });
 test("35.2-T15: Given 26.2's FAKE RON session completes worked example 1 of 26.2, when the platform's audit trail arrives, then `documents.store` writes it with `retention_class = fnma_enote_signing_life_plus_7y`, `signing_sessions.audit_trail_document_id` names the row and `audit_trail_hash` equals its `sha256`, the signed closing documents are rows with `closing_documents.signed_document_id` set, and 26.2's `SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE` evaluator opens on that hash.", { todo: true });
-test("35.2-T16: Given a document rendered and stored on runtime A, when runtime B (a second `Runtime` over the same database, its own process) serves `…/content` and runs `documents.verify` on it, then the bytes and hash are the stored ones — the FAKE object store is `document_blobs`, not process memory — and the borrower's `/doc/{id}` page renders the PDF with its text layer from that response.", { todo: true });
+test("35.2-T16: Given a document rendered and stored on runtime A, when runtime B (a second `Runtime` over the same database, its own process) serves `…/content` and runs `documents.verify` on it, then the bytes and hash are the stored ones — the FAKE object store is `document_blobs`, not process memory — and the borrower's `/doc/{id}` page renders the PDF with its text layer from that response.", { skip }, async () => {
+  clock.set(T0);
+  const f = await loanFixture();
+  const a = await signInL2(`t16-${uniq()}@example.test`, { tin_last4: "2222", dob: "1990-02-02", loanId: f.loanId });
+  const id = ((await run("documents.render", { template_code: STMT, payload: PAYLOAD_A, recipients: [BEA()] }, RECORDS, { loanId: f.loanId })).output as { document_id: string }).document_id;
+  const row = await one<{ sha256: string }>(`SELECT sha256 FROM documents WHERE id = $1`, [id]);
+  // runtime B: its own pool, its own object-store port, its own server — the same database and the same session table
+  const dbB = connect(DB_URL); const blobsB = new PgFakeBlobStore(dbB);
+  const runtimeB = new Runtime({ db: dbB, registry: loadOverriddenRegistry(), clock, ports: fakePorts(), blobs: blobsB });
+  const serverB = createApiServer({ runtime: runtimeB, apiToken: TOKEN, logger, console: false, borrowerRouter: createBorrowerRouter({ runtime: runtimeB, logger, environment: "test", rpId: "localhost", allowedOrigins: ["http://localhost", "http://127.0.0.1"], urlSecret: "test-secret", blobs: blobsB }) });
+  const baseB = `http://127.0.0.1:${await listen(serverB, 0, "127.0.0.1")}`;
+  try {
+    assert.equal(blobsB.log.length, 0, "runtime B's store holds nothing in memory");
+    const link = await fetch(`${baseB}/v1/borrower/documents/${id}`, { headers: { authorization: `Bearer ${a.token}` } }); const lb = (await link.json()) as Record<string, unknown>;
+    assert.equal(link.status, 200, JSON.stringify(lb)); assert.equal(lb["sha256"], row.sha256);
+    const res = await fetch(baseB + String(lb["url"]), { headers: { authorization: `Bearer ${a.token}` } }); assert.equal(res.status, 200);
+    const bytes = Buffer.from(await res.arrayBuffer());
+    assert.equal(sha256(bytes), row.sha256); assert.equal(res.headers.get("x-document-sha256"), row.sha256);
+    assert.ok(bytes.equals((await blobs.get(id))!.bytes), "runtime B serves the bytes runtime A stored: the FAKE object store is document_blobs, not process memory");
+    assert.equal(lb["text_layer"], textLayer(bytes).text, "the link's text layer is the bytes' own");
+    assert.ok(String(lb["text_layer"]).includes("$6,010.29") && String(lb["text_layer"]).includes("Amount due"));
+    const v = await runtimeB.execute({ process: "35.2", name: "documents.verify", loanId: f.loanId, actor: RECORDS, input: { op: "one", document_id: id } });
+    const vo = v.output as { status: string; expected_sha256: string; actual_sha256: string };
+    assert.equal(vo.status, "verified"); assert.equal(vo.expected_sha256, row.sha256); assert.equal(vo.actual_sha256, row.sha256);
+    assert.equal((await one<{ verify_status: string }>(`SELECT verify_status FROM documents WHERE id = $1`, [id])).verify_status, "verified");
+    assert.equal(await count(`FROM document_access_log WHERE document_id = $1 AND purpose = 'borrower_view'`, [id]), 1, "B's serve is logged in the shared table");
+    // the borrower's /doc/{id} page on the built shell over runtime B's API: the PDF through the signed URL, the text layer from the link's response
+    const pageSrc = readFileSync(`${APP_DIR}app/doc/[id]/page.tsx`, "utf8"); const viewerSrc = readFileSync(`${APP_DIR}components/viewer/DocumentViewer.tsx`, "utf8");
+    assert.ok(pageSrc.includes("DocumentViewer")); assert.ok(viewerSrc.includes('data-testid="doc-text-layer"') && viewerSrc.includes("/v1/borrower/documents/") && viewerSrc.includes("<object") && viewerSrc.includes("text_layer") && viewerSrc.includes("document.unavailable"));
+    if (shellAvailable()) {
+      browserLock ??= await acquireBrowserLock(DB_URL);
+      const { page, ctx } = await pageFor(baseB, a.token, `/app/doc/${id}`);
+      try {
+        const obj = page.locator("object[type='application/pdf']"); await obj.waitFor({ state: "attached", timeout: 30_000 });
+        assert.match((await obj.getAttribute("data")) ?? "", new RegExp(`^/app/api/v1/borrower/documents/${id}/content\\?exp=\\d+&sig=`), "the PDF is loaded through the proxy at the signed URL");
+        const text = await page.getByTestId("doc-text-layer").innerText();
+        assert.ok(text.includes("$6,010.29") && text.includes("Amount due"), `the text layer renders from the link's response: ${text.slice(0, 120)}`);
+      } finally { await ctx.close(); }
+    } else {
+      process.stderr.write("35.2-T16: reduced page assertion — the borrower app's dependencies or Chromium are not installed here; the source-level checks ran, the Playwright drive did not\n");
+    }
+  } finally { await new Promise((r) => serverB.close(() => r(undefined))); await dbB.end(); }
+});
 test("35.2-T17: Given the FAKE print vendor in outage for two consecutive sweeps with a batch submitted, when `mail.fallback` runs, then a `mail_manifests{vendor=in_house}` row exists with one merged PDF per mail class whose page count is the sum of the pieces' plus one cover sheet each, `mail.batch.submitted{vendor=in_house}` is logged, an `ops_analyst` escalation names the batch, and the analyst's `mail.manifest.ingest` with `mailed_on` per piece writes `notice_deliveries.mailed_at` and satisfies `SM_MAIL_MANIFEST_2BD`.", { todo: true });
 test("35.2-T18: Given every 35.2 tool run over the fixture, then no ledger line and no money column changed (a contract test compares the ledger and every `*_cents` column before and after), `documents.dispose` without a 19.1 disposal run carrying an `officer` attestation is refused `DISPOSE_NEEDS_OFFICER_ATTESTATION`, an agent actor calling `esign.envelope.sign` is refused `NO_AGENT_SIGNS`, every state-changing tool left an `agent_decisions` row with `rule_set_version = docs.v1` and no decision row contains a TIN, an address or rendered text.", { todo: true });

@@ -275,18 +275,18 @@ test("documents: a multipart upload lands in `documents` and goes through 22.1's
   assert.equal(content.status, 200); assert.equal(content.headers.get("content-type"), "application/pdf"); assert.equal(await content.text(), "%PDF-1.4 paystub bytes " + R);
   const otherSession = await signIn("email", EMAIL_A);
   const stolen = await fetch(base + url, { headers: { authorization: `Bearer ${otherSession.token}` } });
-  assert.equal(stolen.status, 403, "the same party on another session cannot use this session's URL");
+  assert.equal(stolen.status, 401, "the same party on another session cannot use this session's URL (35.2: URL_SIGNATURE)");
   clock.set("2026-10-05T17:47:00.000Z");
-  assert.equal((await fetch(base + url, { headers: { authorization: `Bearer ${a.token}` } })).status, 410, "the URL is short-lived");
+  assert.equal((await fetch(base + url, { headers: { authorization: `Bearer ${a.token}` } })).status, 401, "the URL is short-lived (35.2: DEEP_LINK_EXPIRED answers 401)");
   clock.set(T0);
-  // Blake's session: Avery's document is outside scope → PARTY_SCOPE, never a 404 that confirms it exists; an unknown id answers the same
+  // Blake's session: Avery's document is outside scope → 404 NOT_YOUR_DOCUMENT, the same answer an unknown id gets (35.2 rule 7: existence never leaks)
   const scoped = await api("GET", `/v1/borrower/documents/${docId}`, undefined, b.token);
-  assert.equal(scoped.status, 403); errorShape(scoped.body, "PARTY_SCOPE");
-  assert.equal((await api("GET", `/v1/borrower/documents/${randomUUID()}`, undefined, b.token)).status, 403);
+  assert.equal(scoped.status, 404); errorShape(scoped.body, "NOT_YOUR_DOCUMENT");
+  assert.equal((await api("GET", `/v1/borrower/documents/${randomUUID()}`, undefined, b.token)).status, 404);
   // Blake's own upload on Blake's application works; the two parties' documents never cross
   const upB = await upload(b.token, appB);
   assert.equal(upB.status, 201, JSON.stringify(upB.body));
-  assert.equal((await api("GET", `/v1/borrower/documents/${upB.body["document_id"]}`, undefined, a.token)).status, 403);
+  assert.equal((await api("GET", `/v1/borrower/documents/${upB.body["document_id"]}`, undefined, a.token)).status, 404);
 });
 
 test("deep links: a token resolves to its target only after L1, for its own party, until it expires 7 days on; the token encodes nothing about the loan", { skip }, async () => {

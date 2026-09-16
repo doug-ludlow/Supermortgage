@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8104/8756 (92.6%): tids 2259/2458, tables 774/848, timers 2045/2097, notices 308/308, tools 1441/1578, figures 1277/1467; processes at 100%: 193/205",
+ "brief": "spec units built 8129/8756 (92.8%): tids 2261/2458, tables 779/848, timers 2050/2097, notices 308/308, tools 1454/1578, figures 1277/1467; processes at 100%: 193/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2259
+   "built": 2261
   },
   "tables": {
    "spec": 848,
-   "built": 774
+   "built": 779
   },
   "timers": {
    "spec": 2097,
-   "built": 2045
+   "built": 2050
   },
   "notices": {
    "spec": 308,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1441
+   "built": 1454
   },
   "figures": {
    "spec": 1467,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8756,
-   "built": 8104
+   "built": 8129
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 80,
+   "built": 105,
    "processes": 12,
    "done": 1
   }
@@ -9261,8 +9261,8 @@
    "title": "The refinance close of the loop: the prior loan's payoff quote, settlement and ledger zeroing, lien release, escrow disposition and retirement \u2014 whether Supermortgage services it or a partner does \u2014 the partner's notification and the new loan linked, replacing the status flip",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
+    "built": 2,
+    "todo": 13,
     "missing": [
      1,
      2,
@@ -9274,35 +9274,21 @@
      8,
      9,
      10,
-     11,
      12,
      13,
-     14,
-     15
+     14
     ]
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "partner_retirement_notifications",
-     "prior_loan_retirements",
-     "refinance_closeout_daily_receipts",
-     "refinance_closeout_steps",
-     "refinance_closeouts"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 0,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_REFI_CLOSEOUT_BOARD_DAILY",
-     "SM_REFI_CLOSEOUT_STALLED_2BD",
-     "SM_REFI_ESCROW_CREDIT_0",
-     "SM_REFI_PARTNER_CONFIRM_21",
-     "SM_REFI_PRIOR_SETTLE_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9311,22 +9297,8 @@
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "closeout.open",
-     "closeout.pass",
-     "closeout.quote",
-     "closeout.settle",
-     "closeout.escrow",
-     "closeout.lien_release",
-     "closeout.retire",
-     "closeout.notify_partner",
-     "closeout.confirm_partner",
-     "closeout.hold",
-     "closeout.resume",
-     "closeout.board",
-     "writeDecision"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 27,
@@ -9361,9 +9333,9 @@
    },
    "units": {
     "spec": 65,
-    "built": 2
+    "built": 27
    },
-   "pct": 3.1
+   "pct": 41.5
   },
   {
    "process": "35.11",

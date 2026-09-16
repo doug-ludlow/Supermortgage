@@ -239,7 +239,7 @@ export function thirdPartyRequest(i: { received_on: PlainDate; requester: Parame
 }
 
 // ============================================================ inputs and triggers — the 7.6 intake as 16.1 records it
-export const REQUESTER_TYPES = ["borrower", "confirmed_successor", "attorney", "counselor", "lender_or_title", "unknown"] as const;
+export const REQUESTER_TYPES = ["borrower", "confirmed_successor", "attorney", "counselor", "lender_or_title", "refinancing_lender", "unknown"] as const;   // refinancing_lender: 24.4 rule 7 / 35.10 — the refinancing lender's request through servicing (comment 36(c)(3)-1), a third party verified by its authorization evidence
 export type RequesterType = (typeof REQUESTER_TYPES)[number];
 /** Channels that produce a *written* request (comment 36(c)(3)-2): e-mail, fax, mail, the portal "Request payoff" flow, the API and the title-company verification portal. */
 export const WRITTEN_CHANNELS = ["email", "fax", "mail", "portal", "api", "verification_portal"] as const;

@@ -162,6 +162,16 @@ export const TOOLS_26_3: readonly ToolDef[] = defineTools("26.3", "funder", [
   { name: "postLedger", kind: "act", handler: compute((i, ctx, rt) => {
       need(i, "funding_id", "effective_date");
       const f = fundingOf(rt, i);
+      if (i.op === "payoff_transfer") {
+        // 35.10 rule 4 / 32.11-T7: the settlement statement's payoff line for a prior loan this platform services is disbursed as an internal transfer — the funding disbursement (the new loan's origination_funding_clearing, −) to the prior loan's custodial clearing (+), `rule_ref = 35.10:r4:transfer`; 2.1's receipt set follows it
+        need(i, "amount_cents", "payoff_demand_id", "from_custodial_account_id", "to_custodial_account_id", "prior_loan_id");
+        const amount = cents(i.amount_cents); if (amount <= 0n) throw new RangeError("payoff_transfer needs a positive amount_cents (the statement's payoff line)");
+        const set = ctx.ledger.post({ effectiveDate: dateIn(i, "effective_date"), description: `26.3 payoff transfer ${str(i, "payoff_demand_id")} → prior loan ${str(i, "prior_loan_id")} (35.10 rule 4)`, lines: [
+          { account: { scope: "custodial", custodialAccountId: str(i, "from_custodial_account_id"), account: "origination_funding_clearing" }, amountCents: -amount, ruleRef: "35.10:r4:transfer", memo: "funding disbursement: the settlement statement's payoff line" },
+          { account: { scope: "custodial", custodialAccountId: str(i, "to_custodial_account_id"), account: "clearing_cash" }, amountCents: amount, ruleRef: "35.10:r4:transfer", memo: "prior loan custodial clearing (internal transfer, no good-funds hold)" }], ...(typeof i.source_event_id === "string" ? { sourceEventId: i.source_event_id } : {}) }, ctx.now);
+        const e = ctx.events.append({ type: "funding.payoff_transfer.posted", applicationId: f.application_id, actor: ctx.actor, payload: { application_id: f.application_id, funding_id: f.funding_id, payoff_demand_id: str(i, "payoff_demand_id"), prior_loan_id: str(i, "prior_loan_id"), amount_cents: amount.toString(), effective_date: str(i, "effective_date"), ledger_set_id: set.id, rule_ref: "35.10:r4:transfer", source: "origination" } });
+        return { set_id: set.id, amount_cents: amount, event_id: e.id, rule_ref: "35.10:r4:transfer" };
+      }
       const net = f.net_wire_cents ?? f.worksheet?.net_wire_cents; if (net === null || net === undefined) throw new RangeError("postLedger needs a reconciled worksheet (net_wire_cents)");
       const set = postFundingLedger(ctx.ledger, { gross_loan_cents: f.gross_loan_cents, net_wire_cents: net, loan_ref: f.loan_id ?? f.application_id, effective_date: dateIn(i, "effective_date"), source_event_id: (i.source_event_id as string | undefined) ?? null }, ctx.now);
       const mirror = partnerMirrorLines({ gross_loan_cents: f.gross_loan_cents, lender_credits_cents: f.worksheet?.lender_credits_cents ?? 0n, prepaid_interest_cents: f.interest.prepaid_interest_cents, interest_credit_cents: f.interest.interest_credit_cents, escrow_deposit_cents: cents(i.escrow_deposit_cents), net_wire_cents: net, loan_ref: f.loan_id ?? f.application_id });

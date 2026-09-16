@@ -42,6 +42,7 @@ import { loadBoundedScoped, splitByScope } from "../domain/operations-runtime/se
 import { checkExpectedVersions, expectedVersionsOf } from "../domain/operations-runtime/seam/guard.ts";
 import { takeGlobalLock } from "../domain/operations-runtime/seam/lock.ts";
 import { projectVersions } from "../domain/operations-runtime/seam/project.ts";
+import { cashieringDailyPass, type CashieringDailyReport } from "../domain/operations-runtime/cashiering-cycle.ts";
 import { PgApplicationRepository, type ApplicationInput, type ApplicationRecord } from "../infra/db/applications.ts";
 import { AgentRegistry } from "../app/agents.ts";
 import { CommandBus, type AgentRunInfo, type ExecuteResult } from "../app/commands.ts";
@@ -123,6 +124,8 @@ export interface SweepReport {
   readonly due: number;
   readonly breaches: readonly { loan_id: string | null; code: string; severity: number | null; escalate_to: readonly string[]; timer_id: string }[];
   readonly outbox: readonly { adapter: string; status: string; count: number }[];
+  /** 35.5 rule 6: the whole-book cashiering pass (one unit per boarded loan per day, the day's receipt) — src/domain/operations-runtime/cashiering-cycle.ts; null when the lease was not taken. */
+  readonly cashiering: CashieringDailyReport | null;
   /** The daily refinance check's report (null when no rate feed is wired). */
   readonly refi: RefiDailyReport | null;
   /** The FAKE reviewers' pass (null when they are off). */
@@ -350,7 +353,7 @@ export class Runtime {
     const holder = opts.holder ?? this.instanceId;
     const asOfDate = wallClock(Date.parse(nowIso), "America/New_York").date;
     const startedMs = Date.now();
-    const notRun = (reason: string) => ({ refi: null as RefiDailyReport | null, reviewers: null as FakeReviewerReport | null,
+    const notRun = (reason: string) => ({ cashiering: null as CashieringDailyReport | null, refi: null as RefiDailyReport | null, reviewers: null as FakeReviewerReport | null,
       partner_book_review: { at: nowIso, as_of_date: asOfDate as ReviewRunReport["as_of_date"], ran: false, reason, monitored_loans: 0, programs: [], line: `partner book review: not run (${reason})` } as ReviewRunReport,
       partner_book_readiness: { checked: 0, ready: 0, not_ready: 0, skipped: reason, as_of_date: asOfDate, ran: false, loans_skipped: [], line: `partner book readiness: not run (${reason})` } as ReadinessRunReport,
       partner_book_reminders: 0, partner_book_tape_late: 0, partner_book_daily_reports: null, controls: { kill_requests_expired: 0, long_trips_escalated: 0 } });
@@ -377,6 +380,8 @@ export class Runtime {
     try {
       // rule 11: the outbox, drained by every sweep — after the lease, before the passes (the drain's failure is the run's)
       const outboxDispatch = await pass("outbox.dispatch", () => drainOutbox({ db: this.db, registry: this.registry, clock: this.clock, ports: this.ports, ...(this.outboxAdapters ? { adapters: this.outboxAdapters } : {}), ...(this.outboxCompletions ? { completions: this.outboxCompletions } : {}), notify: (ev) => this.uow.notifyCommitted(ev) }, nowIso, { runId }), (d) => ({ claimed: d.claimed, sent: d.sent, retried: d.retried, dead: d.dead, rejected: d.rejected, fallback: d.fallback }));
+      // 35.5 rule 6: the whole-book cashiering pass — every boarded loan's unit (idempotent per day), then the day's receipt; skipped once the day is receipted (the flows' tick or the demo clock may have run it this minute) — errors logged, never thrown
+      const cashiering = await logged("cashiering.daily", () => cashieringDailyPass(this, nowIso, { skipIfReceipted: true }), (msg) => ({ at: nowIso, as_of_date: asOfDate, ran: false, reason: `failed: ${msg}`, run_id: null, loans: 0, units_done: 0, units_already: 0, units_skipped_hold: 0, units_failed: 0, units_no_config: 0, posted: [], late_charge_runs: [], late_charges_assessed: [], amount_change_checks: [], reprojections: [], errors: [], receipt_event_id: null, line: `cashiering daily ${asOfDate}: failed (${msg})` } as CashieringDailyReport), (r) => ({ ran: r.ran, loans: r.loans, done: r.units_done, failed: r.units_failed }));
       const refi = this.rateFeed ? await logged("refi.daily", () => refiDailyRun(this, nowIso, { feed: this.rateFeed!, logger: this.logger }), (msg) => ({ at: nowIso, as_of_date: asOfDate as RefiDailyReport["as_of_date"], ran: false, reason: `failed: ${msg}`, rate_sheet: null, universe: { view_rows: 0, loaded: 0, unchanged: 0, skipped: [], monitored: { rows: 0, skipped: 0, open_offer: 0 } }, programs: [], line: `refi daily: failed (${msg})` } as RefiDailyReport), (r) => ({ ran: r.ran, programs: r.programs.length })) : null;
       // 33.2: the daily review of the partner book after the refinance check (it reads the day's run) — errors logged, never thrown
       const partnerBookReview = await logged("partner_book.review", () => partnerBookReviewRun(this, nowIso, { logger: this.logger, llm: this.analystLlm }), (msg) => ({ at: nowIso, as_of_date: asOfDate as ReviewRunReport["as_of_date"], ran: false, reason: `failed: ${msg}`, monitored_loans: 0, programs: [], line: `partner book review: failed (${msg})` } as ReviewRunReport), (r) => ({ ran: r.ran, monitored_loans: r.monitored_loans }));
@@ -434,7 +439,7 @@ export class Runtime {
       const outboxCounts = { claimed: outboxDispatch.claimed, sent: outboxDispatch.sent, retried: outboxDispatch.retried, dead: outboxDispatch.dead };
       await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_completed", aggregate: { kind: "sweep_run", id: runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: runId, as_of_date: asOfDate, holder, duration_ms: durationMs, passes: passes.map((p) => p.name), due: due.length, breaches: breaches.length, outbox: outboxCounts } }),
         { clock: this.clock, commit: async (q) => { await q.query(`UPDATE sweep_runs SET outcome = 'completed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, outbox = $4::jsonb WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), JSON.stringify(outboxCounts)]); } });
-      return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls,
+      return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), cashiering, refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls,
         run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify };
     } catch (e) {
       await this.db.query(`UPDATE sweep_runs SET outcome = 'failed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, skipped_reason = $4 WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), (e instanceof Error ? e.message : String(e)).slice(0, 500)]).catch(() => undefined);

@@ -15,7 +15,10 @@ import { connect, type Db, type Queryable } from "../../infra/db/client.ts";
 import { testDatabase } from "../../infra/db/test-db.ts";
 import { PgLoanRepository, type Fixture } from "../../infra/db/loans.ts";
 import { loadOverriddenRegistry } from "../../domain/timer-overrides.ts";
-import { FixedClock, type Actor } from "../../kernel/events/index.ts";
+import { FixedClock, systemClock, type Actor } from "../../kernel/events/index.ts";
+import { zonedEpochMs, wallClock } from "../../kernel/calendar/zoned.ts";
+import { decodeEntityData } from "../../infra/db/entities.ts";
+import { OffsetClock } from "../../runtime/demo-clock.ts";
 import { plainDate as D, addMonths, type PlainDate } from "../../kernel/calendar/date.ts";
 import { levelPayment, type Cents } from "../../kernel/money/cents.ts";
 import { Decimal } from "../../kernel/money/decimal.ts";
@@ -34,6 +37,8 @@ import { lateChargeAmount } from "../cashiering/latecharges.ts";
 import { delinquencyDailySweep } from "../../runtime/delinquency.ts";
 import { projectSchedule, readInstallments, scheduleRuns, rowInterest, levelPaymentBps, INSTALLMENT_EVENTS } from "./installments.ts";
 import { FAKE_SERVICER_CONTACT, FAKE_SERVICER_PROFILE_V1_ID, servicerProfileVersions, loanServicingConfig, STATE_TIME_ZONES } from "./servicing-config.ts";
+import { cashieringDailyPass, CASHIERING_CYCLE_EVENTS, ACTIVE_BOOK_SQL, type UnitOutcome } from "./cashiering-cycle.ts";
+import { defaultCyclesPort } from "./cycles-port.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "t-" + randomUUID();
@@ -67,10 +72,32 @@ async function serverAt(iso: string, deps: Partial<RuntimeDeps> = {}): Promise<{
 }
 /** An ad-hoc tool on the bus (a test's way to append an event a sibling process would have emitted, inside a real command on the loan). */
 const testTool = (name: string, handler: Parameters<typeof compute>[0]): ToolDef => defineTools("35.5", "cashiering", [{ name, kind: "act", handler: compute(handler) }])[0]!;
-const events = async (loanId: string, type?: string): Promise<{ id: string; type: string; payload: Record<string, unknown>; actor_kind: string; actor_id: string; occurred_at: string }[]> =>
-  db.query(`SELECT id::text AS id, type, payload, actor_kind, actor_id, occurred_at::text AS occurred_at FROM loan_events WHERE loan_id = $1 AND ($2::text IS NULL OR type = $2) ORDER BY sequence`, [loanId, type ?? null]);
-const timer = async (code: string, loanId: string | null): Promise<{ status: string; anchor_date: string; due_date: string | null; satisfied_by_event_id: string | null }[]> =>
-  db.query(`SELECT status::text AS status, anchor_date::text AS anchor_date, due_date::text AS due_date, satisfied_by_event_id::text AS satisfied_by_event_id FROM timers WHERE code = $1 AND ($2::uuid IS NULL OR loan_id = $2) ORDER BY armed_at`, [code, loanId]);
+type Ev = { id: string; type: string; payload: Record<string, unknown>; actor_kind: string; actor_id: string; occurred_at: string; sequence: string };
+const eventsOn = async (q: Queryable, loanId: string, type?: string): Promise<Ev[]> =>
+  q.query(`SELECT id::text AS id, type, payload, actor_kind, actor_id, occurred_at::text AS occurred_at, sequence::text AS sequence FROM loan_events WHERE loan_id = $1 AND ($2::text IS NULL OR type = $2) ORDER BY sequence`, [loanId, type ?? null]);
+const events = (loanId: string, type?: string): Promise<Ev[]> => eventsOn(db, loanId, type);
+type TimerRow = { id: string; status: string; anchor_date: string; due_date: string | null; satisfied_by_event_id: string | null };
+const timerOn = async (q: Queryable, code: string, loanId: string | null): Promise<TimerRow[]> =>
+  q.query(`SELECT id::text AS id, status::text AS status, anchor_date::text AS anchor_date, due_date::text AS due_date, satisfied_by_event_id::text AS satisfied_by_event_id FROM timers WHERE code = $1 AND ($2::uuid IS NULL OR loan_id = $2) ORDER BY armed_at, id`, [code, loanId]);
+const timer = (code: string, loanId: string | null): Promise<TimerRow[]> => timerOn(db, code, loanId);
+/** A side database for a T-id whose receipts must not meet another's (the day's `cashiering.daily.run_completed` is global): its own template copy, runtime factory and door. */
+async function side(suffix: string): Promise<{ db: Db; rt: (iso: string, deps?: Partial<RuntimeDeps>) => Runtime; server: (iso: string, deps?: Partial<RuntimeDeps>) => Promise<{ rt: Runtime; base: string; close: () => Promise<void> }>; close: () => Promise<void> }> {
+  const t = await testDatabase(import.meta.url, { suffix });
+  const sdb = connect(t.url);
+  const rt = (iso: string, deps: Partial<RuntimeDeps> = {}): Runtime => new Runtime({ db: sdb, registry: loadOverriddenRegistry(), clock: new FixedClock(iso), ...deps });
+  return { db: sdb, rt, server: (iso, deps = {}) => serverAt(iso, { db: sdb, ...deps }), close: () => sdb.end() };
+}
+const ET = (date: string, hhmm: string): string => new Date(zonedEpochMs(D(date), hhmm, "America/New_York")).toISOString();
+/** Every money row 2.1 / 2.7 / the ledger carry, as one count vector (a second run must change none of them). */
+const moneyCounts = async (q: Queryable): Promise<{ payments: number; payment_versions: number; fees: number; fee_versions: number; ledger_lines: number; ledger_sets: number; unit_rows: number }> => ({ payments: await count(q, `FROM payments`), payment_versions: await count(q, `FROM entity_records WHERE kind = 'payments'`), fees: await count(q, `FROM fees`), fee_versions: await count(q, `FROM entity_records WHERE kind = 'fees'`), ledger_lines: await count(q, `FROM ledger_lines`), ledger_sets: await count(q, `FROM ledger_entry_sets`), unit_rows: await count(q, `FROM cashiering_unit_runs`) });
+/** A received item written through 2.1 with every field 35.1's payments projector requires (so the typed row lands and `satisfied_by_payment_id` can reference it). */
+async function receivePayment(rt: Runtime, loanId: string, i: { amount_cents: Cents; received_on: string; channel?: string; designation?: string; curtailment_cents?: Cents; id?: string }): Promise<string> {
+  const id = i.id ?? randomUUID();
+  await rt.execute({ process: "2.1", name: "payments.read/write", loanId, actor: CASHIERING, input: { op: "write", id, loan_id: loanId, data: { payment_id: id, loan_id: loanId, amount_cents: i.amount_cents, received_on: i.received_on, credited_as_of: i.received_on, received_at: `${i.received_on}T14:10:00.000Z`, channel: i.channel ?? "lockbox", instrument: "check", designation: i.designation ?? "contractual", ...(i.curtailment_cents !== undefined ? { curtailment_cents: i.curtailment_cents } : {}), status: "received", identification_confidence: 0.99, conforming: true, idempotency_key: `lockbox|${id}|1|${i.amount_cents}|${i.received_on}` } } });
+  return id;
+}
+/** One loan's day through the bus (`cashiering.run_unit` at the runtime's instant). */
+const runUnit = async (rt: Runtime, loanId: string): Promise<UnitOutcome> => (await rt.execute({ process: "35.5", name: "cashiering.run_unit", loanId, actor: CASHIERING, input: { loan_id: loanId, as_of: rt.clock.now() } })).output as UnitOutcome;
 
 test.before(async () => {
   if (skip) return;
@@ -86,6 +113,8 @@ test.after(async () => { if (!skip) await close(); });
 const A = { upb: 56_000_000n, rate_bps: 61_250, pi: 340_262n, row1_interest: 285_833n, row1_principal: 54_429n, row1_after: 55_945_571n, row2_interest: 285_556n, row2_principal: 54_706n, row2_after: 55_890_865n, row360_interest: 1_727n, row360_principal: 338_435n, row360_pi: 340_162n, sum_interest: 66_494_220n } as const;
 // ───────── worked example B: tape loan T-7 ─────────
 const B = { original: 30_000_000n, rate_bps: 65_000, pi: 189_620n, escrow: 41_230n, upb: 28_045_824n, row62_interest: 151_915n, row62_principal: 37_705n, row62_after: 28_008_119n, row63_interest: 151_711n, row63_principal: 37_909n, row63_after: 27_970_210n, row360_interest: 1_024n, row360_principal: 189_067n, row360_pi: 190_091n, absorbed: 471n } as const;
+// ───────── T14: the curtailment between rows on T-7 (rule 4) ─────────
+const K14 = { upb_after_row62: 28_008_119n, curtailment: 100_000n, upb_after_curtailment: 27_908_119n, posted_interest: 151_169n, row_interest: 151_711n, difference: 542n } as const;
 // ───────── worked example C: 7.2's Plan 4927 ARM ─────────
 const C = { original: 40_000_000n, rate_bps: 57_500, pi: 233_429n, row60_after: 37_104_886n, v2_rate_bps: 63_750, v2_pi: 247_644n, row61_interest: 197_120n, row61_principal: 50_524n, row61_after: 37_054_362n, escrow: 61_250n, next_draft: 308_894n, last_debit: 294_679n } as const;
 // ───────── worked example D / 2.7 example K: fixture L-1 ─────────
@@ -94,8 +123,8 @@ const L1 = { original: 25_000_000n, rate_bps: 65_000, pi: 158_017n, escrow: 61_2
 const E = { item1: 219_257n, item2: 150_000n, item3: 230_850n, control: 600_107n, control_short: 600_007n, variance: 100n } as const;
 
 /** The demo snapshot's note funded through the route on a bare application (the record carries no CD; the FAKE snapshot fills it; `final_cd.pi_cents` is the note's P&I). */
-async function fundDemoNote(at: { rt: Runtime; base: string }, overrides: { snapshot?: Record<string, unknown>; funded?: Record<string, unknown>; property?: Record<string, unknown> } = {}): Promise<{ appId: string; loanId: string; fund: Record<string, unknown> }> {
-  const partner = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number) VALUES ('servicer', $1, $2) RETURNING id`, [`Lender ${randomUUID().slice(0, 6)}`, "123456789"]))[0]!.id;
+async function fundDemoNote(at: { rt: Runtime; base: string; db?: Db }, overrides: { snapshot?: Record<string, unknown>; funded?: Record<string, unknown>; property?: Record<string, unknown> } = {}): Promise<{ appId: string; loanId: string; fund: Record<string, unknown> }> {
+  const partner = (await (at.db ?? db).query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number) VALUES ('servicer', $1, $2) RETURNING id`, [`Lender ${randomUUID().slice(0, 6)}`, "123456789"]))[0]!.id;
   const app = (await at.rt.createApplication({ partner_party_id: partner, channel: "organic", transaction_type: "limited_cash_out", occupancy: "primary", borrowers: [{ legal_name: "Alex Borrower", borrower_role: "borrower" }], property: { address_line1: "100 N Central Ave", city: "Phoenix", state: "AZ", postal_code: "85004", county: "Maricopa", property_type: "sfr", units: 1, ...(overrides.property ?? {}) } }, SYSTEM)).application;
   const r = await call("POST", `/v1/applications/${app.id}/fund`, { actor: FUNDING, snapshot: { final_cd: { document_id: "DOC-CD", pi_cents: "340262", monthly_escrow_cents: "68750", initial_escrow_deposit_cents: "206250", prepaid_interest_cents: "178543", prepaid_interest_days: 19, compliance_tests_passed: true }, ...(overrides.snapshot ?? {}) }, ...(overrides.funded ? { funded: overrides.funded } : {}) }, at.base);
   assert.equal(r.status, 200, JSON.stringify(r.body));
@@ -127,6 +156,22 @@ async function boardT7(at: { rt: Runtime; base: string }, state = "TX"): Promise
   const loanIds = r.body["loan_ids"] as Record<string, string>; const loanId = loanIds[loanNumber]!;
   assert.equal((r.body["loans"] as Record<string, number>)["boarded"], 1, JSON.stringify(r.body["hard_by_loan"]));
   return { loanId, batchId, summary: r.body };
+}
+
+/** The 100-loan book (T4, T15): the built-in demo batch boards 94 (its six planted hard exceptions stay `exception`); six clean fixed-rate escrowed tapes from a second generated batch make the book 100 transfer-boarded loans (`origination_application_id IS NULL`). */
+async function boardBook(rt: Runtime, q: Db): Promise<string[]> {
+  const run = uniq().slice(-5); const k = Number(run);
+  const demo = generateDemoBatch(DEMO_BATCH.seed, { prefix: `BK${run}`, fnma_base: 5_200_000_000 + k * 1000, min_sequence_base: k * 1000 });
+  const r1 = await boardTransferBatch(rt, { ...DEMO_BATCH, batch_id: `B-BOOK-${run}` }, encodeTransferBatch(demo, demo.coborrowers), SYSTEM);
+  assert.equal(r1.loans.boarded, 94, JSON.stringify(r1.loans));
+  const extra = generateDemoBatch(DEMO_BATCH.seed + 7, { prefix: `BX${run}`, fnma_base: 5_300_000_000 + k * 1000, min_sequence_base: 50_000 + k * 1000 });
+  const pick = extra.loans.filter((l) => !extra.designed.hard.has(l.transferor_loan_number) && l.amortization === "fixed" && l.escrowed && l.pi_cents !== null && l.pi_cents > 0n && !l.bankruptcy.active && !l.foreclosure.active && !l.lossmit.in_process && !l.scra.active && l.deferred_principal_cents === 0n && l.forborne_principal_cents === 0n).slice(0, 6);
+  const nums = new Set(pick.map((l) => l.transferor_loan_number)); const fn = new Set(pick.map((l) => l.fnma_loan_number)); const mins = new Set(pick.map((l) => l.min).filter((m): m is string => !!m));
+  const byNum = <T extends { transferor_loan_number?: string }>(xs: readonly T[]): T[] => xs.filter((x) => x.transferor_loan_number !== undefined && nums.has(x.transferor_loan_number));
+  const six = { loans: pick, fnma: extra.fnma.filter((f) => fn.has(f.fnma_loan_number)), trialBalance: byNum(extra.trialBalance), mers: extra.mers.filter((m) => mins.has(m.min)), images: byNum(extra.images), fairLending: byNum(extra.fairLending), coborrowers: new Map([...extra.coborrowers].filter(([n]) => nums.has(n))) };
+  const r2 = await boardTransferBatch(rt, { ...DEMO_BATCH, batch_id: `B-BOOK6-${run}` }, encodeTransferBatch(six, six.coborrowers), SYSTEM);
+  assert.equal(r2.loans.boarded, 6, JSON.stringify({ loans: r2.loans, hard: r2.hard_by_loan }));
+  return (await q.query<{ id: string }>(`SELECT id::text AS id FROM loans WHERE boarding_batch_id IN ($1::uuid, $2::uuid) AND status = 'active' ORDER BY servicer_loan_number`, [r1.batch_uuid, r2.batch_uuid])).map((r) => r.id);
 }
 
 /** Fixture L-1 (2.1 rule 11 / worked example D): $250,000 at 6.500% from 2021-09-01, LPI 2026-08-01, UPB $249,774.00 as an opening set, P&I $1,580.17, escrow $612.40 — its schedule from the next due date and its configuration written by the 35.5 tools; a borrower party for the notices. */
@@ -261,14 +306,153 @@ test("35.5-T3: Given 7.2's Plan 4927 loan boarded at fund ($400,000.00 at 5.750%
   assert.equal(await count(db, `FROM loan_terms WHERE loan_id = $1`, [loanId]), 2, "no terms row written by the refused reprojection");
 });
 
-test("35.5-T4: Given the 100-loan demo book (transfer-boarded, `origination_application_id IS NULL`) and one originated loan, when the `cashiering_daily` cycle runs for a day, then `cycle_runs` shows `units_total = 101`, every loan has one `cashiering_unit_runs` row with `outcome = done` for that `as_of_date`, `cashiering.daily.run_completed{loans: 101}` is appended exactly once and satisfies `SM_CASHIERING_DAILY_RECEIPT_1D`, and running the cycle again for the same day writes no payment, fee, ledger line or unit row (the second run's decision records name the existing rows).", { todo: true });
-test("35.5-T5: Given loan L-1 with a `payments` row in `received` for **$2,192.57** on 2026-09-03, when its unit runs on 2026-09-03, then 2.1 posts interest **$1,352.94**, principal **$227.23** and escrow **$612.40** with the balanced sets of 2.1 rule 8 (`rule_ref` on every line), row 2026-09-01 is `satisfied` with `satisfied_by_payment_id` set and `credited_as_of` 2026-09-03, and `POST /v1/loans/{id}/tools/2.1/payments.read%2Fwrite` with an `input.state` whose UPB differs from the ledger is refused `NO_CLIENT_STATE` before any write (contract test over `payments.read/write{op=post}`, `fees.assess{op=daily_run}` and `autodraft.read/write{op=amount_change_check}`).", { todo: true });
-test("35.5-T6: Given L-1's row 2026-09-01 unpaid past the 15-day grace (grace end Wed 2026-09-16), when the unit runs on 2026-09-17 in the loan's zone, then 2.7's `daily_run` assesses **$79.01** (`fees{late_charge, assessed_on 2026-09-17, grace_end_on 2026-09-16}`, Dr `late_charges` / Cr `late_charge_income` 7,901), `installment.due_date_reached` was emitted by the unit on 2026-09-01 and not by any borrower flow, and the unit on 2026-09-18 assesses nothing (`late_charge_run = false`).", { todo: true });
+test("35.5-T4: Given the 100-loan demo book (transfer-boarded, `origination_application_id IS NULL`) and one originated loan, when the `cashiering_daily` cycle runs for a day, then `cycle_runs` shows `units_total = 101`, every loan has one `cashiering_unit_runs` row with `outcome = done` for that `as_of_date`, `cashiering.daily.run_completed{loans: 101}` is appended exactly once and satisfies `SM_CASHIERING_DAILY_RECEIPT_1D`, and running the cycle again for the same day writes no payment, fee, ledger line or unit row (the second run's decision records name the existing rows).", { skip }, async () => {
+  const sd = await side("t4");
+  try {
+    const day0 = "2026-11-19T15:00:00.000Z", day1 = "2026-11-20T15:00:00.000Z";   // 10:00 ET Thu / Fri — as_of_date 2026-11-19 / 2026-11-20
+    const book = await boardBook(sd.rt(day0), sd.db); assert.equal(book.length, 100, "the 100-loan demo book");
+    assert.equal(await count(sd.db, `FROM loans WHERE id = ANY($1::uuid[]) AND origination_application_id IS NULL`, [book]), 100, "transfer-boarded: origination_application_id IS NULL");
+    const s = await sd.server(day0); let originated = "";
+    try { originated = (await fundDemoNote({ ...s, db: sd.db })).loanId; } finally { await s.close(); }
+    const active = (await sd.db.query<{ id: string }>(ACTIVE_BOOK_SQL)).map((r) => r.id); assert.equal(active.length, 101); assert.ok(active.includes(originated), "the originated loan is in the selector (no origination_application_id condition)");
+    // the day before: the first receipt arms the recurring global clock for the next day (a recurring clock arms on its own trigger)
+    const r0 = await cashieringDailyPass(sd.rt(day0), day0); assert.equal(r0.ran, true); assert.equal(r0.loans, 101); assert.equal(r0.units_done, 101, JSON.stringify(r0.errors)); assert.equal(r0.units_no_config, 0);
+    const armed = await timerOn(sd.db, "SM_CASHIERING_DAILY_RECEIPT_1D", null); assert.equal(armed.length, 1); assert.equal(armed[0]!.anchor_date, "2026-11-19"); assert.equal(armed[0]!.due_date, "2026-11-20"); assert.equal(armed[0]!.status, "armed");
+    // the day: every loan's unit, one run row, one receipt
+    const before = await moneyCounts(sd.db);
+    const r1 = await cashieringDailyPass(sd.rt(day1), day1);
+    assert.equal(r1.ran, true); assert.equal(r1.loans, 101); assert.equal(r1.units_done, 101, JSON.stringify(r1.errors)); assert.equal(r1.units_already, 0); assert.equal(r1.units_failed, 0);
+    const run = await defaultCyclesPort.readRun(sd.db, "cashiering_daily", "2026-11-20"); assert.ok(run, "the cycle_runs row"); assert.equal(run!.units_total, 101); assert.equal(run!.units_done, 101); assert.equal(run!.status, "completed"); assert.equal(run!.as_of_date, "2026-11-20");
+    const units = await sd.db.query<{ id: string; loan_id: string; outcome: string }>(`SELECT id::text AS id, loan_id::text AS loan_id, outcome FROM cashiering_unit_runs WHERE as_of_date = '2026-11-20'`);
+    assert.equal(units.length, 101); assert.deepEqual([...new Set(units.map((u) => u.loan_id))].sort(), [...active].sort(), "every loan has one unit row for the day"); assert.ok(units.every((u) => u.outcome === "done"));
+    const receipts = await sd.db.query<{ id: string; payload: Record<string, unknown> }>(`SELECT id::text AS id, payload FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2026-11-20'`, [CASHIERING_CYCLE_EVENTS.runCompleted]);
+    assert.equal(receipts.length, 1, "`cashiering.daily.run_completed` appended exactly once"); assert.equal(receipts[0]!.payload["loans"], 101); assert.equal(receipts[0]!.id, r1.receipt_event_id);
+    const clocks = await timerOn(sd.db, "SM_CASHIERING_DAILY_RECEIPT_1D", null); assert.equal(clocks.length, 2);
+    const satisfied = clocks.find((t) => t.anchor_date === "2026-11-19")!; assert.equal(satisfied.status, "satisfied"); assert.equal(satisfied.satisfied_by_event_id, receipts[0]!.id, "the receipt satisfies SM_CASHIERING_DAILY_RECEIPT_1D"); assert.equal(clocks.find((t) => t.anchor_date === "2026-11-20")!.status, "armed", "and re-arms it for tomorrow");
+    const after = await moneyCounts(sd.db); assert.equal(after.unit_rows, before.unit_rows + 101);
+    // the same day again: no payment, fee, ledger line or unit row — each unit's decision names the existing row
+    const decisionsBefore = await count(sd.db, `FROM agent_decisions WHERE action = 'cashiering.run_unit'`);
+    const r2 = await cashieringDailyPass(sd.rt(day1), day1);
+    assert.equal(r2.units_already, 101); assert.equal(r2.units_done, 0); assert.equal(r2.posted.length, 0); assert.equal(r2.late_charges_assessed.length, 0);
+    assert.deepEqual(await moneyCounts(sd.db), after, "the second run wrote no payment, fee, ledger line or unit row");
+    assert.equal(await count(sd.db, `FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2026-11-20'`, [CASHIERING_CYCLE_EVENTS.runCompleted]), 1, "still one receipt");
+    const named = await sd.db.query<{ loan_id: string; rationale: string }>(`SELECT loan_id::text AS loan_id, rationale FROM agent_decisions WHERE action = 'cashiering.run_unit' AND rule_code = 'ONE_UNIT_PER_LOAN_PER_DAY'`);
+    assert.equal(named.length, 101); assert.equal(await count(sd.db, `FROM agent_decisions WHERE action = 'cashiering.run_unit'`), decisionsBefore + 101);
+    const unitByLoan = new Map(units.map((u) => [u.loan_id, u.id]));
+    for (const d of named) { const r = JSON.parse(d.rationale) as Record<string, unknown>; assert.equal(r["outcome"], "already_done"); assert.equal(r["existing_unit_run_id"], unitByLoan.get(d.loan_id), "the second run's decision names the existing unit row"); }
+  } finally { await sd.close(); }
+});
+
+test("35.5-T5: Given loan L-1 with a `payments` row in `received` for **$2,192.57** on 2026-09-03, when its unit runs on 2026-09-03, then 2.1 posts interest **$1,352.94**, principal **$227.23** and escrow **$612.40** with the balanced sets of 2.1 rule 8 (`rule_ref` on every line), row 2026-09-01 is `satisfied` with `satisfied_by_payment_id` set and `credited_as_of` 2026-09-03, and `POST /v1/loans/{id}/tools/2.1/payments.read%2Fwrite` with an `input.state` whose UPB differs from the ledger is refused `NO_CLIENT_STATE` before any write (contract test over `payments.read/write{op=post}`, `fees.assess{op=daily_run}` and `autodraft.read/write{op=amount_change_check}`).", { skip }, async () => {
+  const at = "2026-09-03T16:00:00.000Z";   // 12:00 ET, 09:00 America/Phoenix — as_of_date and L-1's local date 2026-09-03
+  const rt = rtAt(at);
+  const f = await l1Fixture(rt);   // rows from 2026-09-01 `due`; the ledger's UPB $249,774.00
+  const payId = await receivePayment(rt, f.loanId, { amount_cents: L1.payment, received_on: "2026-09-03" });
+  assert.equal((await one<{ status: string }>(db, `SELECT status FROM payments WHERE id = $1::uuid`, [payId])).status, "received", "the typed payments row (35.1) in `received`");
+  const u = await runUnit(rt, f.loanId);
+  assert.equal(u.as_of_date, "2026-09-03"); assert.equal(u.local_date, "2026-09-03"); assert.deepEqual(u.posted, [payId]); assert.equal(u.outcome, "done"); assert.equal(u.already, false);
+  // 2.1's split at UPB $249,774.00 × 6.500% ÷ 12: interest $1,352.94, principal $227.23, escrow $612.40
+  const posted = (await events(f.loanId, "payment.posted")).at(-1)!; assert.equal(posted.payload["payment_id"], payId); assert.equal(posted.actor_id, "cashiering");
+  assert.equal(posted.payload["interest_cents"], L1.interest_sep.toString()); assert.equal(posted.payload["principal_cents"], L1.principal_sep.toString()); assert.equal(posted.payload["escrow_cents"], L1.escrow.toString()); assert.deepEqual(posted.payload["installments"], ["2026-09-01"]); assert.equal(posted.payload["upb_after_cents"], L1.upb_after_sep.toString());
+  assert.equal(rowInterest(L1.upb, L1.rate_bps), L1.interest_sep); assert.equal(L1.interest_sep + L1.principal_sep, L1.pi); assert.equal(L1.pi + L1.escrow, L1.payment); assert.equal(L1.upb - L1.principal_sep, L1.upb_after_sep);
+  // the balanced sets of 2.1 rule 8 (receipt · allocation · cash split), `rule_ref` on every line
+  const pay = decodeEntityData((await one<{ data: unknown }>(db, `SELECT data FROM entity_current WHERE kind = 'payments' AND id = $1`, [payId])).data); const setIds = pay["ledger_entry_set_ids"] as string[]; assert.equal(setIds.length, 3);
+  for (const setId of setIds) { const lines = await db.query<{ amount_cents: string; rule_ref: string | null }>(`SELECT amount_cents::text AS amount_cents, rule_ref FROM ledger_lines WHERE set_id = $1::uuid`, [setId]); assert.ok(lines.length >= 2); assert.equal(lines.reduce((a, l) => a + BigInt(l.amount_cents), 0n), 0n, "balanced"); assert.ok(lines.every((l) => /^2\.1:r8/.test(l.rule_ref ?? "")), "rule_ref on every line"); }
+  assert.equal((await db.query<{ s: string }>(`SELECT sum(amount_cents)::text AS s FROM ledger_lines WHERE loan_id = $1 AND account = 'interest_due' AND set_id = ANY($2::uuid[])`, [f.loanId, setIds]))[0]!.s, (-L1.interest_sep).toString());
+  // row 2026-09-01 `satisfied`, `satisfied_by_payment_id` set, `credited_as_of` 2026-09-03 — in the unit's transaction (the receipt follows on the same log)
+  const row = (await readInstallments(db, f.loanId)).find((r) => r.due_date === "2026-09-01")!;
+  assert.equal(row.status, "satisfied"); assert.equal(row.satisfied_by_payment_id, payId); assert.equal(row.credited_as_of, "2026-09-03"); assert.equal(row.satisfied_on, "2026-09-03");
+  assert.equal((await one<{ status: string }>(db, `SELECT status FROM payments WHERE id = $1::uuid`, [payId])).status, "posted");
+  const completed = await events(f.loanId, CASHIERING_CYCLE_EVENTS.unitCompleted); assert.equal(completed.length, 1); assert.ok(Number(completed[0]!.sequence) > Number(posted.sequence)); assert.deepEqual(completed[0]!.payload["posted"], [payId]);
+  assert.equal(await count(db, `FROM cashiering_unit_runs WHERE loan_id = $1 AND as_of_date = '2026-09-03' AND outcome = 'done'`, [f.loanId]), 1);
+  // NO_CLIENT_STATE: the hosted route refuses a caller's `state` (its UPB differs from the ledger) before any write, on all three engine commands
+  const facts = await loanCashState(rt, f.loanId, D("2026-09-03")); const fake = { ...facts.state, upb_cents: facts.state.upb_cents + 100_000n };
+  const p2 = await receivePayment(rt, f.loanId, { amount_cents: L1.payment, received_on: "2026-09-03" });
+  const s = await serverAt(at);
+  try {
+    const beforeCounts = await moneyCounts(db); const eventsBefore = await count(db, `FROM loan_events WHERE loan_id = $1`, [f.loanId]);
+    const attempts: [string, string, Record<string, unknown>][] = [
+      ["2.1", "payments.read/write", { op: "post", id: p2, loan_id: f.loanId, state: fake, custodial: facts.custodial }],
+      ["2.7", "fees.assess", { op: "daily_run", loan_id: f.loanId, run_on: "2026-09-03", state: fake }],
+      ["2.3", "autodraft.read/write", { op: "amount_change_check", id: "E-none", loan_id: f.loanId, state: fake, next_amount_cents: "1", debit_on: "2026-10-01", today: "2026-09-03", prior_amount_cents: "1" }]];
+    for (const [process, name, input] of attempts) {
+      const r = await call("POST", `/v1/loans/${f.loanId}/tools/${process}/${encodeURIComponent(name)}`, { actor: CASHIERING, input }, s.base);
+      assert.equal(r.status, 409, `${process} ${name}: ${JSON.stringify(r.body)}`); assert.equal(r.body["code"], "NO_CLIENT_STATE");
+    }
+    assert.deepEqual(await moneyCounts(db), beforeCounts, "refused before any write"); assert.equal(await count(db, `FROM loan_events WHERE loan_id = $1`, [f.loanId]), eventsBefore);
+    // without a caller's state the same route posts p2 through the engine's own derivation (rule 5)
+    const ok = await call("POST", `/v1/loans/${f.loanId}/tools/2.1/${encodeURIComponent("payments.read/write")}`, { actor: CASHIERING, input: { op: "post", id: p2, loan_id: f.loanId } }, s.base);
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal((await readInstallments(db, f.loanId)).find((r) => r.due_date === "2026-10-01")!.status, "prepaid", "the second item prepaid the October row from the derived state");
+  } finally { await s.close(); }
+});
+
+test("35.5-T6: Given L-1's row 2026-09-01 unpaid past the 15-day grace (grace end Wed 2026-09-16), when the unit runs on 2026-09-17 in the loan's zone, then 2.7's `daily_run` assesses **$79.01** (`fees{late_charge, assessed_on 2026-09-17, grace_end_on 2026-09-16}`, Dr `late_charges` / Cr `late_charge_income` 7,901), `installment.due_date_reached` was emitted by the unit on 2026-09-01 and not by any borrower flow, and the unit on 2026-09-18 assesses nothing (`late_charge_run = false`).", { skip }, async () => {
+  const f = await l1Fixture(rtAt("2026-08-20T16:00:00.000Z"));   // rows from 2026-09-01 `due`; note grace 15 days → grace end Wed 2026-09-16
+  // 2026-09-01 (12:00 ET = 09:00 Phoenix, the loan's local date): the unit's 2.7 step emits `installment.due_date_reached`
+  const u1 = await runUnit(rtAt("2026-09-01T16:00:00.000Z"), f.loanId);
+  assert.equal(u1.local_date, "2026-09-01"); assert.equal(u1.due_today, true); assert.equal(u1.late_charge_run, true); assert.deepEqual(u1.late_charge_fee_ids, []);
+  const reached = await events(f.loanId, "installment.due_date_reached"); assert.equal(reached.length, 1);
+  assert.equal(reached[0]!.payload["due_date"], "2026-09-01"); assert.equal(reached[0]!.payload["grace_end_on"], "2026-09-16"); assert.equal(reached[0]!.actor_kind, "agent"); assert.equal(reached[0]!.actor_id, "cashiering", "emitted by the unit's 2.7 command, not by a borrower flow");
+  assert.equal(await count(db, `FROM loan_events WHERE loan_id = $1 AND type = 'installment.due_date_reached' AND NOT (actor_kind = 'agent' AND actor_id = 'cashiering')`, [f.loanId]), 0);
+  const completed = (await events(f.loanId, CASHIERING_CYCLE_EVENTS.unitCompleted))[0]!; assert.ok(Number(completed.sequence) > Number(reached[0]!.sequence), "the unit's receipt follows 2.7's emission on the loan's log (one transaction)");
+  assert.equal(await count(db, `FROM fees WHERE loan_id = $1`, [f.loanId]), 0);
+  // 2026-09-17, the day after the grace end: 2.7 assesses round_half_up(5% × $1,580.17) = $79.01 — Dr late_charges / Cr late_charge_income 7,901
+  const u2 = await runUnit(rtAt("2026-09-17T16:00:00.000Z"), f.loanId);
+  assert.equal(u2.local_date, "2026-09-17"); assert.equal(u2.grace_ended_yesterday, true); assert.equal(u2.due_today, false); assert.equal(u2.late_charge_run, true); assert.equal(u2.late_charge_fee_ids.length, 1);
+  const fee = await one<Record<string, unknown>>(db, `SELECT fee_type, amount_cents::text AS amount_cents, assessed_on::text AS assessed_on, grace_end_on::text AS grace_end_on, installment_due_date::text AS installment_due_date, state FROM fees WHERE loan_id = $1`, [f.loanId]);
+  assert.equal(fee["fee_type"], "late_charge"); assert.equal(fee["amount_cents"], L1.late_charge.toString()); assert.equal(fee["assessed_on"], "2026-09-17"); assert.equal(fee["grace_end_on"], "2026-09-16"); assert.equal(fee["installment_due_date"], "2026-09-01"); assert.equal(fee["state"], "assessed");
+  assert.equal(lateChargeAmount(L1.pi, "5", null), L1.late_charge);
+  const assessed = (await events(f.loanId, "fee.assessed")).at(-1)!; assert.equal(assessed.payload["amount_cents"], L1.late_charge.toString()); assert.equal(assessed.actor_id, "cashiering");
+  const lc = await db.query<{ scope: string; account: string; amount_cents: string; rule_ref: string }>(`SELECT l.scope::text AS scope, l.account, l.amount_cents::text AS amount_cents, l.rule_ref FROM ledger_lines l WHERE l.set_id IN (SELECT set_id FROM ledger_lines WHERE loan_id = $1 AND account = 'late_charges') ORDER BY l.account`, [f.loanId]);
+  assert.deepEqual(lc.map((l) => [l.scope, l.account, l.amount_cents, l.rule_ref]), [["corporate", "late_charge_income", (-L1.late_charge).toString(), "2.7:r1:assessment"], ["loan", "late_charges", L1.late_charge.toString(), "2.7:r1:assessment"]]);
+  assert.equal((await loanCashState(rtAt("2026-09-17T16:00:00.000Z"), f.loanId, D("2026-09-17"))).state.late_charges_due_cents, L1.late_charge);
+  // 2026-09-18: nothing due, no grace end yesterday — the unit runs no 2.7 step and assesses nothing
+  const u3 = await runUnit(rtAt("2026-09-18T16:00:00.000Z"), f.loanId);
+  assert.equal(u3.late_charge_run, false); assert.deepEqual(u3.late_charge_fee_ids, []); assert.equal(u3.grace_ended_yesterday, false); assert.equal(u3.due_today, false);
+  assert.equal(await count(db, `FROM fees WHERE loan_id = $1`, [f.loanId]), 1);
+  assert.equal((await one<{ late_charge_run: boolean }>(db, `SELECT late_charge_run FROM cashiering_unit_runs WHERE loan_id = $1 AND as_of_date = '2026-09-18'`, [f.loanId])).late_charge_run, false);
+  assert.equal(await count(db, `FROM cashiering_unit_runs WHERE loan_id = $1 AND outcome = 'done'`, [f.loanId]), 3);
+});
+
 test("35.5-T7: Given lockbox `LBX-1` (cut-off 17:00 `America/Chicago`) and the FAKE bank's file for 2026-11-02 with items $2,192.57 (L-1, scanned 09:14), $1,500.00 (no scanline) and $2,308.50 (T-7, scanned 17:42) and control total **$6,001.07**, when `lockbox_ingest` runs, then `lockbox_batches` has one row with `items = 3`, `variance_cents = 0` and `status = posted`, item 1 is a `payments` row (`channel = lockbox`, `received_on` 2026-11-02, `status = identified`), item 2 is a `suspense_items` row (`source = lockbox`) with `lockbox.item.unidentified`, item 3 is a `payments` row with `received_on` 2026-11-03, three receipt sets Dr `clearing_cash` / Cr `suspense_unapplied` exist for 219,257, 150,000 and 230,850, `lockbox.batch.received` armed `FNMA_C1101_LOCKBOX_CLEARING_1BD`, `lockbox.batch.posted{posted: 2, unidentified: 1}` satisfied `SM_LOCKBOX_BATCH_POSTED_1BD`, the same file ingested again writes nothing, and the file with control total $6,000.07 leaves the batch in `variance` with no payment row and an `officer` escalation.", { todo: true });
 test("35.5-T8: Given L-1's active enrollment (draft day = due date, extra principal $100.00, validated) and the demo clock at Tue 2026-09-29 14:00 ET, when `ach_file_build` runs, then one `ach_files` row exists with one `ach_entries` row of **$2,292.57**, `effective_entry_date` 2026-10-01, description \"MORTGAGE PMT\" and `status = transmitted`, the file is a `documents` row with `sha256`, `ach.file.built` satisfied `SM_ACH_FILE_BUILD_1BD`; and given a second enrollment whose amount changed without a sent variable-amount notice and a third whose `validation_status = pending` (WEB), then neither has an entry and the build's decision names `REGE_1005_10D_VARIABLE_AMOUNT_NOTICE_10` and `NACHA_WEB_ACCOUNT_VALIDATION_GATE` as the refusals.", { todo: true });
 test("35.5-T9: Given the entry of T8 settled 2026-10-01 and posted by L-1's unit (interest **$1,351.71**, principal **$228.46**, escrow **$612.40**, curtailment **$100.00**, row 2026-10-01 `satisfied`), when the FAKE ODFI's return file for Mon 2026-10-05 carries R01 on its trace number and `ach_returns_ingest` runs, then `ach_return_files` has one row, `ach.return.received{code: R01}` and a `payment_reversals` row (`reason = returned_item`, `return_code = R01`) exist with the mirror set for $2,292.57, row 2026-10-01 is `due` again with `installment.restored`, UPB and LPI are back to $249,546.77 and 2026-09-01, a `fees{nsf_fee}` row of **$25.00** exists, a reinitiation `ach_entries` row of **$2,292.57** with description \"RETRY PYMT\", `effective_entry_date` Thu 2026-10-08 and `reinitiation_count = 1` exists, `ach.return.actioned{action: reversed_reinitiated}` satisfied `SM_ACH_RETURN_ACTIONED_1BD`, and the same return file ingested again writes nothing.", { todo: true });
 test("35.5-T10: Given the reinitiation of T9 is also returned R01 on 2026-10-12, when the return is actioned and the unit runs on 2026-10-17, then no further reinitiation is built (`NACHA_NSF_REINITIATION_180_MAX2` exhausted), the enrollment is `suspended_returns` with a hand-off escalation to `borrower-comms`, the 2026-10-17 run assesses **$79.01** on row 2026-10-01, and a second `fees{nsf_fee}` row exists for the second item; given instead a return coded R11, then no NSF fee exists and the corrected entry carries `reinitiation_of_entry_id`.", { todo: true });
-test("35.5-T11: Given loan P (AZ, `America/Phoenix`) and loan N (NY, `America/New_York`) each with a `due` row for 2026-10-01, when the planner's `as_of` is 2026-10-02T06:30:00Z, then N's `cashiering_unit_runs.local_date` is 2026-10-02 and P's is 2026-10-01, `installment.due_date_reached{due_date: 2026-10-01}` was emitted for P on that pass and for N on the earlier pass whose local date was 2026-10-01, `LOAN_LOCAL_TZ` no longer exists in `src/runtime` (grep = 0), and a loan with no `loan_servicing_configs` row is refused `CONFIG_REQUIRED` by the unit with nothing written.", { todo: true });
+test("35.5-T11: Given loan P (AZ, `America/Phoenix`) and loan N (NY, `America/New_York`) each with a `due` row for 2026-10-01, when the planner's `as_of` is 2026-10-02T06:30:00Z, then N's `cashiering_unit_runs.local_date` is 2026-10-02 and P's is 2026-10-01, `installment.due_date_reached{due_date: 2026-10-01}` was emitted for P on that pass and for N on the earlier pass whose local date was 2026-10-01, `LOAN_LOCAL_TZ` no longer exists in `src/runtime` (grep = 0), and a loan with no `loan_servicing_configs` row is refused `CONFIG_REQUIRED` by the unit with nothing written.", { skip }, async () => {
+  const at0 = "2026-09-20T16:00:00.000Z";
+  const P = await l1Fixture(rtAt(at0), { state: "AZ", nextDue: D("2026-10-01") }); const N = await l1Fixture(rtAt(at0), { state: "NY", nextDue: D("2026-10-01") });
+  assert.equal((await loanServicingConfig(db, P.loanId, D("2026-10-01"))).time_zone, "America/Phoenix"); assert.equal((await loanServicingConfig(db, N.loanId, D("2026-10-01"))).time_zone, "America/New_York");
+  // the earlier pass: 2026-10-01T05:00Z is 01:00 in New York (local 2026-10-01) and 22:00 on 2026-09-30 in Phoenix
+  const early = "2026-10-01T05:00:00.000Z"; const r0 = await cashieringDailyPass(rtAt(early), early, { only: [P.loanId, N.loanId] }); assert.equal(r0.units_done, 2, JSON.stringify(r0.errors)); assert.equal(r0.as_of_date, "2026-10-01");
+  assert.equal((await one<{ local_date: string }>(db, `SELECT local_date::text AS local_date FROM cashiering_unit_runs WHERE loan_id = $1 AND as_of_date = '2026-10-01'`, [N.loanId])).local_date, "2026-10-01");
+  assert.equal((await one<{ local_date: string }>(db, `SELECT local_date::text AS local_date FROM cashiering_unit_runs WHERE loan_id = $1 AND as_of_date = '2026-10-01'`, [P.loanId])).local_date, "2026-09-30");
+  assert.equal((await events(N.loanId, "installment.due_date_reached")).length, 1, "N's due date is reached on the pass whose local date was 2026-10-01"); assert.equal((await events(P.loanId, "installment.due_date_reached")).length, 0, "not yet 2026-10-01 in Phoenix");
+  // the planner's as_of 2026-10-02T06:30:00Z: 02:30 in New York (local 2026-10-02), 23:30 on 2026-10-01 in Phoenix
+  const asOf = "2026-10-02T06:30:00.000Z"; const r1 = await cashieringDailyPass(rtAt(asOf), asOf, { only: [P.loanId, N.loanId] }); assert.equal(r1.units_done, 2, JSON.stringify(r1.errors)); assert.equal(r1.as_of_date, "2026-10-02");
+  const nRow = await one<Record<string, unknown>>(db, `SELECT local_date::text AS local_date, time_zone, due_today FROM cashiering_unit_runs WHERE loan_id = $1 AND as_of_date = '2026-10-02'`, [N.loanId]); assert.equal(nRow["local_date"], "2026-10-02"); assert.equal(nRow["time_zone"], "America/New_York"); assert.equal(nRow["due_today"], false);
+  const pRow = await one<Record<string, unknown>>(db, `SELECT local_date::text AS local_date, time_zone, due_today FROM cashiering_unit_runs WHERE loan_id = $1 AND as_of_date = '2026-10-02'`, [P.loanId]); assert.equal(pRow["local_date"], "2026-10-01"); assert.equal(pRow["time_zone"], "America/Phoenix"); assert.equal(pRow["due_today"], true);
+  const pReached = await events(P.loanId, "installment.due_date_reached"); assert.equal(pReached.length, 1); assert.equal(pReached[0]!.payload["due_date"], "2026-10-01"); assert.equal(Date.parse(pReached[0]!.occurred_at), Date.parse(asOf), "emitted for P on that pass");
+  const nReached = await events(N.loanId, "installment.due_date_reached"); assert.equal(nReached.length, 1, "N's was not emitted twice"); assert.equal(nReached[0]!.payload["due_date"], "2026-10-01"); assert.equal(Date.parse(nReached[0]!.occurred_at), Date.parse(early), "emitted for N on the earlier pass");
+  // `LOAN_LOCAL_TZ` no longer exists in src/runtime (grep = 0)
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? walk(p) : p.endsWith(".ts") ? [p] : []; });
+  const runtimeDir = decodeURIComponent(new URL("../../runtime/", import.meta.url).pathname);
+  assert.deepEqual(walk(runtimeDir).filter((p) => /LOAN_LOCAL_TZ/.test(readFileSync(p, "utf8"))), [], "grep LOAN_LOCAL_TZ src/runtime = 0");
+  // a boarded loan with no `loan_servicing_configs` row: the unit is refused CONFIG_REQUIRED with nothing written
+  const bare = await new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: L1.original, originalTermMonths: 360, firstPaymentDate: D("2021-09-01"), maturityDate: D("2051-08-01"), property: { line1: "2 Bare Way", city: "Phoenix", state: "AZ", postalCode: "85004" } });
+  await db.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months) VALUES ($1, '2021-07-15', 'boarding', 'fixed', $2, $3, $4, true, '30_360', 'A/A', 5000, 15, '2051-08-01', 300)`, [bare.loanId, L1.rate_bps, L1.pi.toString(), L1.escrow.toString()]);
+  await db.query(`UPDATE loans SET boarded_at = '2026-08-15T12:00:00Z' WHERE id = $1`, [bare.loanId]);
+  assert.equal(await count(db, `FROM loan_servicing_configs WHERE loan_id = $1`, [bare.loanId]), 0);
+  const eventsBefore = await count(db, `FROM loan_events WHERE loan_id = $1`, [bare.loanId]); const unitsBefore = await count(db, `FROM cashiering_unit_runs`); const decisionsBefore = await count(db, `FROM agent_decisions WHERE loan_id = $1`, [bare.loanId]); const ledgerBefore = await count(db, `FROM ledger_lines`);
+  await assert.rejects(rtAt(asOf).execute({ process: "35.5", name: "cashiering.run_unit", loanId: bare.loanId, actor: CASHIERING, input: { loan_id: bare.loanId, as_of: asOf } }), (e: Error & { code?: string }) => e.code === "CONFIG_REQUIRED");
+  assert.equal(await count(db, `FROM loan_events WHERE loan_id = $1`, [bare.loanId]), eventsBefore); assert.equal(await count(db, `FROM cashiering_unit_runs`), unitsBefore); assert.equal(await count(db, `FROM agent_decisions WHERE loan_id = $1`, [bare.loanId]), decisionsBefore); assert.equal(await count(db, `FROM ledger_lines`), ledgerBefore);
+  // the whole-book pass reports and escalates such a loan to compliance once for the day, never defaulting a zone
+  const r2 = await cashieringDailyPass(rtAt(asOf), asOf, { only: [bare.loanId] }); assert.equal(r2.units_no_config, 1); assert.equal(r2.units_done, 0); assert.equal(r2.errors[0]!.step, "CONFIG_REQUIRED");
+  assert.equal(await count(db, `FROM cashiering_unit_runs WHERE loan_id = $1`, [bare.loanId]), 0);
+  assert.equal(await count(db, `FROM escalations WHERE loan_id = $1 AND owner_role = 'compliance'`, [bare.loanId]), 1);
+  const r3 = await cashieringDailyPass(rtAt(asOf), asOf, { only: [bare.loanId] }); assert.equal(r3.units_no_config, 1); assert.equal(await count(db, `FROM escalations WHERE loan_id = $1 AND owner_role = 'compliance'`, [bare.loanId]), 1, "once per day");
+});
+
 test("35.5-T12: Given both boarding paths, when a loan boards, then a `loan_servicing_configs` row exists in the same transaction with `time_zone` from the reviewed state map for `properties.state`, `jurisdiction_state`, `servicer_profile_id` = the active profile, `late_charge_terms` = 2.7's `lateChargeTerms` for the note and `jurisdiction_rules.rules.late_charge`, `nsf_fee_allowed` from `jurisdiction_rules.rules.nsf_fee`, and `loan.servicing_config.written` satisfied `SM_LOAN_SERVICING_CONFIG_AT_BOARD_0`; given a note late-charge rate above the state's `max_pct`, then `late_charge_terms.conflict` names it and the state's bound is what 2.7 assesses.", { skip }, async () => {
   const rules = async (state: string): Promise<{ allowed: boolean }> => { const r = await db.query<{ rules: Record<string, unknown> }>(`SELECT rules FROM jurisdiction_rules WHERE state = $1`, [state]); const nsf = (r[0]?.rules?.["nsf_fee"] ?? null) as { allowed?: boolean } | null; return { allowed: nsf ? nsf.allowed !== false : false }; };
   // the fund path (AZ property, the demo note's 5.00% / 15-day late-charge terms)
@@ -352,6 +536,73 @@ test("35.5-T13: Given the FAKE build's seeded `servicer_profiles` v1 (the former
   assert.equal(await count(db, `FROM loan_events WHERE type = 'servicer_profile.activated'`), 1);
 });
 
-test("35.5-T14: Given a 2.4 curtailment of $1,000.00 received on 2026-11-10 on T-7 (after row 2026-11-01 was satisfied), when the 2026-12-01 payment posts, then interest is `round_half_up((28,008,119 − 100,000) × 0.065 ÷ 12)` = $1,511.69 rather than the row's $1,517.11, the unit records the 542¢ difference against the row, and the schedule is re-projected only when 2.4's re-amortization activates new terms.", { todo: true });
-test("35.5-T15: Given the demo clock at 2026-10-01 12:00 ET and the fixture book, when `POST /v1/demo/advance {days: 3}` runs, then `cycle_runs` holds one `cashiering_daily` run per day 2026-10-02 … 2026-10-04 with `units_total` = the active book, each loan has exactly one `done` unit row per day, `cashiering.daily.run_completed` was appended three times with the three `as_of_date`s, and `SM_CASHIERING_DAILY_RECEIPT_1D` never breached.", { todo: true });
+test("35.5-T14: Given a 2.4 curtailment of $1,000.00 received on 2026-11-10 on T-7 (after row 2026-11-01 was satisfied), when the 2026-12-01 payment posts, then interest is `round_half_up((28,008,119 − 100,000) × 0.065 ÷ 12)` = $1,511.69 rather than the row's $1,517.11, the unit records the 542¢ difference against the row, and the schedule is re-projected only when 2.4's re-amortization activates new terms.", { skip }, async () => {
+  const s2 = await serverAt("2026-10-16T15:00:00.000Z"); let loanId = "";
+  try { loanId = (await boardT7(s2)).loanId; } finally { await s2.close(); }
+  const rows0 = await readInstallments(db, loanId);
+  const row62 = rows0.find((r) => r.due_date === "2026-11-01")!; assert.equal(row62.upb_after_cents, K14.upb_after_row62); assert.equal(row62.interest_cents, B.row62_interest);
+  const row63 = rows0.find((r) => r.due_date === "2026-12-01")!; assert.equal(row63.interest_cents, K14.row_interest); assert.equal(row63.upb_before_cents, K14.upb_after_row62); assert.equal(K14.row_interest, B.row63_interest);
+  // the 2026-11-01 installment, received 2026-11-02: the ledger's UPB equals the row's upb_before, so the posted interest is the row's — no variance
+  const rtNov = rtAt("2026-11-02T16:00:00.000Z"); const pay1 = await receivePayment(rtNov, loanId, { amount_cents: B.pi + B.escrow, received_on: "2026-11-02" }); const u1 = await runUnit(rtNov, loanId);
+  assert.deepEqual(u1.posted, [pay1]); assert.deepEqual(u1.row_variances, [], "no curtailment yet: the posted interest is the row's");
+  assert.equal((await events(loanId, "payment.posted")).at(-1)!.payload["interest_cents"], B.row62_interest.toString()); assert.equal((await readInstallments(db, loanId)).find((r) => r.due_date === "2026-11-01")!.status, "satisfied");
+  // 2.4: a $1,000.00 curtailment received 2026-11-10 (designated principal on a current loan, F-1-09) — the ledger's UPB is 28,008,119 − 100,000
+  const rtCurt = rtAt("2026-11-10T16:00:00.000Z"); const pay2 = await receivePayment(rtCurt, loanId, { amount_cents: K14.curtailment, received_on: "2026-11-10", designation: "curtailment", curtailment_cents: K14.curtailment }); const u2 = await runUnit(rtCurt, loanId);
+  assert.deepEqual(u2.posted, [pay2]); const curt = (await events(loanId, "payment.posted")).at(-1)!; assert.equal(curt.payload["outcome"], "curtailment"); assert.equal(curt.payload["curtailment_cents"], K14.curtailment.toString()); assert.deepEqual(curt.payload["installments"], []);
+  assert.equal((await loanCashState(rtCurt, loanId, D("2026-11-10"))).state.upb_cents, K14.upb_after_curtailment); assert.equal(K14.upb_after_row62 - K14.curtailment, K14.upb_after_curtailment);
+  assert.equal((await scheduleRuns(db, loanId)).length, 1, "no reprojection on a curtailment"); assert.equal((await readInstallments(db, loanId)).find((r) => r.due_date === "2026-12-01")!.interest_cents, K14.row_interest, "the row still states $1,517.11");
+  // the 2026-12-01 payment: interest on the actual UPB — round_half_up(27,908,119 × 0.065 ÷ 12) = $1,511.69 rather than the row's $1,517.11; the unit records the 542¢ difference against the row
+  const rtDec = rtAt("2026-12-01T16:00:00.000Z"); const pay3 = await receivePayment(rtDec, loanId, { amount_cents: B.pi + B.escrow, received_on: "2026-12-01" }); const u3 = await runUnit(rtDec, loanId);
+  assert.deepEqual(u3.posted, [pay3]); const dec = (await events(loanId, "payment.posted")).at(-1)!; assert.equal(dec.payload["interest_cents"], K14.posted_interest.toString()); assert.deepEqual(dec.payload["installments"], ["2026-12-01"]); assert.equal(dec.payload["principal_cents"], (B.pi - K14.posted_interest).toString());
+  assert.equal(rowInterest(K14.upb_after_curtailment, B.rate_bps), K14.posted_interest); assert.equal(K14.row_interest - K14.posted_interest, K14.difference);
+  assert.equal(u3.row_variances.length, 1); const v = u3.row_variances[0]!; assert.equal(v.due_date, "2026-12-01"); assert.equal(v.payment_id, pay3); assert.equal(v.row_interest_cents, K14.row_interest.toString()); assert.equal(v.posted_interest_cents, K14.posted_interest.toString()); assert.equal(v.difference_cents, K14.difference.toString()); assert.equal(v.actual_upb_cents, K14.upb_after_curtailment.toString()); assert.equal(v.upb_before_cents, K14.upb_after_row62.toString());
+  const unitRow = await one<{ row_variances: unknown }>(db, `SELECT row_variances FROM cashiering_unit_runs WHERE id = $1::uuid`, [u3.unit_run_id]); assert.deepEqual(unitRow.row_variances, [v], "recorded on the unit row");
+  assert.deepEqual((await events(loanId, CASHIERING_CYCLE_EVENTS.unitCompleted)).at(-1)!.payload["row_variances"], [v]);
+  const rows = await readInstallments(db, loanId); assert.equal(rows.find((r) => r.due_date === "2026-12-01")!.status, "satisfied"); assert.equal(rows.find((r) => r.due_date === "2026-12-01")!.interest_cents, K14.row_interest, "a posting never rewrites the row");
+  assert.equal((await scheduleRuns(db, loanId)).length, 1, "the schedule is re-projected only when 2.4's re-amortization activates new terms");
+  // 2.4's re-amortization (Form 181) activates new terms effective 2027-01-01 — `loan_terms.activated{reason: reamortization, new_pi_cents}` in 2.4's own spelling (src/domain/cashiering/ops.ts) → the next unit re-projects the `due` rows from that date under the new P&I
+  const jan = rows.find((r) => r.due_date === "2027-01-01")!; const remaining = rows.filter((r) => r.due_date >= "2027-01-01").length;
+  // the actual UPB after the December posting: 27,908,119 less the principal 2.1 applied (P&I − the recomputed interest) — 2.4 re-amortizes on it (Form 181), so the rows from 2027-01-01 project from it
+  const actualUpb = (await loanCashState(rtDec, loanId, D("2026-12-01"))).state.upb_cents; assert.equal(actualUpb, K14.upb_after_curtailment - (B.pi - K14.posted_interest)); assert.equal(jan.upb_before_cents! - actualUpb, K14.curtailment + K14.difference, "the row's expectation is off by the curtailment plus the 542¢ of principal the lower interest freed");
+  const reamPi = levelPaymentBps(actualUpb, B.rate_bps, remaining); assert.ok(reamPi < B.pi, "a curtailment re-amortized lowers the level payment");
+  const act = await rtAt("2026-12-10T16:00:00.000Z").executeDef(testTool("t14.reamortize", (_i, ctx) => { const e = ctx.events.append({ type: "loan_terms.activated", loanId, aggregate: { kind: "loan_terms", id: loanId }, actor: { kind: "agent", id: "cashiering" }, payload: { reason: "reamortization", reamortization_id: randomUUID(), loan_terms_version: 2, effective_on: "2027-01-01", new_pi_cents: reamPi.toString(), rate_pct: "6.500", processed_at: ctx.now } }); return { event_id: e.id }; }), { loanId, actor: SYSTEM, input: {} });
+  const triggerId = String((act.output as Record<string, unknown>)["event_id"]);
+  const u4 = await runUnit(rtAt("2026-12-11T16:00:00.000Z"), loanId);
+  assert.deepEqual(u4.reprojections.length, 1); const runs = await scheduleRuns(db, loanId); assert.equal(runs.length, 2); assert.equal(runs[1]!.trigger_event_id, triggerId); assert.equal(runs[1]!.source, "reprojection"); assert.equal(runs[1]!.rows_kept, rows.filter((r) => r.due_date < "2027-01-01").length); assert.equal(runs[1]!.rows_replaced, remaining); assert.equal(runs[1]!.pi_cents, reamPi);
+  const after = await readInstallments(db, loanId); assert.equal(after.find((r) => r.due_date === "2027-01-01")!.pi_cents, reamPi); assert.equal(after.find((r) => r.due_date === "2027-01-01")!.upb_before_cents, actualUpb, "re-projected from the actual UPB"); assert.equal(after.filter((r) => r.due_date >= "2027-01-01").reduce((a, r) => a + r.principal_cents, 0n), actualUpb, "Σ principal of the new rows = the actual UPB"); assert.equal(after.find((r) => r.due_date === "2026-12-01")!.pi_cents, B.pi, "the satisfied rows stand");
+  const t = await timer("SM_INSTALLMENT_REPROJECT_1BD", loanId); assert.equal(t.at(-1)!.status, "satisfied");
+});
+
+test("35.5-T15: Given the demo clock at 2026-10-01 12:00 ET and the fixture book, when `POST /v1/demo/advance {days: 3}` runs, then `cycle_runs` holds one `cashiering_daily` run per day 2026-10-02 … 2026-10-04 with `units_total` = the active book, each loan has exactly one `done` unit row per day, `cashiering.daily.run_completed` was appended three times with the three `as_of_date`s, and `SM_CASHIERING_DAILY_RECEIPT_1D` never breached.", { skip }, async () => {
+  const sd = await side("t15");
+  const demoClock = new OffsetClock(systemClock);
+  try {
+    // the demo clock at 2026-10-01 12:00 ET (a persisted step, as the deploy's first advance leaves it) and the fixture book
+    await demoClock.step(sd.db, ET("2026-10-01", "12:00"), { advance_id: randomUUID(), step: 1, steps: 1, kind: "target", actor: "system:test" });
+    assert.equal(wallClock(Date.parse(demoClock.now()), "America/New_York").date, "2026-10-01");
+    const rt = sd.rt("2026-10-01T16:00:00.000Z", { clock: demoClock });
+    const book = await boardBook(rt, sd.db); assert.equal(book.length, 100);
+    const active = await count(sd.db, `FROM (${ACTIVE_BOOK_SQL}) x`); assert.equal(active, 100, "the active book");
+    const server = createApiServer({ runtime: rt, apiToken: TOKEN, logger: createLogger("json", () => undefined) }); const door = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
+    try {
+      const r = await call("POST", "/v1/demo/advance", { days: 3, budget_ms: 900_000 }, door);
+      assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body["complete"], true); assert.equal(r.body["days_crossed"], 3); assert.equal((r.body["steps"] as unknown[]).length, 3);
+    } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+    assert.equal(wallClock(Date.parse(demoClock.now()), "America/New_York").date, "2026-10-04");
+    // one cashiering_daily run per day 2026-10-02 … 2026-10-04 with units_total = the active book; each loan exactly one `done` unit row per day
+    for (const day of ["2026-10-02", "2026-10-03", "2026-10-04"] as const) {
+      const run = await defaultCyclesPort.readRun(sd.db, "cashiering_daily", day); assert.ok(run, `cycle run ${day}`); assert.equal(run!.units_total, active, `${day}: units_total = the active book`); assert.equal(run!.status, "completed"); assert.equal(run!.as_of_date, day); assert.equal(run!.period_key, day);
+      const perLoan = await sd.db.query<{ loan_id: string; n: string }>(`SELECT loan_id::text AS loan_id, count(*)::text AS n FROM cashiering_unit_runs WHERE as_of_date = $1::date AND outcome = 'done' GROUP BY loan_id`, [day]);
+      assert.equal(perLoan.length, active, `${day}: every loan has a unit`); assert.ok(perLoan.every((x) => x.n === "1"), `${day}: exactly one done unit per loan`);
+    }
+    assert.equal(await count(sd.db, `FROM cashiering_unit_runs WHERE outcome = 'done'`), 3 * active);
+    // `cashiering.daily.run_completed` three times with the three as_of_dates; the clock re-armed each day, never breached
+    const receipts = await sd.db.query<{ d: string; loans: number }>(`SELECT payload->>'as_of_date' AS d, (payload->>'loans')::int AS loans FROM loan_events WHERE type = $1 ORDER BY sequence`, [CASHIERING_CYCLE_EVENTS.runCompleted]);
+    assert.deepEqual(receipts.map((r) => r.d), ["2026-10-02", "2026-10-03", "2026-10-04"], "appended three times, once per as_of_date"); assert.ok(receipts.every((r) => r.loans === active));
+    const clocks = await timerOn(sd.db, "SM_CASHIERING_DAILY_RECEIPT_1D", null);
+    assert.equal(clocks.length, 3, JSON.stringify(clocks)); assert.ok(clocks.every((t) => t.status !== "breached" && t.status !== "satisfied_late"), `never breached: ${JSON.stringify(clocks)}`);
+    assert.deepEqual(clocks.map((t) => [t.anchor_date, t.status]), [["2026-10-02", "satisfied"], ["2026-10-03", "satisfied"], ["2026-10-04", "armed"]]);
+  } finally { await sd.close(); }
+});
+
 test("35.5-T16: Given any tool of this process, then no tool changed a money column of `loan_installments` on a `satisfied` row, of `payments`, `fees` or `ledger_lines` except through 2.1's, 2.7's or 2.3's own commands (contract test: the ledger's line count and sums before and after `installments.write`, `installments.reproject`, `lockbox.item.resolve`, `servicing_config.write` and `servicer_profile.write` are identical), every write left an `agent_decisions` row with `rule_set_version`, and a fee waiver, a variance resolution changing an amount, or a return-action override by an agent actor is refused with nothing written.", { todo: true });

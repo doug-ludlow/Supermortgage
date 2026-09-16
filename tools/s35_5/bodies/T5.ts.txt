@@ -1,0 +1,41 @@
+  const at = "2026-09-03T16:00:00.000Z";   // 12:00 ET, 09:00 America/Phoenix — as_of_date and L-1's local date 2026-09-03
+  const rt = rtAt(at);
+  const f = await l1Fixture(rt);   // rows from 2026-09-01 `due`; the ledger's UPB $249,774.00
+  const payId = await receivePayment(rt, f.loanId, { amount_cents: L1.payment, received_on: "2026-09-03" });
+  assert.equal((await one<{ status: string }>(db, `SELECT status FROM payments WHERE id = $1::uuid`, [payId])).status, "received", "the typed payments row (35.1) in `received`");
+  const u = await runUnit(rt, f.loanId);
+  assert.equal(u.as_of_date, "2026-09-03"); assert.equal(u.local_date, "2026-09-03"); assert.deepEqual(u.posted, [payId]); assert.equal(u.outcome, "done"); assert.equal(u.already, false);
+  // 2.1's split at UPB $249,774.00 × 6.500% ÷ 12: interest $1,352.94, principal $227.23, escrow $612.40
+  const posted = (await events(f.loanId, "payment.posted")).at(-1)!; assert.equal(posted.payload["payment_id"], payId); assert.equal(posted.actor_id, "cashiering");
+  assert.equal(posted.payload["interest_cents"], L1.interest_sep.toString()); assert.equal(posted.payload["principal_cents"], L1.principal_sep.toString()); assert.equal(posted.payload["escrow_cents"], L1.escrow.toString()); assert.deepEqual(posted.payload["installments"], ["2026-09-01"]); assert.equal(posted.payload["upb_after_cents"], L1.upb_after_sep.toString());
+  assert.equal(rowInterest(L1.upb, L1.rate_bps), L1.interest_sep); assert.equal(L1.interest_sep + L1.principal_sep, L1.pi); assert.equal(L1.pi + L1.escrow, L1.payment); assert.equal(L1.upb - L1.principal_sep, L1.upb_after_sep);
+  // the balanced sets of 2.1 rule 8 (receipt · allocation · cash split), `rule_ref` on every line
+  const pay = decodeEntityData((await one<{ data: unknown }>(db, `SELECT data FROM entity_current WHERE kind = 'payments' AND id = $1`, [payId])).data); const setIds = pay["ledger_entry_set_ids"] as string[]; assert.equal(setIds.length, 3);
+  for (const setId of setIds) { const lines = await db.query<{ amount_cents: string; rule_ref: string | null }>(`SELECT amount_cents::text AS amount_cents, rule_ref FROM ledger_lines WHERE set_id = $1::uuid`, [setId]); assert.ok(lines.length >= 2); assert.equal(lines.reduce((a, l) => a + BigInt(l.amount_cents), 0n), 0n, "balanced"); assert.ok(lines.every((l) => /^2\.1:r8/.test(l.rule_ref ?? "")), "rule_ref on every line"); }
+  assert.equal((await db.query<{ s: string }>(`SELECT sum(amount_cents)::text AS s FROM ledger_lines WHERE loan_id = $1 AND account = 'interest_due' AND set_id = ANY($2::uuid[])`, [f.loanId, setIds]))[0]!.s, (-L1.interest_sep).toString());
+  // row 2026-09-01 `satisfied`, `satisfied_by_payment_id` set, `credited_as_of` 2026-09-03 — in the unit's transaction (the receipt follows on the same log)
+  const row = (await readInstallments(db, f.loanId)).find((r) => r.due_date === "2026-09-01")!;
+  assert.equal(row.status, "satisfied"); assert.equal(row.satisfied_by_payment_id, payId); assert.equal(row.credited_as_of, "2026-09-03"); assert.equal(row.satisfied_on, "2026-09-03");
+  assert.equal((await one<{ status: string }>(db, `SELECT status FROM payments WHERE id = $1::uuid`, [payId])).status, "posted");
+  const completed = await events(f.loanId, CASHIERING_CYCLE_EVENTS.unitCompleted); assert.equal(completed.length, 1); assert.ok(Number(completed[0]!.sequence) > Number(posted.sequence)); assert.deepEqual(completed[0]!.payload["posted"], [payId]);
+  assert.equal(await count(db, `FROM cashiering_unit_runs WHERE loan_id = $1 AND as_of_date = '2026-09-03' AND outcome = 'done'`, [f.loanId]), 1);
+  // NO_CLIENT_STATE: the hosted route refuses a caller's `state` (its UPB differs from the ledger) before any write, on all three engine commands
+  const facts = await loanCashState(rt, f.loanId, D("2026-09-03")); const fake = { ...facts.state, upb_cents: facts.state.upb_cents + 100_000n };
+  const p2 = await receivePayment(rt, f.loanId, { amount_cents: L1.payment, received_on: "2026-09-03" });
+  const s = await serverAt(at);
+  try {
+    const beforeCounts = await moneyCounts(db); const eventsBefore = await count(db, `FROM loan_events WHERE loan_id = $1`, [f.loanId]);
+    const attempts: [string, string, Record<string, unknown>][] = [
+      ["2.1", "payments.read/write", { op: "post", id: p2, loan_id: f.loanId, state: fake, custodial: facts.custodial }],
+      ["2.7", "fees.assess", { op: "daily_run", loan_id: f.loanId, run_on: "2026-09-03", state: fake }],
+      ["2.3", "autodraft.read/write", { op: "amount_change_check", id: "E-none", loan_id: f.loanId, state: fake, next_amount_cents: "1", debit_on: "2026-10-01", today: "2026-09-03", prior_amount_cents: "1" }]];
+    for (const [process, name, input] of attempts) {
+      const r = await call("POST", `/v1/loans/${f.loanId}/tools/${process}/${encodeURIComponent(name)}`, { actor: CASHIERING, input }, s.base);
+      assert.equal(r.status, 409, `${process} ${name}: ${JSON.stringify(r.body)}`); assert.equal(r.body["code"], "NO_CLIENT_STATE");
+    }
+    assert.deepEqual(await moneyCounts(db), beforeCounts, "refused before any write"); assert.equal(await count(db, `FROM loan_events WHERE loan_id = $1`, [f.loanId]), eventsBefore);
+    // without a caller's state the same route posts p2 through the engine's own derivation (rule 5)
+    const ok = await call("POST", `/v1/loans/${f.loanId}/tools/2.1/${encodeURIComponent("payments.read/write")}`, { actor: CASHIERING, input: { op: "post", id: p2, loan_id: f.loanId } }, s.base);
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal((await readInstallments(db, f.loanId)).find((r) => r.due_date === "2026-10-01")!.status, "prepaid", "the second item prepaid the October row from the derived state");
+  } finally { await s.close(); }

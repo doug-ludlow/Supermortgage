@@ -15,7 +15,10 @@ import { connect, type Db, type Queryable } from "../../infra/db/client.ts";
 import { testDatabase } from "../../infra/db/test-db.ts";
 import { PgLoanRepository, type Fixture } from "../../infra/db/loans.ts";
 import { loadOverriddenRegistry } from "../../domain/timer-overrides.ts";
-import { FixedClock, type Actor } from "../../kernel/events/index.ts";
+import { FixedClock, systemClock, type Actor } from "../../kernel/events/index.ts";
+import { zonedEpochMs, wallClock } from "../../kernel/calendar/zoned.ts";
+import { decodeEntityData } from "../../infra/db/entities.ts";
+import { OffsetClock } from "../../runtime/demo-clock.ts";
 import { plainDate as D, addMonths, type PlainDate } from "../../kernel/calendar/date.ts";
 import { levelPayment, type Cents } from "../../kernel/money/cents.ts";
 import { Decimal } from "../../kernel/money/decimal.ts";
@@ -34,6 +37,8 @@ import { lateChargeAmount } from "../cashiering/latecharges.ts";
 import { delinquencyDailySweep } from "../../runtime/delinquency.ts";
 import { projectSchedule, readInstallments, scheduleRuns, rowInterest, levelPaymentBps, INSTALLMENT_EVENTS } from "./installments.ts";
 import { FAKE_SERVICER_CONTACT, FAKE_SERVICER_PROFILE_V1_ID, servicerProfileVersions, loanServicingConfig, STATE_TIME_ZONES } from "./servicing-config.ts";
+import { cashieringDailyPass, CASHIERING_CYCLE_EVENTS, ACTIVE_BOOK_SQL, type UnitOutcome } from "./cashiering-cycle.ts";
+import { defaultCyclesPort } from "./cycles-port.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "t-" + randomUUID();
@@ -67,10 +72,32 @@ async function serverAt(iso: string, deps: Partial<RuntimeDeps> = {}): Promise<{
 }
 /** An ad-hoc tool on the bus (a test's way to append an event a sibling process would have emitted, inside a real command on the loan). */
 const testTool = (name: string, handler: Parameters<typeof compute>[0]): ToolDef => defineTools("35.5", "cashiering", [{ name, kind: "act", handler: compute(handler) }])[0]!;
-const events = async (loanId: string, type?: string): Promise<{ id: string; type: string; payload: Record<string, unknown>; actor_kind: string; actor_id: string; occurred_at: string }[]> =>
-  db.query(`SELECT id::text AS id, type, payload, actor_kind, actor_id, occurred_at::text AS occurred_at FROM loan_events WHERE loan_id = $1 AND ($2::text IS NULL OR type = $2) ORDER BY sequence`, [loanId, type ?? null]);
-const timer = async (code: string, loanId: string | null): Promise<{ status: string; anchor_date: string; due_date: string | null; satisfied_by_event_id: string | null }[]> =>
-  db.query(`SELECT status::text AS status, anchor_date::text AS anchor_date, due_date::text AS due_date, satisfied_by_event_id::text AS satisfied_by_event_id FROM timers WHERE code = $1 AND ($2::uuid IS NULL OR loan_id = $2) ORDER BY armed_at`, [code, loanId]);
+type Ev = { id: string; type: string; payload: Record<string, unknown>; actor_kind: string; actor_id: string; occurred_at: string; sequence: string };
+const eventsOn = async (q: Queryable, loanId: string, type?: string): Promise<Ev[]> =>
+  q.query(`SELECT id::text AS id, type, payload, actor_kind, actor_id, occurred_at::text AS occurred_at, sequence::text AS sequence FROM loan_events WHERE loan_id = $1 AND ($2::text IS NULL OR type = $2) ORDER BY sequence`, [loanId, type ?? null]);
+const events = (loanId: string, type?: string): Promise<Ev[]> => eventsOn(db, loanId, type);
+type TimerRow = { id: string; status: string; anchor_date: string; due_date: string | null; satisfied_by_event_id: string | null };
+const timerOn = async (q: Queryable, code: string, loanId: string | null): Promise<TimerRow[]> =>
+  q.query(`SELECT id::text AS id, status::text AS status, anchor_date::text AS anchor_date, due_date::text AS due_date, satisfied_by_event_id::text AS satisfied_by_event_id FROM timers WHERE code = $1 AND ($2::uuid IS NULL OR loan_id = $2) ORDER BY armed_at, id`, [code, loanId]);
+const timer = (code: string, loanId: string | null): Promise<TimerRow[]> => timerOn(db, code, loanId);
+/** A side database for a T-id whose receipts must not meet another's (the day's `cashiering.daily.run_completed` is global): its own template copy, runtime factory and door. */
+async function side(suffix: string): Promise<{ db: Db; rt: (iso: string, deps?: Partial<RuntimeDeps>) => Runtime; server: (iso: string, deps?: Partial<RuntimeDeps>) => Promise<{ rt: Runtime; base: string; close: () => Promise<void> }>; close: () => Promise<void> }> {
+  const t = await testDatabase(import.meta.url, { suffix });
+  const sdb = connect(t.url);
+  const rt = (iso: string, deps: Partial<RuntimeDeps> = {}): Runtime => new Runtime({ db: sdb, registry: loadOverriddenRegistry(), clock: new FixedClock(iso), ...deps });
+  return { db: sdb, rt, server: (iso, deps = {}) => serverAt(iso, { db: sdb, ...deps }), close: () => sdb.end() };
+}
+const ET = (date: string, hhmm: string): string => new Date(zonedEpochMs(D(date), hhmm, "America/New_York")).toISOString();
+/** Every money row 2.1 / 2.7 / the ledger carry, as one count vector (a second run must change none of them). */
+const moneyCounts = async (q: Queryable): Promise<{ payments: number; payment_versions: number; fees: number; fee_versions: number; ledger_lines: number; ledger_sets: number; unit_rows: number }> => ({ payments: await count(q, `FROM payments`), payment_versions: await count(q, `FROM entity_records WHERE kind = 'payments'`), fees: await count(q, `FROM fees`), fee_versions: await count(q, `FROM entity_records WHERE kind = 'fees'`), ledger_lines: await count(q, `FROM ledger_lines`), ledger_sets: await count(q, `FROM ledger_entry_sets`), unit_rows: await count(q, `FROM cashiering_unit_runs`) });
+/** A received item written through 2.1 with every field 35.1's payments projector requires (so the typed row lands and `satisfied_by_payment_id` can reference it). */
+async function receivePayment(rt: Runtime, loanId: string, i: { amount_cents: Cents; received_on: string; channel?: string; designation?: string; curtailment_cents?: Cents; id?: string }): Promise<string> {
+  const id = i.id ?? randomUUID();
+  await rt.execute({ process: "2.1", name: "payments.read/write", loanId, actor: CASHIERING, input: { op: "write", id, loan_id: loanId, data: { payment_id: id, loan_id: loanId, amount_cents: i.amount_cents, received_on: i.received_on, credited_as_of: i.received_on, received_at: `${i.received_on}T14:10:00.000Z`, channel: i.channel ?? "lockbox", instrument: "check", designation: i.designation ?? "contractual", ...(i.curtailment_cents !== undefined ? { curtailment_cents: i.curtailment_cents } : {}), status: "received", identification_confidence: 0.99, conforming: true, idempotency_key: `lockbox|${id}|1|${i.amount_cents}|${i.received_on}` } } });
+  return id;
+}
+/** One loan's day through the bus (`cashiering.run_unit` at the runtime's instant). */
+const runUnit = async (rt: Runtime, loanId: string): Promise<UnitOutcome> => (await rt.execute({ process: "35.5", name: "cashiering.run_unit", loanId, actor: CASHIERING, input: { loan_id: loanId, as_of: rt.clock.now() } })).output as UnitOutcome;
 
 test.before(async () => {
   if (skip) return;
@@ -86,6 +113,8 @@ test.after(async () => { if (!skip) await close(); });
 const A = { upb: 56_000_000n, rate_bps: 61_250, pi: 340_262n, row1_interest: 285_833n, row1_principal: 54_429n, row1_after: 55_945_571n, row2_interest: 285_556n, row2_principal: 54_706n, row2_after: 55_890_865n, row360_interest: 1_727n, row360_principal: 338_435n, row360_pi: 340_162n, sum_interest: 66_494_220n } as const;
 // ───────── worked example B: tape loan T-7 ─────────
 const B = { original: 30_000_000n, rate_bps: 65_000, pi: 189_620n, escrow: 41_230n, upb: 28_045_824n, row62_interest: 151_915n, row62_principal: 37_705n, row62_after: 28_008_119n, row63_interest: 151_711n, row63_principal: 37_909n, row63_after: 27_970_210n, row360_interest: 1_024n, row360_principal: 189_067n, row360_pi: 190_091n, absorbed: 471n } as const;
+// ───────── T14: the curtailment between rows on T-7 (rule 4) ─────────
+const K14 = { upb_after_row62: 28_008_119n, curtailment: 100_000n, upb_after_curtailment: 27_908_119n, posted_interest: 151_169n, row_interest: 151_711n, difference: 542n } as const;
 // ───────── worked example C: 7.2's Plan 4927 ARM ─────────
 const C = { original: 40_000_000n, rate_bps: 57_500, pi: 233_429n, row60_after: 37_104_886n, v2_rate_bps: 63_750, v2_pi: 247_644n, row61_interest: 197_120n, row61_principal: 50_524n, row61_after: 37_054_362n, escrow: 61_250n, next_draft: 308_894n, last_debit: 294_679n } as const;
 // ───────── worked example D / 2.7 example K: fixture L-1 ─────────
@@ -94,8 +123,8 @@ const L1 = { original: 25_000_000n, rate_bps: 65_000, pi: 158_017n, escrow: 61_2
 const E = { item1: 219_257n, item2: 150_000n, item3: 230_850n, control: 600_107n, control_short: 600_007n, variance: 100n } as const;
 
 /** The demo snapshot's note funded through the route on a bare application (the record carries no CD; the FAKE snapshot fills it; `final_cd.pi_cents` is the note's P&I). */
-async function fundDemoNote(at: { rt: Runtime; base: string }, overrides: { snapshot?: Record<string, unknown>; funded?: Record<string, unknown>; property?: Record<string, unknown> } = {}): Promise<{ appId: string; loanId: string; fund: Record<string, unknown> }> {
-  const partner = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number) VALUES ('servicer', $1, $2) RETURNING id`, [`Lender ${randomUUID().slice(0, 6)}`, "123456789"]))[0]!.id;
+async function fundDemoNote(at: { rt: Runtime; base: string; db?: Db }, overrides: { snapshot?: Record<string, unknown>; funded?: Record<string, unknown>; property?: Record<string, unknown> } = {}): Promise<{ appId: string; loanId: string; fund: Record<string, unknown> }> {
+  const partner = (await (at.db ?? db).query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number) VALUES ('servicer', $1, $2) RETURNING id`, [`Lender ${randomUUID().slice(0, 6)}`, "123456789"]))[0]!.id;
   const app = (await at.rt.createApplication({ partner_party_id: partner, channel: "organic", transaction_type: "limited_cash_out", occupancy: "primary", borrowers: [{ legal_name: "Alex Borrower", borrower_role: "borrower" }], property: { address_line1: "100 N Central Ave", city: "Phoenix", state: "AZ", postal_code: "85004", county: "Maricopa", property_type: "sfr", units: 1, ...(overrides.property ?? {}) } }, SYSTEM)).application;
   const r = await call("POST", `/v1/applications/${app.id}/fund`, { actor: FUNDING, snapshot: { final_cd: { document_id: "DOC-CD", pi_cents: "340262", monthly_escrow_cents: "68750", initial_escrow_deposit_cents: "206250", prepaid_interest_cents: "178543", prepaid_interest_days: 19, compliance_tests_passed: true }, ...(overrides.snapshot ?? {}) }, ...(overrides.funded ? { funded: overrides.funded } : {}) }, at.base);
   assert.equal(r.status, 200, JSON.stringify(r.body));
@@ -127,6 +156,22 @@ async function boardT7(at: { rt: Runtime; base: string }, state = "TX"): Promise
   const loanIds = r.body["loan_ids"] as Record<string, string>; const loanId = loanIds[loanNumber]!;
   assert.equal((r.body["loans"] as Record<string, number>)["boarded"], 1, JSON.stringify(r.body["hard_by_loan"]));
   return { loanId, batchId, summary: r.body };
+}
+
+/** The 100-loan book (T4, T15): the built-in demo batch boards 94 (its six planted hard exceptions stay `exception`); six clean fixed-rate escrowed tapes from a second generated batch make the book 100 transfer-boarded loans (`origination_application_id IS NULL`). */
+async function boardBook(rt: Runtime, q: Db): Promise<string[]> {
+  const run = uniq().slice(-5); const k = Number(run);
+  const demo = generateDemoBatch(DEMO_BATCH.seed, { prefix: `BK${run}`, fnma_base: 5_200_000_000 + k * 1000, min_sequence_base: k * 1000 });
+  const r1 = await boardTransferBatch(rt, { ...DEMO_BATCH, batch_id: `B-BOOK-${run}` }, encodeTransferBatch(demo, demo.coborrowers), SYSTEM);
+  assert.equal(r1.loans.boarded, 94, JSON.stringify(r1.loans));
+  const extra = generateDemoBatch(DEMO_BATCH.seed + 7, { prefix: `BX${run}`, fnma_base: 5_300_000_000 + k * 1000, min_sequence_base: 50_000 + k * 1000 });
+  const pick = extra.loans.filter((l) => !extra.designed.hard.has(l.transferor_loan_number) && l.amortization === "fixed" && l.escrowed && l.pi_cents !== null && l.pi_cents > 0n && !l.bankruptcy.active && !l.foreclosure.active && !l.lossmit.in_process && !l.scra.active && l.deferred_principal_cents === 0n && l.forborne_principal_cents === 0n).slice(0, 6);
+  const nums = new Set(pick.map((l) => l.transferor_loan_number)); const fn = new Set(pick.map((l) => l.fnma_loan_number)); const mins = new Set(pick.map((l) => l.min).filter((m): m is string => !!m));
+  const byNum = <T extends { transferor_loan_number?: string }>(xs: readonly T[]): T[] => xs.filter((x) => x.transferor_loan_number !== undefined && nums.has(x.transferor_loan_number));
+  const six = { loans: pick, fnma: extra.fnma.filter((f) => fn.has(f.fnma_loan_number)), trialBalance: byNum(extra.trialBalance), mers: extra.mers.filter((m) => mins.has(m.min)), images: byNum(extra.images), fairLending: byNum(extra.fairLending), coborrowers: new Map([...extra.coborrowers].filter(([n]) => nums.has(n))) };
+  const r2 = await boardTransferBatch(rt, { ...DEMO_BATCH, batch_id: `B-BOOK6-${run}` }, encodeTransferBatch(six, six.coborrowers), SYSTEM);
+  assert.equal(r2.loans.boarded, 6, JSON.stringify({ loans: r2.loans, hard: r2.hard_by_loan }));
+  return (await q.query<{ id: string }>(`SELECT id::text AS id FROM loans WHERE boarding_batch_id IN ($1::uuid, $2::uuid) AND status = 'active' ORDER BY servicer_loan_number`, [r1.batch_uuid, r2.batch_uuid])).map((r) => r.id);
 }
 
 /** Fixture L-1 (2.1 rule 11 / worked example D): $250,000 at 6.500% from 2021-09-01, LPI 2026-08-01, UPB $249,774.00 as an opening set, P&I $1,580.17, escrow $612.40 — its schedule from the next due date and its configuration written by the 35.5 tools; a borrower party for the notices. */

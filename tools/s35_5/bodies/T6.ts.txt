@@ -1,0 +1,25 @@
+  const f = await l1Fixture(rtAt("2026-08-20T16:00:00.000Z"));   // rows from 2026-09-01 `due`; note grace 15 days → grace end Wed 2026-09-16
+  // 2026-09-01 (12:00 ET = 09:00 Phoenix, the loan's local date): the unit's 2.7 step emits `installment.due_date_reached`
+  const u1 = await runUnit(rtAt("2026-09-01T16:00:00.000Z"), f.loanId);
+  assert.equal(u1.local_date, "2026-09-01"); assert.equal(u1.due_today, true); assert.equal(u1.late_charge_run, true); assert.deepEqual(u1.late_charge_fee_ids, []);
+  const reached = await events(f.loanId, "installment.due_date_reached"); assert.equal(reached.length, 1);
+  assert.equal(reached[0]!.payload["due_date"], "2026-09-01"); assert.equal(reached[0]!.payload["grace_end_on"], "2026-09-16"); assert.equal(reached[0]!.actor_kind, "agent"); assert.equal(reached[0]!.actor_id, "cashiering", "emitted by the unit's 2.7 command, not by a borrower flow");
+  assert.equal(await count(db, `FROM loan_events WHERE loan_id = $1 AND type = 'installment.due_date_reached' AND NOT (actor_kind = 'agent' AND actor_id = 'cashiering')`, [f.loanId]), 0);
+  const completed = (await events(f.loanId, CASHIERING_CYCLE_EVENTS.unitCompleted))[0]!; assert.ok(Number(completed.sequence) > Number(reached[0]!.sequence), "the unit's receipt follows 2.7's emission on the loan's log (one transaction)");
+  assert.equal(await count(db, `FROM fees WHERE loan_id = $1`, [f.loanId]), 0);
+  // 2026-09-17, the day after the grace end: 2.7 assesses round_half_up(5% × $1,580.17) = $79.01 — Dr late_charges / Cr late_charge_income 7,901
+  const u2 = await runUnit(rtAt("2026-09-17T16:00:00.000Z"), f.loanId);
+  assert.equal(u2.local_date, "2026-09-17"); assert.equal(u2.grace_ended_yesterday, true); assert.equal(u2.due_today, false); assert.equal(u2.late_charge_run, true); assert.equal(u2.late_charge_fee_ids.length, 1);
+  const fee = await one<Record<string, unknown>>(db, `SELECT fee_type, amount_cents::text AS amount_cents, assessed_on::text AS assessed_on, grace_end_on::text AS grace_end_on, installment_due_date::text AS installment_due_date, state FROM fees WHERE loan_id = $1`, [f.loanId]);
+  assert.equal(fee["fee_type"], "late_charge"); assert.equal(fee["amount_cents"], L1.late_charge.toString()); assert.equal(fee["assessed_on"], "2026-09-17"); assert.equal(fee["grace_end_on"], "2026-09-16"); assert.equal(fee["installment_due_date"], "2026-09-01"); assert.equal(fee["state"], "assessed");
+  assert.equal(lateChargeAmount(L1.pi, "5", null), L1.late_charge);
+  const assessed = (await events(f.loanId, "fee.assessed")).at(-1)!; assert.equal(assessed.payload["amount_cents"], L1.late_charge.toString()); assert.equal(assessed.actor_id, "cashiering");
+  const lc = await db.query<{ scope: string; account: string; amount_cents: string; rule_ref: string }>(`SELECT l.scope::text AS scope, l.account, l.amount_cents::text AS amount_cents, l.rule_ref FROM ledger_lines l WHERE l.set_id IN (SELECT set_id FROM ledger_lines WHERE loan_id = $1 AND account = 'late_charges') ORDER BY l.account`, [f.loanId]);
+  assert.deepEqual(lc.map((l) => [l.scope, l.account, l.amount_cents, l.rule_ref]), [["corporate", "late_charge_income", (-L1.late_charge).toString(), "2.7:r1:assessment"], ["loan", "late_charges", L1.late_charge.toString(), "2.7:r1:assessment"]]);
+  assert.equal((await loanCashState(rtAt("2026-09-17T16:00:00.000Z"), f.loanId, D("2026-09-17"))).state.late_charges_due_cents, L1.late_charge);
+  // 2026-09-18: nothing due, no grace end yesterday — the unit runs no 2.7 step and assesses nothing
+  const u3 = await runUnit(rtAt("2026-09-18T16:00:00.000Z"), f.loanId);
+  assert.equal(u3.late_charge_run, false); assert.deepEqual(u3.late_charge_fee_ids, []); assert.equal(u3.grace_ended_yesterday, false); assert.equal(u3.due_today, false);
+  assert.equal(await count(db, `FROM fees WHERE loan_id = $1`, [f.loanId]), 1);
+  assert.equal((await one<{ late_charge_run: boolean }>(db, `SELECT late_charge_run FROM cashiering_unit_runs WHERE loan_id = $1 AND as_of_date = '2026-09-18'`, [f.loanId])).late_charge_run, false);
+  assert.equal(await count(db, `FROM cashiering_unit_runs WHERE loan_id = $1 AND outcome = 'done'`, [f.loanId]), 3);

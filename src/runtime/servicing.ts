@@ -142,46 +142,11 @@ function nextDraftOn(e: Row, state: LoanCashState, today: PlainDate): PlainDate 
   const day = Math.min(Number(e.draft_day ?? 1), 28);
   return D(`${due.due_date.slice(0, 8)}${String(day).padStart(2, "0")}`);
 }
+/** 35.5 rule 6: the daily sweep is the whole-book cashiering pass (src/domain/operations-runtime/cashiering-cycle.ts) — one `cashiering.run_unit` command per boarded loan (no `origination_application_id` condition), the day's receipt once; this report shape is kept for the demo clock and the borrower flows' tick. */
 export async function servicingDailySweep(rt: Runtime, nowIso: string = rt.clock.now()): Promise<ServicingSweepReport> {
-  const today = D(nowIso.slice(0, 10));
-  const report: ServicingSweepReport = { at: nowIso, loans: 0, posted: [], late_charge_runs: [], amount_change_checks: [], errors: [] };
-  const loans = await rt.db.query<{ id: string }>(`SELECT id FROM loans WHERE boarded_at IS NOT NULL AND origination_application_id IS NOT NULL AND status NOT IN ('paid_off', 'transferred_out', 'repurchased', 'charged_off') ORDER BY boarded_at`);
-  for (const { id: loanId } of loans) {
-    (report as { loans: number }).loans += 1;
-    try {
-      let facts = await loanCashState(rt, loanId, today);
-      // 2.1: post every received payment through the allocation engine (a partial opens the 2.2 hold)
-      if (facts.custodial) for (const p of facts.received_payments) {
-        await rt.execute({ process: "2.1", name: "payments.read/write", loanId, actor: CASHIERING_AGENT, input: { op: "post", id: String(p.payment_id), loan_id: loanId, state: facts.state, custodial: facts.custodial } });
-        report.posted.push(String(p.payment_id)); facts = await loanCashState(rt, loanId, today);
-      }
-      // 2.7: the 00:30 run on a due date (installment.due_date_reached) and the day after a grace end (the assessment decision)
-      const dueToday = facts.state.installments.some((x) => x.due_date === today);
-      const graceYesterday = facts.state.installments.some((x) => x.status === "due" && graceEndFor(facts.state, x.due_date) === addDays(today, -1));
-      if (dueToday || graceYesterday) {
-        const backlog = facts.received_payments.filter((p) => String(p.received_on ?? "") <= today).length;
-        await rt.execute({ process: "2.7", name: "fees.assess", loanId, actor: CASHIERING_AGENT, input: { op: "daily_run", state: facts.state, run_on: today, facts: { items_received_or_identified_on_or_before_gate_date: backlog, run_on: today }, unposted_receipts_on_or_before_grace: backlog } });
-        report.late_charge_runs.push(loanId);
-      }
-      // 2.3 rule 5: a changed draft amount within the 30-day window needs the Reg E notice (or the escrow statement that stated it)
-      for (const rec of facts.store.list("autodraft_enrollments", (d) => d.loan_id === loanId && d.status === "active")) {
-        const e = rec.data; if (e.last_debit_cents === null || e.last_debit_cents === undefined) continue;
-        const debitOn = nextDraftOn(e, facts.state, today); if (!debitOn || debitOn < today || debitOn > addDays(today, 31)) continue;
-        const inst = facts.state.installments.find((x) => x.due_date.slice(0, 7) === debitOn.slice(0, 7)) ?? facts.state.installments.find((x) => x.status === "due");
-        if (!inst) continue;
-        const next = inst.pi_cents + inst.escrow_cents + c(e.extra_principal_cents);
-        if (next === c(e.last_debit_cents)) continue;
-        const notices = Array.isArray(e.notices) ? (e.notices as Row[]) : [];
-        if (notices.some((n) => c(n.amount_cents) === next && n.debit_on === debitOn)) continue;   // already noticed (or the statement stated it)
-        const stmt = (await rt.uow.events.byLoan(loanId)).filter((x) => x.type === "escrow.statement.sent" && typeof (x.payload as Row).stated_payment_cents === "string").at(-1);
-        const parties = await servicingParties(rt, loanId);
-        await rt.execute({ process: "2.3", name: "autodraft.read/write", loanId, actor: CASHIERING_AGENT, input: { op: "amount_change_check", id: rec.id, loan_id: loanId, next_amount_cents: s(next), debit_on: debitOn, today, prior_amount_cents: String(e.last_debit_cents), reason: "your escrow payment changed after the annual escrow analysis", recipients: recipientsOf(parties),
-          ...(stmt ? { statement: { template: String((stmt.payload as Row).template), sent_on: String((stmt.payload as Row).sent_on), amount_cents: String((stmt.payload as Row).stated_payment_cents), debit_on: String((stmt.payload as Row).stated_payment_effective_on) } } : {}) } });
-        report.amount_change_checks.push(rec.id);
-      }
-    } catch (e) { report.errors.push({ loan_id: loanId, step: "sweep", error: e instanceof Error ? e.message : String(e) }); }
-  }
-  return report;
+  const { cashieringDailyPass } = await import("../domain/operations-runtime/cashiering-cycle.ts");
+  const r = await cashieringDailyPass(rt, nowIso);
+  return { at: nowIso, loans: r.loans, posted: r.posted, late_charge_runs: r.late_charge_runs, amount_change_checks: r.amount_change_checks, errors: r.errors };
 }
 
 // ---------------------------------------------------------------- 7.1: the periodic statement run

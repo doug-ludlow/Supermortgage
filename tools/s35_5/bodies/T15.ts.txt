@@ -1,0 +1,29 @@
+  const sd = await side("t15");
+  const demoClock = new OffsetClock(systemClock);
+  try {
+    // the demo clock at 2026-10-01 12:00 ET (a persisted step, as the deploy's first advance leaves it) and the fixture book
+    await demoClock.step(sd.db, ET("2026-10-01", "12:00"), { advance_id: randomUUID(), step: 1, steps: 1, kind: "target", actor: "system:test" });
+    assert.equal(wallClock(Date.parse(demoClock.now()), "America/New_York").date, "2026-10-01");
+    const rt = sd.rt("2026-10-01T16:00:00.000Z", { clock: demoClock });
+    const book = await boardBook(rt, sd.db); assert.equal(book.length, 100);
+    const active = await count(sd.db, `FROM (${ACTIVE_BOOK_SQL}) x`); assert.equal(active, 100, "the active book");
+    const server = createApiServer({ runtime: rt, apiToken: TOKEN, logger: createLogger("json", () => undefined) }); const door = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
+    try {
+      const r = await call("POST", "/v1/demo/advance", { days: 3, budget_ms: 900_000 }, door);
+      assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body["complete"], true); assert.equal(r.body["days_crossed"], 3); assert.equal((r.body["steps"] as unknown[]).length, 3);
+    } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+    assert.equal(wallClock(Date.parse(demoClock.now()), "America/New_York").date, "2026-10-04");
+    // one cashiering_daily run per day 2026-10-02 … 2026-10-04 with units_total = the active book; each loan exactly one `done` unit row per day
+    for (const day of ["2026-10-02", "2026-10-03", "2026-10-04"] as const) {
+      const run = await defaultCyclesPort.readRun(sd.db, "cashiering_daily", day); assert.ok(run, `cycle run ${day}`); assert.equal(run!.units_total, active, `${day}: units_total = the active book`); assert.equal(run!.status, "completed"); assert.equal(run!.as_of_date, day); assert.equal(run!.period_key, day);
+      const perLoan = await sd.db.query<{ loan_id: string; n: string }>(`SELECT loan_id::text AS loan_id, count(*)::text AS n FROM cashiering_unit_runs WHERE as_of_date = $1::date AND outcome = 'done' GROUP BY loan_id`, [day]);
+      assert.equal(perLoan.length, active, `${day}: every loan has a unit`); assert.ok(perLoan.every((x) => x.n === "1"), `${day}: exactly one done unit per loan`);
+    }
+    assert.equal(await count(sd.db, `FROM cashiering_unit_runs WHERE outcome = 'done'`), 3 * active);
+    // `cashiering.daily.run_completed` three times with the three as_of_dates; the clock re-armed each day, never breached
+    const receipts = await sd.db.query<{ d: string; loans: number }>(`SELECT payload->>'as_of_date' AS d, (payload->>'loans')::int AS loans FROM loan_events WHERE type = $1 ORDER BY sequence`, [CASHIERING_CYCLE_EVENTS.runCompleted]);
+    assert.deepEqual(receipts.map((r) => r.d), ["2026-10-02", "2026-10-03", "2026-10-04"], "appended three times, once per as_of_date"); assert.ok(receipts.every((r) => r.loans === active));
+    const clocks = await timerOn(sd.db, "SM_CASHIERING_DAILY_RECEIPT_1D", null);
+    assert.equal(clocks.length, 3, JSON.stringify(clocks)); assert.ok(clocks.every((t) => t.status !== "breached" && t.status !== "satisfied_late"), `never breached: ${JSON.stringify(clocks)}`);
+    assert.deepEqual(clocks.map((t) => [t.anchor_date, t.status]), [["2026-10-02", "satisfied"], ["2026-10-03", "satisfied"], ["2026-10-04", "armed"]]);
+  } finally { await sd.close(); }

@@ -39,6 +39,8 @@ const exists = async (q: Queryable, table: string): Promise<boolean> => (await q
 export const defaultCycles: CyclesPort = {
   async planUnits(q, i) {
     if (!(await exists(q, "cycle_runs")) || !(await exists(q, "jobs"))) return { run_id: randomUUID(), job_ids: i.units.map(() => randomUUID()), persisted: false };
+    // a savepoint: a schema this port does not know (35.3's table shape moved) must not poison the planner's transaction — the plan is journaled either way
+    await q.query("SAVEPOINT sm_close_plan_units");
     try {
       const run = await q.query<{ id: string }>(`INSERT INTO cycle_runs (cycle_code, period_key, as_of_date, planned_by, opened_at, units_total, status) VALUES ($1, $2, $3::date, $4, now(), $5, 'planned') ON CONFLICT (cycle_code, period_key) DO UPDATE SET planned_by = cycle_runs.planned_by RETURNING id::text AS id`, [i.cycle_code, i.period_key, i.as_of_date, i.planned_by, i.units.length]);
       const runId = run[0]!.id; const ids: string[] = [];
@@ -46,16 +48,19 @@ export const defaultCycles: CyclesPort = {
         const r = await q.query<{ id: string }>(`INSERT INTO jobs (run_id, cycle_code, period_key, unit_id, loan_id, status, idempotency_key, input) VALUES ($1, $2, $3, $4, $5, 'queued', $6, $7::jsonb) ON CONFLICT (idempotency_key) DO UPDATE SET unit_id = jobs.unit_id RETURNING id::text AS id`, [runId, i.cycle_code, i.period_key, u.unit_id, u.loan_id ?? null, `${i.cycle_code}:${i.period_key}:${u.unit_id}`, JSON.stringify(u.input)]);
         ids.push(r[0]!.id);
       }
+      await q.query("RELEASE SAVEPOINT sm_close_plan_units");
       return { run_id: runId, job_ids: ids, persisted: true };
-    } catch { return { run_id: randomUUID(), job_ids: i.units.map(() => randomUUID()), persisted: false }; }
+    } catch { await q.query("ROLLBACK TO SAVEPOINT sm_close_plan_units"); return { run_id: randomUUID(), job_ids: i.units.map(() => randomUUID()), persisted: false }; }
   },
   async claimedAt(q, run_id) {
     if (!(await exists(q, "jobs"))) return null;
-    try { const r = await q.query<{ at: string | null }>(`SELECT min(coalesce(heartbeat_at, finished_at))::text AS at FROM jobs WHERE run_id = $1 AND status IN ('running', 'done', 'failed', 'dead')`, [run_id]); return r[0]?.at ?? null; } catch { return null; }
+    await q.query("SAVEPOINT sm_close_claimed");
+    try { const r = await q.query<{ at: string | null }>(`SELECT to_char(min(coalesce(heartbeat_at, finished_at)) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at FROM jobs WHERE run_id = $1 AND status IN ('running', 'done', 'failed', 'dead')`, [run_id]); await q.query("RELEASE SAVEPOINT sm_close_claimed"); return r[0]?.at ?? null; } catch { await q.query("ROLLBACK TO SAVEPOINT sm_close_claimed"); return null; }
   },
   async allDead(q, run_id) {
     if (!(await exists(q, "jobs"))) return false;
-    try { const r = await q.query<{ total: string; dead: string }>(`SELECT count(*)::text AS total, count(*) FILTER (WHERE status = 'dead')::text AS dead FROM jobs WHERE run_id = $1`, [run_id]); return Number(r[0]?.total ?? 0) > 0 && r[0]!.total === r[0]!.dead; } catch { return false; }
+    await q.query("SAVEPOINT sm_close_dead");
+    try { const r = await q.query<{ total: string; dead: string }>(`SELECT count(*)::text AS total, count(*) FILTER (WHERE status = 'dead')::text AS dead FROM jobs WHERE run_id = $1`, [run_id]); await q.query("RELEASE SAVEPOINT sm_close_dead"); return Number(r[0]?.total ?? 0) > 0 && r[0]!.total === r[0]!.dead; } catch { await q.query("ROLLBACK TO SAVEPOINT sm_close_dead"); return false; }
   },
   async executorPresent(q) { return exists(q, "jobs"); },
 };

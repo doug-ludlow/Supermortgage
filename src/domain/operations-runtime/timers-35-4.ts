@@ -10,7 +10,8 @@
  * `tax_year_end`). The two rows whose trigger is a global-subject event take the cited `subject: "global"` override on the
  * timers-33-2.ts precedent; the other two arm on the period aggregate the triggering event carries
  * (`{kind: close_period, id: <servicer_number>:<period>}` for `close.period.opened`; the step's own
- * `<servicer_number>:<period>:<step>` for `close.step.started`, so one step's completion satisfies its own clock only).
+ * `<servicer_number>:<period>:<step>` for `close.step.started`, so one step's completion satisfies its own clock only —
+ * the spec's open question 7, decided 2026-09-16, since the engine satisfies every armed instance of a code on a subject).
  *
  * Emitters (src/domain/operations-runtime/close-35-4/): sweep.ts `ledger.month.ended{period_key, period_end}` (the fallback
  * until 35.3's planner emits it), open.ts `close.period.opened` / `close.tax_year.planned{tax_year, tax_year_end}`, plan.ts

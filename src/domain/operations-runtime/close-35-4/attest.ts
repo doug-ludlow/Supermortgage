@@ -67,7 +67,7 @@ async function packageDocument(q: Queryable, p: ClosePeriodRow, attestationId: s
   const bytes = Buffer.from(text, "utf8"); const sha = createHash("sha256").update(bytes).digest("hex"); const id = randomUUID();
   await q.query(`INSERT INTO documents (id, kind, sha256, byte_size, storage_uri, mime_type, retention_class, metadata) VALUES ($1, 'close_attestation_package', $2, $3, $4, 'application/json', 'corporate_7y', $5::jsonb)`, [id, sha, bytes.length, `close-35-4://attestation/${attestationId}`, JSON.stringify({ close_period_id: p.id, attestation_id: attestationId, period: p.period })]);
   const blobs = (await q.query<{ r: string | null }>(`SELECT to_regclass('public.document_blobs')::text AS r`))[0]?.r;
-  if (blobs) await q.query(`INSERT INTO document_blobs (document_id, sha256, byte_size, mime_type, content, staged_at) VALUES ($1, $2, $3, 'application/json', $4, $5)`, [id, sha, bytes.length, bytes, now]).catch(() => undefined);
+  if (blobs) await q.query(`INSERT INTO document_blobs (document_id, sha256, byte_size, mime_type, content, staged_at) VALUES ($1, $2, $3, 'application/json', $4, $5)`, [id, sha, bytes.length, bytes, now]);   // never swallowed inside the transaction
   return id;
 }
 
@@ -139,8 +139,9 @@ export async function attestTool(i: ToolInput, ctx: CommandContext, rt: ToolRunt
   }
   // attested: the period is attested when every P&I unit is (open question 6); the step completes with it
   const units = await piUnits(q, p.period);
-  const attestedUnits = await q.query<{ a: string; t: string }>(`SELECT DISTINCT ON (custodial_account_id, remittance_type) custodial_account_id::text AS a, remittance_type AS t FROM close_attestations WHERE close_period_id = $1 AND kind = 'balance' AND outcome = 'attested' AND created_at >= coalesce((SELECT max(reopened_at) FROM close_reopens WHERE close_period_id = $1), '-infinity'::timestamptz) ORDER BY custodial_account_id, remittance_type, created_at DESC`, [p.id]);
-  const allAttested = units.every((u) => attestedUnits.some((x) => x.a === u.custodial_account_id && x.t === REMIT(u.remittance_type)));
+  // the units attested since the last reopen (the journal's occurred_at is the command clock; a row's created_at is the wall clock) plus this one
+  const attestedUnits = [...(await q.query<{ a: string; t: string }>(`SELECT payload->>'custodial_account_id' AS a, payload->>'remittance_type' AS t FROM close_period_events WHERE close_period_id = $1 AND type = 'close.period.attested' AND occurred_at >= coalesce((SELECT max(reopened_at) FROM close_reopens WHERE close_period_id = $1), '-infinity'::timestamptz)`, [p.id])), { a: unit.custodial_account_id, t: unit.remittance_type }];
+  const allAttested = units.every((u) => attestedUnits.some((x) => x.a === u.custodial_account_id && x.t === u.remittance_type));
   const packageId = await packageDocument(q, p, id, { attestation: record, preparer_decision_id: preparer.id, reviewer_decision_id: review.id, officer_approval_id: approval?.id ?? null }, ctx.now);
   await journal(q, { close_period_id: p.id, step_id: step.id, type: "close.period.attested", actor: ctx.actor, occurred_at: ctx.now, payload: { attestation_id: id, custodial_account_id: unit.custodial_account_id, remittance_type: unit.remittance_type, variance_cents: "0", package_document_id: packageId, period_attested: allAttested } });
   if (allAttested) {

@@ -183,8 +183,10 @@ test("35.7-T1: Given a fresh database, when every file under db/migrations is ap
   const before = await baseTables();
   for (const t of ["role_grants", "role_queue_snapshots", "role_handovers", "breakglass_uses", "api_principals"]) assert.equal((await t1db.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${t}`]))[0]!.r, null, `${t} does not exist before 0170`);
   // this process's own files only (0170, 0171): a later process's migration (35.4's 0180 and every §35 file after it) is not this sentence's "+5"
-  for (const f of files) { if (f < mine || !/^017\d_/.test(f)) continue; psql(["-f", `${dir}/${f}`]); psql(["-c", `INSERT INTO schema_migrations(version) VALUES ('${f.replace(/\.sql$/, "")}')`]); }
+  const own = files.filter((f) => f === mine || f === "0171_operating_roles_controls.sql");
+  for (const f of own) { psql(["-f", `${dir}/${f}`]); psql(["-c", `INSERT INTO schema_migrations(version) VALUES ('${f.replace(/\.sql$/, "")}')`]); }
   const after = await baseTables();
+  execFileSync(`${ROOT}db/migrate.sh`, { env: { ...process.env, DATABASE_URL: t1.url }, stdio: "pipe" });   // then every remaining file (a later process's tables are not this sentence's "+5")
   assert.equal(after, before + 5, `five new base tables (before ${before}, after ${after})`);
   for (const t of ["role_grants", "role_queue_snapshots", "role_handovers", "breakglass_uses", "api_principals"]) assert.equal((await t1db.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${t}`]))[0]!.r, t, `to_regclass non-null for ${t}`);
   // staff_users.reviewer_roles with a CHECK whose literal list equals HUMAN_ROLES (twenty-two words, no admin); the three disjointness CHECKs; the constraint trigger

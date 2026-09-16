@@ -92,7 +92,10 @@ export async function planPeriods(d: PlanDeps): Promise<PlanReport> {
           if (missing.length || !gate || (s.not_before && s.not_before > d.now)) continue;
           if (def.owner_process === "35.4") { await patchStep(d.q, s.id, { status: "planned" }, d.now); await journal(d.q, { close_period_id: p.id, step_id: s.id, type: "close.step.planned", actor: d.actor, occurred_at: d.now, payload: { ...period, units: [], own_unit: true } }); report.planned.push(`${p.period}:${s.code}`); moved = true; continue; }
           const units = def.cycle_code ? await unitsFor(d.q, def, p) : [];
-          const expected = def.cycle_code ? Math.max(1, units.length) : s.expected_receipts;
+          // a cycle step with no unit (no T&I account → form496a; no reportable loan) stays blocked for the officer's skip (edge cases) — never a phantom unit
+          if (def.cycle_code && units.length === 0) continue;
+          // receipts are counted per account (6.3's completion carries the account, not the remittance type), per loan, or once
+          const expected = def.cycle_code ? (s.unit_scope === "per_custodial_account" ? new Set(units.map((u) => String(u.input["custodial_account_id"]))).size : units.length) : s.expected_receipts;
           let run_id: string | null = null;
           if (def.cycle_code) { const r = await d.ports.cycles.planUnits(d.q, { cycle_code: def.cycle_code, period_key: p.kind === "tax_year" ? String(p.tax_year) : p.period, as_of_date: p.period_end, planned_by: d.plannedBy, units }); run_id = r.run_id; report.units_to_run.push({ close_period_id: p.id, step_id: s.id, period: p.period, period_end: p.period_end, step: s.code, cycle_code: def.cycle_code, run_id, units, tax_year: p.tax_year }); }
           await patchStep(d.q, s.id, { status: "planned", cycle_run_id: run_id, expected_receipts: expected, attempts: s.attempts + 1 }, d.now);

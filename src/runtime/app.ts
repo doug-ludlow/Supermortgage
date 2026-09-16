@@ -228,7 +228,7 @@ export class Runtime {
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
     this.bus = new CommandBus(this.agents);
     this.originationServices = originationServices(this.clock);
-    for (const t of ALL_TOOLS) { this.tools.set(toolKey(t.process, t.name), t); this.agents.registerTool(t.agent, t.name); }
+    for (const t of ALL_TOOLS) { this.tools.set(toolKey(t.process, t.name), t); this.agents.registerTool(t.agent, t.name); for (const a of t.agents ?? []) this.agents.registerTool(a, t.name); }
   }
 
   listTools(): { process: string; name: string; agent: string; kind: string; humanOnly: boolean }[] {

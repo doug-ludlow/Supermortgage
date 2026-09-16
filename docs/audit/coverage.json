@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8173/8756 (93.3%): tids 2280/2458, tables 785/848, timers 2054/2097, notices 308/308, tools 1463/1578, figures 1283/1467; processes at 100%: 194/205",
+ "brief": "spec units built 8200/8756 (93.7%): tids 2290/2458, tables 785/848, timers 2054/2097, notices 308/308, tools 1463/1578, figures 1300/1467; processes at 100%: 194/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2280
+   "built": 2290
   },
   "tables": {
    "spec": 848,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1467,
-   "built": 1283
+   "built": 1300
   },
   "units": {
    "spec": 8756,
-   "built": 8173
+   "built": 8200
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 149,
+   "built": 176,
    "processes": 12,
    "done": 2
   }
@@ -8599,20 +8599,10 @@
    "title": "Month-end and year-end close: close periods, the dependency-ordered chain, the balance attestation, reopen, and the tax-year close that drives 1098 and 1099",
    "tids": {
     "spec": 15,
-    "built": 4,
-    "todo": 11,
+    "built": 14,
+    "todo": 1,
     "missing": [
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     15
+     4
     ]
    },
    "tables": {
@@ -8638,32 +8628,14 @@
    },
    "figures": {
     "spec": 19,
-    "built": 2,
-    "missing": [
-     "$1,233,000.00",
-     "$1,253,050.55",
-     "$1,254,300.55",
-     "$1,265,500.55",
-     "$1,266,750.55",
-     "$10.00",
-     "$12,450.00",
-     "$22,580.00",
-     "$23,412.55",
-     "$3,210.15",
-     "$33,695.07",
-     "$412.40",
-     "$45,000.00",
-     "$6,870.40",
-     "$600.00",
-     "$8,120.40",
-     "$9,870.12"
-    ]
+    "built": 19,
+    "missing": []
    },
    "units": {
     "spec": 55,
-    "built": 27
+    "built": 54
    },
-   "pct": 49.1
+   "pct": 98.2
   },
   {
    "process": "35.5",

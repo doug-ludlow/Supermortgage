@@ -23,7 +23,7 @@
  * `human_approval_on` is ignored, never read). Every state-changing call writes its own decision row (rule_set_version
  * close.v1, prompt_version 35.4-v1) on the command's transaction so its id is known; the bus's default builder is off.
  */
-import { compute, decision, defineTools, guard, never, str, type ToolDef, type ToolInput } from "../tools.ts";
+import { compute, defineTools, guard, never, str, type ToolDef, type ToolInput } from "../tools.ts";
 import type { CommandContext } from "../commands.ts";
 import type { Runtime } from "../../runtime/app.ts";
 import { PortUnavailable } from "../tools.ts";
@@ -36,7 +36,7 @@ import { closePorts } from "../../domain/operations-runtime/close-35-4/ports.ts"
 import { journal, patchStep, periodOf, stepOf, stepsOf, writeCloseDecision } from "../../domain/operations-runtime/close-35-4/store.ts";
 import { stepDef } from "../../domain/operations-runtime/close-35-4/chain.ts";
 import { periodEndOf } from "../../domain/operations-runtime/close-35-4/calendar.ts";
-import { CLOSE_AGENT, CLOSE_PROCESS, CLOSE_RULE_SET_VERSION, CloseRefused, PERIOD_RE, periodAggregate, stepAggregate } from "../../domain/operations-runtime/close-35-4/types.ts";
+import { CLOSE_AGENT, CLOSE_PROCESS, CLOSE_REVIEWER_AGENT, CLOSE_RULE_SET_VERSION, CloseRefused, PERIOD_RE, periodAggregate, stepAggregate } from "../../domain/operations-runtime/close-35-4/types.ts";
 import { attestTool, reviewTool } from "../../domain/operations-runtime/close-35-4/attest.ts";
 import { reopenTool } from "../../domain/operations-runtime/close-35-4/reopen.ts";
 import { taxYearTool } from "../../domain/operations-runtime/close-35-4/taxyear.ts";
@@ -135,9 +135,19 @@ export const TOOLS_35_4: readonly ToolDef[] = defineTools(CLOSE_PROCESS, CLOSE_A
   { name: "close.board", kind: "read", guardrails: [NO_CLOCK_EDIT, NO_PLUG],
     handler: compute(async (i, ctx, rt) => { const q = txOf(ctx); const runtime = runtimeOf(rt); const servicer = str(i, "servicer_number") || await closePorts(runtime).servicer.servicerNumber(q); return boardOf(q, { ...(has(i, "period") ? { period: periodKey(i) } : {}), ...(has(i, "tax_year") ? { tax_year: Number(i["tax_year"]) } : {}) }, servicer); }) },
   { name: "close.attest", kind: "act", ruleSetVersion: CLOSE_RULE_SET_VERSION, humanRoles: ["officer"], guardrails: COMMON, decision: () => null, handler: compute(attestTool) },
-  { name: "close.review", kind: "act", ruleSetVersion: CLOSE_RULE_SET_VERSION, humanRoles: ["qc_officer"], guardrails: COMMON, decision: () => null, handler: compute(reviewTool) },
+  // rule 6: the review is qc-audit's own act under credentials disjoint from the preparer's — the bus allowlists qc-audit beside the process's agent, and the handler refuses the preparer's credentials REVIEWER_NOT_INDEPENDENT
+  { name: "close.review", kind: "act", ruleSetVersion: CLOSE_RULE_SET_VERSION, agents: [CLOSE_REVIEWER_AGENT], humanRoles: ["qc_officer"], guardrails: COMMON, decision: () => null, handler: compute(reviewTool) },
   { name: "close.reopen", kind: "act", ruleSetVersion: CLOSE_RULE_SET_VERSION, humanRoles: [...HUMAN_ROLES], guardrails: [...COMMON, OFFICER_REOPEN_ONLY], decision: () => null, handler: compute(reopenTool) },
   { name: "close.tax_year", kind: "act", ruleSetVersion: CLOSE_RULE_SET_VERSION, guardrails: COMMON, decision: () => null, handler: compute(taxYearTool) },
-  { name: "writeDecision", kind: "act", ruleSetVersion: CLOSE_RULE_SET_VERSION, guardrails: [NO_PLUG], handler: decision() },
+  // the decision row of the AI agent design paragraph (close.v1 / 35.4-v1), written by the handler like every other act's so a human call carries the prompt version too
+  { name: "writeDecision", kind: "act", ruleSetVersion: CLOSE_RULE_SET_VERSION, guardrails: [NO_PLUG], decision: () => null,
+    handler: compute(async (i, ctx) => {
+      const action = str(i, "action"); if (!action) throw new RangeError("action is required");
+      const subj = i["subject"] as { kind?: unknown; id?: unknown } | undefined;
+      const subject = subj && typeof subj.kind === "string" && typeof subj.id === "string" ? { kind: subj.kind, id: subj.id } : { kind: "close", id: str(i, "period") || "*" };
+      const { rationale: _r, ...record } = i;
+      const id = await writeCloseDecision(ctx, { action, subject, record: { ...record, action }, rationale: str(i, "rationale") || `${action} by ${ctx.actor.kind}:${ctx.actor.id}`, ...(typeof i["confidence"] === "number" ? { confidence: i["confidence"] } : {}), ...(Array.isArray(i["evidence_document_ids"]) ? { evidenceDocumentIds: (i["evidence_document_ids"] as unknown[]).map(String) } : {}) });
+      return { recorded: true, decision_id: id };
+    }) },
 ]);
 export const periodEndOfTool = periodEndOf;

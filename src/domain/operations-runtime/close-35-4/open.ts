@@ -27,7 +27,7 @@ export async function expectedCount(q: Queryable, def: StepDef, p: { period: str
     case "pi_accounts": return Math.max(1, await n(`SELECT count(*)::text AS c FROM custodial_accounts WHERE kind = 'pi' AND coalesce(status, 'active') NOT IN ('closed', 'planned')`));
     case "ti_accounts": return await n(`SELECT count(*)::text AS c FROM custodial_accounts WHERE kind = 'ti' AND coalesce(status, 'active') NOT IN ('closed', 'planned')`);
     case "all_accounts": return Math.max(1, await n(`SELECT count(*)::text AS c FROM custodial_accounts WHERE kind IN ('pi', 'ti') AND coalesce(status, 'active') NOT IN ('closed', 'planned')`));
-    case "pi_units": return Math.max(1, (await piUnits(q, p.period)).length);
+    case "pi_units": return Math.max(1, new Set((await piUnits(q, p.period)).map((u) => u.custodial_account_id)).size);   // receipts arrive per account (6.3's completion names the account); the units are per (account × remittance type)
     case "reportable_loans": return p.counts?.reportable_loans ?? 0;
     case "filed_loans": return p.counts?.filed_loans ?? 0;
     case "ioe_loans": return p.counts?.ioe_1099_loans ?? 0;
@@ -62,7 +62,9 @@ export async function openClosePeriod(ctx: CommandContext, i: OpenInput, opts: {
   const now = ctx.now;
   const existing = await periodByKey(q, kind, i.period, i.servicer_number, true);
   if (existing) {
-    await journal(q, { close_period_id: existing.id, type: "close.period.opened", actor: ctx.actor, occurred_at: now, payload: { duplicate: true, period: i.period, source_event_id: i.source_event_id ?? null } });
+    // edge case 4: the second `ledger.month.ended` is journaled as a duplicate with its source_event_id (when it is a loan_events row), no new steps, no new clock
+    const src = i.source_event_id && (await q.query<{ id: string }>(`SELECT id::text AS id FROM loan_events WHERE id::text = $1`, [i.source_event_id]))[0] ? i.source_event_id : null;
+    await journal(q, { close_period_id: existing.id, type: "close.period.opened", source_event_id: src, actor: ctx.actor, occurred_at: now, payload: { duplicate: true, period: i.period, source_event_id: i.source_event_id ?? null } });
     const steps = (await stepsOf(q, existing.id)).map((s) => ({ code: s.code, status: s.status }));
     return { period: existing, created: false, steps };
   }

@@ -14,7 +14,8 @@
  */
 import { EscalationService } from "../../../app/escalations.ts";
 import type { Runtime } from "../../../runtime/app.ts";
-import { etDate, periodEndOf, periodStartOf, priorPeriodOf } from "./calendar.ts";
+import { etDate, periodEndOf, periodKeyOf, periodStartOf, priorPeriodOf } from "./calendar.ts";
+import { addDays, type PlainDate } from "../../../kernel/calendar/date.ts";
 import { openClosePeriod } from "./open.ts";
 import { planPeriods, type PlanReport, type UnitsToRun } from "./plan.ts";
 import { closePorts } from "./ports.ts";
@@ -31,7 +32,7 @@ export async function closeSweepPass(rt: Runtime, nowIso: string = rt.clock.now(
   const plannedBy = o.runId ? `sweep:${o.runId}` : "sweep";
   // 1. the trigger
   let emitted: string | null = null; const opened: string[] = [];
-  const prior = priorPeriodOf(asOf); const priorStart = periodStartOf(prior); const priorEnd = periodEndOf(prior);
+  const prior = priorPeriodOf(asOf);
   const pending = await rt.db.query<{ id: string; period_key: string; period_end: string }>(`SELECT e.id::text AS id, e.payload->>'period_key' AS period_key, e.payload->>'period_end' AS period_end FROM loan_events e WHERE e.type = 'ledger.month.ended' AND e.payload->>'period_key' IS NOT NULL
     AND NOT EXISTS (SELECT 1 FROM close_periods p WHERE p.kind = 'month' AND p.period = e.payload->>'period_key' AND p.servicer_number = $1) ORDER BY e.sequence`, [servicer]);
   const seen = new Set<string>();
@@ -39,16 +40,18 @@ export async function closeSweepPass(rt: Runtime, nowIso: string = rt.clock.now(
     if (seen.has(e.period_key)) continue; seen.add(e.period_key);
     await rt.uow.run({}, async (ctx) => { const r = await openClosePeriod({ ...ctx, actor: PLANNER_ACTOR, now: nowIso }, { period: e.period_key, period_end: periodEndOf(e.period_key), servicer_number: servicer, source_event_id: e.id }); if (r.created) opened.push(e.period_key); }, { clock: rt.clock, globalLock: true });
   }
-  if (!seen.has(prior) && !(await periodByKey(rt.db, "month", prior, servicer))) {
-    // 35.3 rule 4: "on its first pass whose `as_of` civil date (America/New_York) is in a new month" — the previous pass (the newest sweep_runs row before this one, or the demo clock's last step) was in an earlier month; a fresh install has no previous pass and opens nothing
-    const alreadyEmitted = await rt.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loan_events WHERE type = 'ledger.month.ended' AND payload->>'period_key' = $1`, [prior]);
-    const previous = await rt.db.query<{ d: string | null }>(`SELECT max(as_of_date)::text AS d FROM sweep_runs WHERE started_at < $1::timestamptz AND as_of_date < $2::date`, [nowIso, periodStartOf(asOf.slice(0, 7))]).catch(() => [{ d: null }]);
-    const firstPassOfMonth = previous[0]?.d !== null && previous[0]?.d !== undefined && previous[0].d >= priorStart;
-    if (Number(alreadyEmitted[0]!.c) === 0 && firstPassOfMonth) {
+  // 35.3 rule 4: "on its first pass whose `as_of` civil date (America/New_York) is in a new month" — the previous pass (the newest sweep_runs row before this one) was in an earlier month; every month that ended between that pass and this one is emitted (an outage across a boundary loses no month); a fresh install has no previous pass and opens nothing
+  const previous = await rt.db.query<{ d: string | null }>(`SELECT max(as_of_date)::text AS d FROM sweep_runs WHERE started_at < $1::timestamptz AND as_of_date < $2::date`, [nowIso, periodStartOf(asOf.slice(0, 7))]).catch(() => [{ d: null }]);
+  if (previous[0]?.d) {
+    for (let key = periodKeyOf(previous[0].d as PlainDate); key <= prior; key = periodKeyOf(addDays(periodEndOf(key), 1))) {
+      if (seen.has(key) || (await periodByKey(rt.db, "month", key, servicer))) continue;
+      const alreadyEmitted = await rt.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM loan_events WHERE type = 'ledger.month.ended' AND payload->>'period_key' = $1`, [key]);
+      if (Number(alreadyEmitted[0]!.c) > 0) continue;
+      const end = periodEndOf(key);
       await rt.uow.run({}, async (ctx) => {
-        const ev = ctx.events.append({ type: "ledger.month.ended", aggregate: GLOBAL_AGG, actor: PLANNER_ACTOR, payload: { period_key: prior, period_end: priorEnd, as_of_date: asOf, emitted_by: "35.4 close.plan (the fallback until 35.3's planner emits it — 35.3 rule 4)" } });
-        emitted = prior;
-        const r = await openClosePeriod({ ...ctx, actor: PLANNER_ACTOR, now: nowIso }, { period: prior, period_end: priorEnd, servicer_number: servicer, source_event_id: ev.id }); if (r.created) opened.push(prior);
+        const ev = ctx.events.append({ type: "ledger.month.ended", aggregate: GLOBAL_AGG, actor: PLANNER_ACTOR, payload: { period_key: key, period_end: end, as_of_date: asOf, emitted_by: "35.4 close.plan (the fallback until 35.3's planner emits it — 35.3 rule 4)" } });
+        emitted = key;
+        const r = await openClosePeriod({ ...ctx, actor: PLANNER_ACTOR, now: nowIso }, { period: key, period_end: end, servicer_number: servicer, source_event_id: ev.id }); if (r.created) opened.push(key);
       }, { clock: rt.clock, globalLock: true });
     }
   }

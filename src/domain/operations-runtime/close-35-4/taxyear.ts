@@ -45,9 +45,10 @@ export async function taxYearTool(i: ToolInput, ctx: CommandContext, rt: ToolRun
   // 3.9: per borrower, the loans whose escrow interest reached $10.00 — the same service the section runs
   let ioeLoans = 0;
   if (ioe.length) {
-    const rows = await q.query<{ loan_id: string; borrower_id: string | null; tin: string | null }>(`SELECT l.id::text AS loan_id, lb.borrower_id::text AS borrower_id, b.tin_last4 AS tin FROM loans l LEFT JOIN loan_borrowers lb ON lb.loan_id = l.id AND lb.is_primary LEFT JOIN borrowers b ON b.id = lb.borrower_id WHERE l.id = ANY($1::uuid[])`, [ioe.map((x) => x.loan_id)]);
+    // the borrower per loan (ids only — the TIN hash is 3.9's own, computed from the encrypted TIN by its solicitation path; never derived from tin_last4 here)
+    const rows = await q.query<{ loan_id: string; borrower_id: string | null }>(`SELECT l.id::text AS loan_id, lb.borrower_id::text AS borrower_id FROM loans l LEFT JOIN loan_borrowers lb ON lb.loan_id = l.id AND lb.is_primary WHERE l.id = ANY($1::uuid[])`, [ioe.map((x) => x.loan_id)]);
     const byBorrower = new Map<string, { borrower_id: string; tin_hash: string | null; loan_ids: string[] }>();
-    for (const r of rows) { const k = r.borrower_id ?? r.loan_id; const b = byBorrower.get(k) ?? { borrower_id: k, tin_hash: r.tin ? createHash("sha256").update(r.tin).digest("hex") : null, loan_ids: [] }; b.loan_ids.push(r.loan_id); byBorrower.set(k, b); }
+    for (const r of rows) { const k = r.borrower_id ?? r.loan_id; const b = byBorrower.get(k) ?? { borrower_id: k, tin_hash: null, loan_ids: [] }; b.loan_ids.push(r.loan_id); byBorrower.set(k, b); }
     const borrowers: BorrowerTaxYear[] = [...byBorrower.values()];
     const r = new EscrowInterest1099Service(ctx.events, { kind: "agent", id: "escrow" }).closeTaxYear(ty, borrowers, { other_information_returns: reportable.length + ac.length });
     ioeLoans = r.reportable_loans.length + r.already_closed.length;
@@ -56,7 +57,7 @@ export async function taxYearTool(i: ToolInput, ctx: CommandContext, rt: ToolRun
   const list = { process: "35.4", tax_year: ty, filer: { name: "Fannie Mae", tin: "52-0883107", note: "filed electronically by Supermortgage on Fannie Mae's behalf (Servicing Guide C-4.2-01 / F-1-23); Form 1100 to Fannie Mae; the January 5 no-1099-C list is applied by form_1099_ac_furnish" }, loans: ac.map((x) => ({ loan_id: x.loan_id, form: `1099-${x.kind}`, event_type: x.event_type, event_id: x.event_id })), generated_at: ctx.now };
   const bytes = Buffer.from(JSON.stringify(list, null, 1), "utf8"); const sha = createHash("sha256").update(bytes).digest("hex"); const docId = randomUUID();
   await q.query(`INSERT INTO documents (id, kind, sha256, byte_size, storage_uri, mime_type, retention_class, metadata) VALUES ($1, 'irs_1099ac_filing_list', $2, $3, $4, 'application/json', 'tax_4y', $5::jsonb)`, [docId, sha, bytes.length, `close-35-4://tax_year/${ty}/1099ac-filing-list.json`, JSON.stringify({ tax_year: ty, loans: ac.length, process: "35.4" })]);
-  if ((await q.query<{ r: string | null }>(`SELECT to_regclass('public.document_blobs')::text AS r`))[0]?.r) await q.query(`INSERT INTO document_blobs (document_id, sha256, byte_size, mime_type, content, staged_at) VALUES ($1, $2, $3, 'application/json', $4, $5)`, [docId, sha, bytes.length, bytes, ctx.now]).catch(() => undefined);
+  if ((await q.query<{ r: string | null }>(`SELECT to_regclass('public.document_blobs')::text AS r`))[0]?.r) await q.query(`INSERT INTO document_blobs (document_id, sha256, byte_size, mime_type, content, staged_at) VALUES ($1, $2, $3, 'application/json', $4, $5)`, [docId, sha, bytes.length, bytes, ctx.now]);   // 35.2's staged copy, in the command's transaction (a failure fails the command — never swallowed inside a transaction)
   // the kind tax_year close period with its six steps; a step with no loans is skipped by the system
   const counts = { reportable_loans: reportable.length, filed_loans: filedLoans(reportable), ioe_1099_loans: ioeLoans, form_1099_ac_loans: ac.length };
   const opened = await openClosePeriod({ ...ctx, actor: { kind: "system", id: "close-planner" } }, { period: taxPeriodKey(ty), servicer_number: servicer, source_event_id: null }, { kind: "tax_year", tax_year: ty, counts });

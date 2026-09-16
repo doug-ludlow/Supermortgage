@@ -35,6 +35,9 @@ import { evaluateGate } from "../../app/evaluators.ts";
 import { buildPorts, describePorts, FakeSecretManager, RealLockbox } from "./posture-35-12/real-ports.ts";
 import { VendorOff } from "./posture-35-12/refusals.ts";
 import { goLiveNotBefore } from "./posture-35-12/go-live-gate.ts";
+import { posturePass } from "./posture-35-12/sweep.ts";
+import { parallelRunBoard, parseIncumbentFile } from "./posture-35-12/parallel-run.ts";
+import { setPosturePorts, type OurFigures } from "./posture-35-12/ports.ts";
 import { WORKED_A_UPB_CENTS, WORKED_A_ESCROW_L1_CENTS, WORKED_A_PI_CENTS, WORKED_A_LATE_CHARGE_BPS, WORKED_A_LATE_CHARGE_CENTS, WORKED_A_ESCROW_OURS_CENTS, WORKED_A_ESCROW_THEIRS_CENTS, WORKED_A_ESCROW_DELTA_CENTS, WORKED_A_MISMATCH_CENTS, WORKED_A_COMPARISONS, WORKED_A_MATCHED, WORKED_A_MISMATCHED, WORKED_B_RPO_S, WORKED_B_RTO_S, RECONCILE_FIELDS } from "./posture-35-12/types.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
@@ -175,10 +178,47 @@ async function handoversEnabled(db: Db, environment: string, nowIso: string): Pr
   const { HUMAN_ROLES } = await import("../../app/roles.ts");
   for (const role of HUMAN_ROLES) await db.query(`INSERT INTO role_handovers (environment, role, action, holders, rationale, effective_at) VALUES ($1, $2, 'enabled', '[]'::jsonb, 'fixture: production is person-only', $3::timestamptz)`, [environment, role, nowIso]);
 }
-void spawnSync; void ROOT; void HOUR; void MIN; void PgLoanRepository; void moneyFingerprint; void tinCipherKey; void loadConfig; void boardTransferBatch; void generateDemoBatch; void DEMO_BATCH; void encodeTransferBatch; void seedEntryDemo; void seedPartnerBookDemo; void evaluateGate; void buildPorts; void describePorts; void FakeSecretManager; void RealLockbox; void VendorOff; void goLiveNotBefore; void sha256hex; void isUuidLike; void noPii; void events; void count; void timers; void findings; void checks; void escalations; void decisions; void tool; void refusalOf; void secretsFresh; void nonprodAtHead; void hardened; void handoversEnabled; void world; void at; void AGENT;
+void spawnSync; void ROOT; void HOUR; void MIN; void PgLoanRepository; void moneyFingerprint; void tinCipherKey; void loadConfig; void boardTransferBatch; void generateDemoBatch; void DEMO_BATCH; void encodeTransferBatch; void seedEntryDemo; void seedPartnerBookDemo; void evaluateGate; void buildPorts; void describePorts; void FakeSecretManager; void RealLockbox; void VendorOff; void goLiveNotBefore; void posturePass; void parallelRunBoard; void parseIncumbentFile; void setPosturePorts; void (null as unknown as OurFigures); void sha256hex; void isUuidLike; void noPii; void events; void count; void timers; void findings; void checks; void escalations; void decisions; void tool; void refusalOf; void secretsFresh; void nonprodAtHead; void hardened; void handoversEnabled; void world; void at; void AGENT;
 void WORKED_A_UPB_CENTS; void WORKED_A_ESCROW_L1_CENTS; void WORKED_A_PI_CENTS; void WORKED_A_LATE_CHARGE_BPS; void WORKED_A_LATE_CHARGE_CENTS; void WORKED_A_ESCROW_OURS_CENTS; void WORKED_A_ESCROW_THEIRS_CENTS; void WORKED_A_ESCROW_DELTA_CENTS; void WORKED_A_MISMATCH_CENTS; void WORKED_A_COMPARISONS; void WORKED_A_MATCHED; void WORKED_A_MISMATCHED; void WORKED_B_RPO_S; void WORKED_B_RTO_S; void RECONCILE_FIELDS;
 
-test("35.12-T1: Given `INTEGRATIONS=real` and `ENVIRONMENT=production` with `integration_switches` rows `lockbox_bai2 = real(live)` and none for `eoscar`, when the runtime loads its config and constructs its ports, then `loadConfig` accepts `real`, the lockbox port is the adapter over the row's `secret_ref`, an 8.1 furnishing tool answers the typed refusal `VENDOR_OFF{eoscar}` before any row is written (events, ledger and `integration_messages` unchanged in the contract test), and no port of vendor `FAKE` exists; given `INTEGRATIONS=fake` with `ENVIRONMENT=production`, then the process refuses to start with `NO_FAKE_IN_PRODUCTION`.", { todo: true });
+test("35.12-T1: Given `INTEGRATIONS=real` and `ENVIRONMENT=production` with `integration_switches` rows `lockbox_bai2 = real(live)` and none for `eoscar`, when the runtime loads its config and constructs its ports, then `loadConfig` accepts `real`, the lockbox port is the adapter over the row's `secret_ref`, an 8.1 furnishing tool answers the typed refusal `VENDOR_OFF{eoscar}` before any row is written (events, ledger and `integration_messages` unchanged in the contract test), and no port of vendor `FAKE` exists; given `INTEGRATIONS=fake` with `ENVIRONMENT=production`, then the process refuses to start with `NO_FAKE_IN_PRODUCTION`.", { skip }, async () => {
+  const w = await world("t1", "2026-11-16T14:00:00Z");
+  try {
+    const db = w.db; const secretRef = "projects/supermortgage-prod/secrets/lockbox-bank-portal";
+    // loadConfig accepts `real`; `fake` in production refuses to start with NO_FAKE_IN_PRODUCTION
+    const cfg = loadConfig({ DATABASE_URL: "postgresql://sm:sm@localhost/x", API_TOKEN: "t", INTEGRATIONS: "real", ENVIRONMENT: "production" } as NodeJS.ProcessEnv);
+    assert.equal(cfg.integrations, "real"); assert.equal(cfg.environment, "production");
+    assert.throws(() => loadConfig({ DATABASE_URL: "postgresql://sm:sm@localhost/x", API_TOKEN: "t", INTEGRATIONS: "fake", ENVIRONMENT: "production" } as NodeJS.ProcessEnv), /NO_FAKE_IN_PRODUCTION/);
+    assert.throws(() => loadConfig({ DATABASE_URL: "postgresql://sm:sm@localhost/x", API_TOKEN: "t", INTEGRATIONS: "sandbox", ENVIRONMENT: "nonprod" } as NodeJS.ProcessEnv), /fake \| real/);
+    await assert.rejects(buildPorts({ integrations: "fake", environment: "production", db }), /NO_FAKE_IN_PRODUCTION/);
+    // the switches: lockbox_bai2 = real(live) and none for eoscar
+    await db.query(`INSERT INTO integration_switches (environment, vendor, mode, endpoint_class, secret_ref, egress_rule, request_id, effective_at) VALUES ('production', 'lockbox_bai2', 'real', 'live', $1, 'egress-bank-portal', $2, $3::timestamptz)`, [secretRef, randomUUID(), w.clock.now()]);
+    const built = await buildPorts({ integrations: "real", environment: "production", db, secrets: new FakeSecretManager() });
+    // the lockbox port is the adapter over the row's secret_ref; no port of vendor FAKE exists; eoscar is off
+    assert.ok(built.ports.lockbox instanceof RealLockbox, "the lockbox port is the real adapter"); assert.equal((built.ports.lockbox as RealLockbox).secretRef, secretRef); assert.equal((built.ports.lockbox as RealLockbox).endpointClass, "live");
+    const desc = describePorts(built.ports, built.modes);
+    assert.ok(desc.length >= 20, `${desc.length} ports described`); assert.deepEqual(desc.filter((d) => d.adapter === "FAKE"), [], "no port of vendor FAKE");
+    assert.deepEqual(desc.find((d) => d.port === "lockbox"), { port: "lockbox", vendor: "lockbox_bai2", adapter: "real", secret_ref: secretRef, endpoint_class: "live" });
+    assert.equal(desc.find((d) => d.port === "eoscar")!.adapter, "off");
+    assert.ok(desc.every((d) => !JSON.stringify(d).includes("FAKE-")), "the description carries no secret payload");
+    // a furnishing tool that needs the e-OSCAR port answers VENDOR_OFF{eoscar} before any row is written: events, ledger and integration_messages unchanged.
+    // 8.1's Metro 2 furnishing tools have no bus registration at HEAD (spec/registry/manifest.json lists none for 8.1); the credit-reporting agent's AUD
+    // correction (`eoscar.aud.submit`, section08.ts audSubmit, registered under 8.3) is the furnisher's e-OSCAR path — `validateAud` is its first call
+    const prod = new Runtime({ db, registry: loadOverriddenRegistry(), clock: w.clock, logger, environment: "production", env: { INTEGRATIONS: "real", ENVIRONMENT: "production" } as NodeJS.ProcessEnv, reviewers: null, ports: built.ports });
+    const f = await new PgLoanRepository(db).createFixture({ fnmaLoanNumber: `${Date.now() % 1_000_000}${Math.floor(Math.random() * 1000)}`.padStart(10, "0"), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: "2021-07-15" as never, originalUpbCents: 26_000_000n, originalTermMonths: 360, firstPaymentDate: "2021-09-01" as never, maturityDate: "2051-08-01" as never });
+    const snapshot = async (): Promise<string> => `${await count(db, "loan_events")}|${await count(db, "ledger_lines")}|${await count(db, "ledger_entry_sets")}|${await count(db, "integration_messages")}|${await moneyFingerprint(db)}`;
+    const before = await snapshot();
+    let refused: unknown;
+    try { await prod.execute({ process: "8.3", name: "eoscar.aud.submit", loanId: f.loanId, actor: { kind: "human", id: "officer-t1", role: "officer" }, input: { aud: { audId: `aud-${R}`, bureau: "equifax", accountNumber: `acct-${R}`, fields: { date_of_first_delinquency: "20260101" }, reason: "furnisher correction" } } }); } catch (e) { refused = e; }
+    assert.ok(refused instanceof VendorOff, `a typed VendorOff refusal: ${String(refused)}`); assert.equal((refused as VendorOff).code, "VENDOR_OFF"); assert.equal((refused as VendorOff).vendor, "eoscar"); assert.match((refused as VendorOff).message, /VENDOR_OFF\{eoscar\}/);
+    assert.equal(await snapshot(), before, "events, ledger and integration_messages unchanged");
+    assert.equal((await events(db, "eoscar.aud.submitted")).length, 0);
+    // the switched vendor's adapter is the real one: a call goes to the bank portal under the secret's payload (the FAKE vault answers a deterministic payload; the fetch is the test's)
+    const calls: string[] = [];
+    const lb = new RealLockbox(secretRef, "live", new FakeSecretManager(), (async (url: string | URL | Request) => { calls.push(String(url)); return new Response(JSON.stringify([]), { status: 200 }); }) as typeof fetch);
+    assert.deepEqual(await lb.fetch(w.clock.now()), []); assert.equal(calls.length, 1); assert.ok(calls[0]!.startsWith("https://fake-vendor.invalid/")); assert.ok(!calls[0]!.includes("FAKE-"), "the token travels in the header, never the URL");
+  } finally { await w.close(); }
+});
 
 test("35.12-T2: Given a `ciso` session requests `integrations.switch{environment: production, vendor: print_mail, mode: real, endpoint_class: live, secret_ref, egress_rule}` and a `compliance` session confirms the same `request_id` 4 minutes later, then one `integration_switches` row exists with both ids and `effective_at` = the confirmation, `integration.switched{from: off, to: real}` is logged, `integrations.status` shows `print_mail: real/live`, and a request confirmed by the requester is refused `TWO_PERSON_SWITCH`; given `environment: nonprod` and `vendor: ach_nacha` with `endpoint_class: live`, then `MONEY_VENDOR_SANDBOX_ONLY` and no row.", { skip }, async () => {
   const w = MAIN; const db = w.db; const p = w.people; await p.cast();
@@ -372,11 +412,126 @@ test("35.12-T6: Given an open `PST-02` finding, when a later production manifest
   } finally { await w.close(); }
 });
 
-test("35.12-T7: Given worked example B (backup 2026-11-16T07:00:00Z, target 13:42:00Z, newest event 13:41:48Z, started 14:00:00Z, completed 15:37:20Z, every table count equal, chains contiguous, sets balanced), when `backup.drill` records it with a distinct `witnessed_by`, then `restore_drills` has `rpo_observed_s = 12`, `rto_observed_s = 5840`, `result = passed`, `backup.restore_drill.passed` and 19.2's `backup_restore_test.passed` (aggregate `control:CTL-SEC-16`) are logged, a `control_test_results` row for the mapped 19.2 control exists, `SM_PROD_RESTORE_DRILL_90D` is satisfied and re-armed for 2027-02-14, and `NYDFS_500_16D_BACKUP_RESTORE_TEST_365` is satisfied by the same event; given one table whose clone count is short by one row, then `result = failed`, `backup.restore_drill.failed`, sev 1 to `ciso`, and neither clock is satisfied; given `witnessed_by = performed_by`, then refused.", { todo: true });
+test("35.12-T7: Given worked example B (backup 2026-11-16T07:00:00Z, target 13:42:00Z, newest event 13:41:48Z, started 14:00:00Z, completed 15:37:20Z, every table count equal, chains contiguous, sets balanced), when `backup.drill` records it with a distinct `witnessed_by`, then `restore_drills` has `rpo_observed_s = 12`, `rto_observed_s = 5840`, `result = passed`, `backup.restore_drill.passed` and 19.2's `backup_restore_test.passed` (aggregate `control:CTL-SEC-16`) are logged, a `control_test_results` row for the mapped 19.2 control exists, `SM_PROD_RESTORE_DRILL_90D` is satisfied and re-armed for 2027-02-14, and `NYDFS_500_16D_BACKUP_RESTORE_TEST_365` is satisfied by the same event; given one table whose clone count is short by one row, then `result = failed`, `backup.restore_drill.failed`, sev 1 to `ciso`, and neither clock is satisfied; given `witnessed_by = performed_by`, then refused.", { skip }, async () => {
+  const w = await world("t7", "2026-09-16T16:00:00Z"); const p = w.people;
+  try {
+    const db = w.db; await p.cast();
+    const tables = (await db.query<{ t: string }>(`SELECT table_name AS t FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE' ORDER BY 1`)).map((r) => r.t);
+    const rowChecks = (short?: string): Json[] => tables.map((t) => ({ table: t, source_count: 7, clone_count: t === short ? 6 : 7 }));
+    const drill = (body: Json) => p.api("POST", "/ops/api/posture/drills", body, p.as("cid", "ciso"));
+    const clocks = () => timers(db, "SM_PROD_RESTORE_DRILL_90D"); const nydfs = () => timers(db, "NYDFS_500_16D_BACKUP_RESTORE_TEST_365");
+    // an earlier passed drill (2026-09-16) arms both recurring clocks — the quarterly one (due 2026-12-15) and 19.2's annual one on control:CTL-SEC-16
+    const first = await drill({ environment: "production", source_backup_id: "backup-2026-09-16", backup_taken_at: "2026-09-16T07:00:00Z", pitr_target_at: "2026-09-16T13:00:00Z", newest_event_at: "2026-09-16T12:59:00Z", clone_instance: "supermortgage-drill-20260916", started_at: "2026-09-16T14:00:00Z", completed_at: "2026-09-16T15:00:00Z", row_checks: rowChecks(), event_chain_ok: true, ledger_balanced: true, clone_destroyed_at: "2026-09-16T16:00:00Z", witnessed_by: p.ids["cara"] });
+    assert.equal(first.status, 200, JSON.stringify(first.body)); assert.equal(first.body["result"], "passed");
+    const c1 = await clocks(); assert.equal(c1.length, 1); assert.equal(c1[0]!.status, "armed"); assert.equal(c1[0]!.subject_kind, "global"); assert.equal(c1[0]!.due_date, "2026-12-15");
+    const n1 = await nydfs(); assert.equal(n1.length, 1); assert.equal(n1[0]!.status, "armed"); assert.equal(n1[0]!.subject_kind, "control"); assert.equal(n1[0]!.subject_id, "CTL-SEC-16");
+    // worked example B on 2026-11-16: rpo 12 s, rto 5,840 s, every table equal, chains contiguous, sets balanced → passed
+    w.clock.set("2026-11-16T16:10:00Z"); await p.signIn("cid");
+    const ex = await drill({ environment: "production", source_backup_id: "backup-2026-11-16", backup_taken_at: "2026-11-16T07:00:00Z", pitr_target_at: "2026-11-16T13:42:00Z", newest_event_at: "2026-11-16T13:41:48Z", clone_instance: "supermortgage-drill-20261116", started_at: "2026-11-16T14:00:00Z", completed_at: "2026-11-16T15:37:20Z", row_checks: rowChecks(), event_chain_ok: true, ledger_balanced: true, clone_destroyed_at: "2026-11-16T16:02:10Z", witnessed_by: p.ids["cara"] });
+    assert.equal(ex.status, 200, JSON.stringify(ex.body)); const drillId = ex.body["drill_id"] as string;
+    assert.equal(ex.body["rpo_observed_s"], WORKED_B_RPO_S); assert.equal(ex.body["rto_observed_s"], WORKED_B_RTO_S); assert.equal(ex.body["result"], "passed");
+    const [row] = await db.query<{ rpo_observed_s: number; rto_observed_s: number; result: string; event_chain_ok: boolean; ledger_balanced: boolean; performed_by: string; witnessed_by: string; evidence_document_id: string; clone_destroyed_at: string; decision_id: string | null }>(`SELECT rpo_observed_s, rto_observed_s, result, event_chain_ok, ledger_balanced, performed_by::text AS performed_by, witnessed_by::text AS witnessed_by, evidence_document_id::text AS evidence_document_id, clone_destroyed_at::text AS clone_destroyed_at, decision_id::text AS decision_id FROM restore_drills WHERE id = $1`, [drillId]);
+    assert.deepEqual({ rpo: row!.rpo_observed_s, rto: row!.rto_observed_s, result: row!.result, chain: row!.event_chain_ok, ledger: row!.ledger_balanced, performed_by: row!.performed_by, witnessed_by: row!.witnessed_by }, { rpo: 12, rto: 5840, result: "passed", chain: true, ledger: true, performed_by: p.ids["cid"], witnessed_by: p.ids["cara"] });
+    assert.ok(row!.evidence_document_id && row!.clone_destroyed_at && row!.decision_id, "evidence, the clone's destruction and the decision on the row");
+    assert.equal(await count(db, "documents WHERE id = $1 AND kind = 'restore_drill_evidence' AND retention_class = 'security_logs_5y'", [row!.evidence_document_id]), 1);
+    // both events; 19.2's control_test_results row for the mapped control
+    const passedEv = (await events(db, "backup.restore_drill.passed")).filter((e) => e.payload["drill_id"] === drillId); assert.equal(passedEv.length, 1); assert.equal(passedEv[0]!.payload["completed_at"], "2026-11-16T15:37:20.000Z"); assert.equal(passedEv[0]!.payload["rpo_observed_s"], 12); assert.equal(passedEv[0]!.payload["rto_observed_s"], 5840);
+    const nyEv = (await events(db, "backup_restore_test.passed")).filter((e) => e.payload["drill_id"] === drillId); assert.equal(nyEv.length, 1); assert.equal(nyEv[0]!.aggregate_kind, "control"); assert.equal(nyEv[0]!.aggregate_id, "CTL-SEC-16"); assert.equal(nyEv[0]!.payload["control"], "CTL-SEC-16");
+    const ctr = await db.query<{ result: string; metrics: Json; evidence_document_id: string }>(`SELECT result, metrics, evidence_document_id::text AS evidence_document_id FROM control_test_results WHERE control_code = 'CTL-SEC-16' AND metrics->>'drill_id' = $1`, [drillId]);
+    assert.equal(ctr.length, 1); assert.equal(ctr[0]!.result, "pass"); assert.equal(ctr[0]!.evidence_document_id, row!.evidence_document_id);
+    // SM_PROD_RESTORE_DRILL_90D satisfied and re-armed for 2027-02-14; NYDFS_500_16D_BACKUP_RESTORE_TEST_365 satisfied by the same event
+    const c2 = await clocks(); assert.equal(c2.length, 2); assert.match(c2[0]!.status, /^satisfied/); assert.equal(c2[1]!.status, "armed"); assert.equal(c2[1]!.anchor_date, "2026-11-16"); assert.equal(c2[1]!.due_date, "2027-02-14"); assert.equal(c2[1]!.subject_kind, "global");
+    // 19.2's recurring clock (its trigger is its satisfied event, on the control aggregate): the first instance is satisfied by the same event and the engine re-arms for the next test
+    const n2 = await nydfs(); assert.equal(n2.filter((t) => /^satisfied/.test(t.status)).length, 1, "NYDFS_500_16D_BACKUP_RESTORE_TEST_365 satisfied by the same event"); assert.equal(n2.find((t) => t.id === n1[0]!.id)!.status.startsWith("satisfied"), true); assert.ok(n2.some((t) => t.status === "armed"), "re-armed for the next test");
+    const armedQuarterly = (await clocks()).filter((t) => t.status === "armed").length; const armedAnnual = n2.filter((t) => t.status === "armed").length; const satisfiedAnnual = 1;
+    // one table short by one row: failed, the failed event, sev 1 to the ciso, neither clock satisfied
+    const bad = await drill({ environment: "production", pitr_target_at: "2026-11-16T17:00:00Z", newest_event_at: "2026-11-16T16:59:50Z", started_at: "2026-11-16T17:10:00Z", completed_at: "2026-11-16T18:00:00Z", row_checks: rowChecks("loan_events"), event_chain_ok: true, ledger_balanced: true, witnessed_by: p.ids["cara"] });
+    assert.equal(bad.status, 200, JSON.stringify(bad.body)); assert.equal(bad.body["result"], "failed"); assert.deepEqual(bad.body["tables_short"], ["loan_events"]); assert.match(String(bad.body["failure_reason"]), /row_counts_differ:loan_events/);
+    const failedEv = (await events(db, "backup.restore_drill.failed")).filter((e) => e.payload["drill_id"] === bad.body["drill_id"]); assert.equal(failedEv.length, 1); assert.match(String(failedEv[0]!.payload["reason"]), /loan_events/);
+    const esc = await escalations(db, "payload->>'code' = 'RESTORE_DRILL_FAILED'"); assert.equal(esc.length, 1); assert.deepEqual({ kind: esc[0]!.kind, owner_role: esc[0]!.owner_role }, { kind: "sev1", owner_role: "ciso" });
+    assert.equal((await clocks()).filter((t) => t.status === "armed").length, armedQuarterly, "the quarterly clock still armed (not satisfied by a failed drill)"); assert.equal((await clocks()).length, 2, "no new quarterly instance");
+    assert.equal((await nydfs()).filter((t) => t.status === "armed").length, armedAnnual, "19.2's clock untouched by a failed drill"); assert.equal((await nydfs()).filter((t) => /^satisfied/.test(t.status)).length, satisfiedAnnual);
+    assert.equal((await db.query(`SELECT 1 FROM control_test_results WHERE control_code = 'CTL-SEC-16' AND metrics->>'drill_id' = $1 AND result = 'fail'`, [bad.body["drill_id"]])).length, 1);
+    // witnessed_by = performed_by: refused, no row
+    const n0 = await count(db, "restore_drills");
+    const self = await drill({ environment: "production", pitr_target_at: "2026-11-16T17:00:00Z", newest_event_at: "2026-11-16T16:59:50Z", started_at: "2026-11-16T17:10:00Z", completed_at: "2026-11-16T18:00:00Z", row_checks: rowChecks(), event_chain_ok: true, ledger_balanced: true, witnessed_by: p.ids["cid"] });
+    assert.equal(self.status, 409, JSON.stringify(self.body)); assert.equal(self.body["code"], "WITNESS_DISTINCT"); assert.equal(await count(db, "restore_drills"), n0);
+  } finally { await w.close(); }
+});
 
-test("35.12-T8: Given a nonprod database seeded by `seed-demo` (every `parties` and `transfer_batches` row `synthetic = true`) plus one `parties` row inserted with `synthetic = false`, when the daily `data.scan{kind: nonprod_real_data}` runs, then `data_scans.findings = [{table: parties, column: synthetic, rule: synthetic_marker, count: 1}]` and nothing else (no id, no name), `real_data_found = true`, `synthetic_coverage_pct` is the fixture's rows over rows + 1 to three decimals, `posture.real_data.detected` is logged, sev 1 to `compliance`, `SM_NONPROD_REAL_DATA_PURGE_1BD` is armed; when the database is rebuilt, a new manifest recorded and a clean scan carrying the `scan_id` runs, then `posture.real_data.purged` satisfies the clock and the finding is closed.", { todo: true });
+test("35.12-T8: Given a nonprod database seeded by `seed-demo` (every `parties` and `transfer_batches` row `synthetic = true`) plus one `parties` row inserted with `synthetic = false`, when the daily `data.scan{kind: nonprod_real_data}` runs, then `data_scans.findings = [{table: parties, column: synthetic, rule: synthetic_marker, count: 1}]` and nothing else (no id, no name), `real_data_found = true`, `synthetic_coverage_pct` is the fixture's rows over rows + 1 to three decimals, `posture.real_data.detected` is logged, sev 1 to `compliance`, `SM_NONPROD_REAL_DATA_PURGE_1BD` is armed; when the database is rebuilt, a new manifest recorded and a clean scan carrying the `scan_id` runs, then `posture.real_data.purged` satisfies the clock and the finding is closed.", { skip }, async () => {
+  const w = await world("t8", "2026-11-16T14:00:00Z");
+  try {
+    const db = w.db;
+    // seed-demo: the demo transfer batch, the 32.14 entry demo and the 33.1 partner book — the three seed writers main.ts runs, every row synthetic
+    const demo = generateDemoBatch();
+    await boardTransferBatch(w.runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), { kind: "system", id: "seed-demo" }, { synthetic: true });
+    const entry = await seedEntryDemo(w.runtime, {}); await seedPartnerBookDemo(w.runtime, { partner_id: entry.partner_id });
+    const parties = await count(db, "parties"); const batches = await count(db, "transfer_batches");
+    assert.ok(parties > 3 && batches >= 1, `${parties} parties, ${batches} batches seeded`);
+    assert.equal(await count(db, "parties WHERE synthetic = false"), 0, "every seeded parties row is synthetic"); assert.equal(await count(db, "transfer_batches WHERE synthetic = false"), 0, "every seeded transfer_batches row is synthetic");
+    // plus one parties row inserted with synthetic = false (a real person slipped in outside the doors)
+    const [real] = await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, contact, synthetic) VALUES ('borrower', 'Real Person', '{"email": "real.person@example.test"}'::jsonb, false) RETURNING id::text AS id`);
+    w.clock.set("2026-11-16T10:46:00Z");
+    const r = await tool(w, "data.scan", AGENT, { environment: "nonprod", kind: "nonprod_real_data" }); const o = r.output as Json; const scanId = o["scan_id"] as string;
+    assert.deepEqual(o["findings"], [{ table: "parties", column: "synthetic", rule: "synthetic_marker", count: 1 }]); assert.equal(o["real_data_found"], true);
+    const expectedPct = (Math.round(((parties + batches) / (parties + batches + 1)) * 100_000) / 1000).toFixed(3);
+    assert.equal(o["synthetic_coverage_pct"], expectedPct, "the fixture's rows over rows + 1, three decimals");
+    const [row] = await db.query<{ findings: Json[]; real_data_found: boolean; synthetic_coverage_pct: string; tables_scanned: number; rows_examined: string; evidence_document_id: string }>(`SELECT findings, real_data_found, synthetic_coverage_pct::text AS synthetic_coverage_pct, tables_scanned, rows_examined::text AS rows_examined, evidence_document_id::text AS evidence_document_id FROM data_scans WHERE id = $1`, [scanId]);
+    assert.deepEqual(row!.findings, [{ table: "parties", column: "synthetic", rule: "synthetic_marker", count: 1 }]); assert.equal(row!.real_data_found, true); assert.equal(row!.synthetic_coverage_pct, expectedPct); assert.equal(row!.tables_scanned, 5); assert.ok(Number(row!.rows_examined) >= parties + batches + 1);
+    assert.ok(!JSON.stringify(row!.findings).includes(real!.id) && !JSON.stringify(row!.findings).includes("Real Person"), "counts only: no id, no name"); noPii(row, "the data_scans row");
+    const det = (await events(db, "posture.real_data.detected")).filter((e) => e.payload["scan_id"] === scanId); assert.equal(det.length, 1); assert.equal(det[0]!.aggregate_kind, "data_scan"); assert.equal(det[0]!.aggregate_id, scanId); noPii(det[0]!.payload, "the detected event");
+    const esc = await escalations(db, "payload->>'code' = 'REAL_DATA_IN_NONPROD'"); assert.equal(esc.length, 1); assert.deepEqual({ kind: esc[0]!.kind, owner_role: esc[0]!.owner_role, completed: esc[0]!.completed_at }, { kind: "sev1", owner_role: "compliance", completed: null }); noPii(esc[0], "the escalation");
+    const purge = await timers(db, "SM_NONPROD_REAL_DATA_PURGE_1BD", "AND subject_id = $2", [scanId]); assert.equal(purge.length, 1); assert.equal(purge[0]!.status, "armed"); assert.equal(purge[0]!.subject_kind, "data_scan"); assert.equal(purge[0]!.anchor_date, "2026-11-16"); assert.equal(purge[0]!.due_date, "2026-11-17", "+1 servicer business day");
+    // the remedy is the environment: rebuilt from db/migrations and re-seeded (here: the offending row is gone, the seed stands), the new manifest recorded, a clean scan carrying the scan_id
+    await db.query(`DELETE FROM parties WHERE id = $1`, [real!.id]);
+    w.clock.set("2026-11-16T15:00:00Z");
+    const m = await tool(w, "posture.record", AGENT, hardened("nonprod", w.clock.now())); const manifestId = (m.output as Json)["manifest_id"] as string;
+    const clean = await tool(w, "data.scan", AGENT, { environment: "nonprod", kind: "nonprod_real_data", scan_id: scanId, rebuilt_manifest_id: manifestId }); const co = clean.output as Json;
+    assert.deepEqual(co["findings"], []); assert.equal(co["real_data_found"], false); assert.equal(co["purged_scan_id"], scanId);
+    const purged = (await events(db, "posture.real_data.purged")).filter((e) => e.payload["scan_id"] === scanId); assert.equal(purged.length, 1); assert.equal(purged[0]!.payload["rebuilt_manifest_id"], manifestId); assert.equal(purged[0]!.aggregate_id, scanId);
+    assert.match((await timers(db, "SM_NONPROD_REAL_DATA_PURGE_1BD", "AND subject_id = $2", [scanId]))[0]!.status, /^satisfied/, "the purge clock satisfied");
+    const closed = await escalations(db, "payload->>'code' = 'REAL_DATA_IN_NONPROD'"); assert.equal(closed.length, 1); assert.ok(closed[0]!.completed_at, "the finding is closed (the compliance escalation completed)");
+  } finally { await w.close(); }
+});
 
-test("35.12-T9: Given `ENVIRONMENT=nonprod`, when `POST /v1/transfers/batches` is called with a tape lacking `X-Supermortgage-Synthetic: true`, then 409 `REAL_DATA_REFUSED_IN_NONPROD` and no row of any table is written; with the header, then the batch boards and every `parties` and `transfer_batches` row it wrote has `synthetic = true`; given `ENVIRONMENT=production` and the header, then 409 `SYNTHETIC_REFUSED_IN_PRODUCTION`; given production and a `parties` row with `synthetic = true`, when the `production_synthetic` scan runs, then `PST-11` fails and a sev 1 finding opens.", { todo: true });
+test("35.12-T9: Given `ENVIRONMENT=nonprod`, when `POST /v1/transfers/batches` is called with a tape lacking `X-Supermortgage-Synthetic: true`, then 409 `REAL_DATA_REFUSED_IN_NONPROD` and no row of any table is written; with the header, then the batch boards and every `parties` and `transfer_batches` row it wrote has `synthetic = true`; given `ENVIRONMENT=production` and the header, then 409 `SYNTHETIC_REFUSED_IN_PRODUCTION`; given production and a `parties` row with `synthetic = true`, when the `production_synthetic` scan runs, then `PST-11` fails and a sev 1 finding opens.", { skip }, async () => {
+  const w = await world("t9", "2026-11-16T14:00:00Z"); const p = w.people;
+  try {
+    const db = w.db;
+    const demo = generateDemoBatch(7, { }); const files = encodeTransferBatch(demo, demo.coborrowers);
+    const body = { actor: { kind: "system", id: "transfer-tape" }, batch: { ...DEMO_BATCH, batch_id: `T9-${R}`, transfer_date: String(DEMO_BATCH.transfer_date) }, files };
+    // every base table's row count except staff_actions — the /v1 door logs one row per request (35.7 rule 2's action log), which is the door's, not the tape's
+    const tables = (await db.query<{ t: string }>(`SELECT table_schema || '.' || table_name AS t FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE' AND table_name <> 'staff_actions' ORDER BY 1`)).map((r) => r.t);
+    const snapshot = async (): Promise<string> => { const parts: string[] = []; for (const t of tables) parts.push(`${t}=${(await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM ${t.split(".").map((x) => `"${x}"`).join(".")}`))[0]!.n}`); return sha256hex(parts.join("\n")); };
+    const before = await snapshot();
+    // nonprod, no header: 409 REAL_DATA_REFUSED_IN_NONPROD and no row of any table
+    const refused = await p.api("POST", "/v1/transfers/batches", body, { authorization: `Bearer ${TOKEN}` });
+    assert.equal(refused.status, 409, JSON.stringify(refused.body)); assert.equal(refused.body["code"], "REAL_DATA_REFUSED_IN_NONPROD");
+    assert.equal(await snapshot(), before, "no row of any table was written");
+    // with the header: the batch boards and every parties and transfer_batches row it wrote has synthetic = true
+    const ok = await p.api("POST", "/v1/transfers/batches", body, { authorization: `Bearer ${TOKEN}`, "x-supermortgage-synthetic": "true" });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body).slice(0, 400)); assert.ok(((ok.body["loans"] as Json)["boarded"] as number) > 0, "the batch boards");
+    assert.ok((await count(db, "transfer_batches")) >= 1); assert.equal(await count(db, "transfer_batches WHERE synthetic = false"), 0); assert.ok((await count(db, "parties")) >= 2); assert.equal(await count(db, "parties WHERE synthetic = false"), 0);
+    // production and the header: 409 SYNTHETIC_REFUSED_IN_PRODUCTION (a production runtime over the same database; the door admits a service principal, never the shared token)
+    await p.invite("ada", []); const svc = await p.servicePrincipal(`tape-${R}`, ["transfers", "35."]);
+    const prod = new Runtime({ db, registry: loadOverriddenRegistry(), clock: w.clock, logger, environment: "production", env: { INTEGRATIONS: "real", ENVIRONMENT: "production" } as NodeJS.ProcessEnv, reviewers: null });
+    const prodServer = createApiServer({ runtime: prod, apiToken: TOKEN, logger, borrower: { environment: "production", rpId: "localhost", allowedOrigins: ["http://localhost"], urlSecret: "test-secret" } });
+    const prodBase = `http://127.0.0.1:${await listen(prodServer, 0, "127.0.0.1")}`;
+    try {
+      const r = await fetch(prodBase + "/v1/transfers/batches", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${svc.token}`, "x-supermortgage-synthetic": "true" }, body: JSON.stringify({ ...body, batch: { ...body.batch, batch_id: `T9P-${R}` } }) });
+      const rb = (await r.json()) as Json; assert.equal(r.status, 409, JSON.stringify(rb)); assert.equal(rb["code"], "SYNTHETIC_REFUSED_IN_PRODUCTION");
+      // production and a parties row with synthetic = true: the production_synthetic scan fails PST-11 and a sev 1 finding opens
+      const scan = await prod.execute({ process: "35.12", name: "data.scan", loanId: "", actor: AGENT, input: { environment: "production", kind: "production_synthetic" } }); const so = scan.output as Json;
+      assert.equal(so["kind"], "production_synthetic"); assert.equal((so["findings"] as Json[])[0]!["rule"], "synthetic_marker_in_production"); assert.ok(((so["findings"] as Json[])[0]!["count"] as number) >= 2);
+      const opened = so["finding_opened"] as Json; assert.equal(opened["control_code"], "PST-11");
+      const f = await findings(db, "finding_id = $1", [opened["finding_id"]]); assert.equal(f.length, 1); assert.deepEqual({ action: f[0]!.action, severity: f[0]!.severity, control: f[0]!.control_code, environment: f[0]!.environment }, { action: "opened", severity: "sev1", control: "PST-11", environment: "production" });
+      const chk = await db.query<{ result: string; observed: Json; manifest_id: string | null }>(`SELECT result, observed, manifest_id::text AS manifest_id FROM posture_checks WHERE id = $1`, [f[0]!.check_id]); assert.equal(chk[0]!.result, "fail"); assert.equal(chk[0]!.observed["source"], "data.scan");
+      const esc = await escalations(db, "payload->>'code' = 'POSTURE_DRIFT' AND payload->>'control_code' = 'PST-11'"); assert.equal(esc.length, 1); assert.equal(esc[0]!.kind, "sev1"); assert.equal(esc[0]!.owner_role, "ciso");
+      assert.equal((await timers(db, "SM_PROD_POSTURE_DRIFT_1BD", "AND subject_id = $2", [opened["finding_id"]])).length, 1);
+    } finally { await new Promise<void>((resolve) => { prodServer.closeAllConnections?.(); prodServer.close(() => resolve()); }); }
+  } finally { await w.close(); }
+});
 
 test("35.12-T10: Given an `officer` opens the parallel run for production with `incumbent_servicer = \"Incumbent\"` on `opened_on = 2026-11-02` over the three fixture loans, then `parallel_runs{opened}` has `planned_end_on = 2026-11-30` and `loan_count = 3`, `parallel_run.opened` is logged, `SM_PROD_GO_LIVE_ATTEST_GATE` is armed for 2026-11-30, and `go_live.attest` on 2026-11-29 is refused `GO_LIVE_GATE{not_before: 2026-11-30}`; given an `ops_analyst` opening a run, then `ROLE_REQUIRED{officer}`.", { todo: true });
 

@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8170/8756 (93.3%): tids 2283/2458, tables 789/848, timers 2051/2097, notices 308/308, tools 1458/1578, figures 1281/1467; processes at 100%: 194/205",
+ "brief": "spec units built 8186/8756 (93.5%): tids 2287/2458, tables 789/848, timers 2055/2097, notices 308/308, tools 1466/1578, figures 1281/1467; processes at 100%: 194/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2283
+   "built": 2287
   },
   "tables": {
    "spec": 848,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 2097,
-   "built": 2051
+   "built": 2055
   },
   "notices": {
    "spec": 308,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1458
+   "built": 1466
   },
   "figures": {
    "spec": 1467,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8756,
-   "built": 8170
+   "built": 8186
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 146,
+   "built": 162,
    "processes": 12,
    "done": 2
   }
@@ -9411,13 +9411,9 @@
    "title": "Production posture: a production environment apart from nonprod, private networking, a person behind every credential, secrets and data classes, `INTEGRATIONS` as a real switch per vendor, backups and the restore drill, the go-live checklist, the four-week parallel run, and no borrower data in nonprod",
    "tids": {
     "spec": 19,
-    "built": 7,
-    "todo": 12,
+    "built": 11,
+    "todo": 8,
     "missing": [
-     1,
-     7,
-     8,
-     9,
      10,
      11,
      12,
@@ -9435,14 +9431,9 @@
    },
    "timers": {
     "spec": 6,
-    "built": 2,
+    "built": 6,
     "armable": 6,
-    "missing": [
-     "SM_NONPROD_REAL_DATA_PURGE_1BD",
-     "SM_PROD_GO_LIVE_ATTEST_GATE",
-     "SM_PROD_PARALLEL_RUN_DAILY",
-     "SM_PROD_RESTORE_DRILL_90D"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9451,17 +9442,8 @@
    },
    "tools": {
     "spec": 14,
-    "built": 6,
-    "missing": [
-     "backup.drill",
-     "data.scan",
-     "parallel_run.open",
-     "parallel_run.reconcile",
-     "parallel_run.disposition",
-     "parallel_run.close",
-     "go_live.check",
-     "go_live.attest"
-    ]
+    "built": 14,
+    "missing": []
    },
    "figures": {
     "spec": 7,
@@ -9476,9 +9458,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 29
+    "built": 45
    },
-   "pct": 50.0
+   "pct": 77.6
   }
  ]
 }

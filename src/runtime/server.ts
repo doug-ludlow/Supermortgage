@@ -339,10 +339,15 @@ export function createApiServer(opts: ServerOptions): Server {
         action.command = "transfers.batches.demo";
         const { actor } = await resolveActor(b, undefined, {}, "transfers", { kind: "system", id: "demo-seed" });
         const demo = generateDemoBatch();
-        const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), actor);
+        const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), actor, { synthetic: true });   // 35.12 rule 6: the demo batch is synthetic
         done(200, r, { batch: r.batch_id, status: r.status, boarded: r.loans.boarded }); return;
       }
       if (method === "POST" && path === "/v1/transfers/batches") {
+        // 35.12 rule 6 — the door: nonprod boards a tape only under `X-Supermortgage-Synthetic: true` (REAL_DATA_REFUSED_IN_NONPROD); production refuses a tape with it (SYNTHETIC_REFUSED_IN_PRODUCTION); the rows it boards inherit the marker
+        const syntheticHeader = String(req.headers["x-supermortgage-synthetic"] ?? "").trim().toLowerCase() === "true";
+        const productionEnv = runtime.environment === "production" || runtime.environment === "prod";
+        if (productionEnv && syntheticHeader) { action.command = "transfers.batches"; done(409, { error: "synthetic_refused_in_production", code: "SYNTHETIC_REFUSED_IN_PRODUCTION", reason: "a synthetic tape never boards in production (35.12 rule 6)" }); return; }
+        if (!productionEnv && !syntheticHeader) { action.command = "transfers.batches"; done(409, { error: "real_data_refused_in_nonprod", code: "REAL_DATA_REFUSED_IN_NONPROD", reason: "nonprod boards synthetic tapes only: send X-Supermortgage-Synthetic: true (35.12 rule 6; docs/DEPLOY.md §7)" }); return; }
         const b = await readJson(req);
         action.command = "transfers.batches";
         const { actor } = await resolveActor(b, undefined, {}, "transfers");
@@ -355,7 +360,7 @@ export function createApiServer(opts: ServerOptions): Server {
         const f: TransferBatchFiles = { "boarding_tape.final.csv": String(files["boarding_tape.final.csv"]), "payment_history.csv": String(files["payment_history.csv"] ?? empty()), "escrow_history.csv": String(files["escrow_history.csv"] ?? empty()), "escrow_analysis.csv": String(files["escrow_analysis.csv"] ?? empty()),
           "lossmit_file.csv": String(files["lossmit_file.csv"] ?? empty()), "fc_bk_file.csv": String(files["fc_bk_file.csv"] ?? empty()), "consents_file.csv": String(files["consents_file.csv"] ?? empty()), "images_manifest.csv": String(files["images_manifest.csv"] ?? empty()), "trial_balance.csv": String(files["trial_balance.csv"] ?? empty()),
           "fnma_position.csv": String(files["fnma_position.csv"] ?? empty()), "mers_lookup.csv": String(files["mers_lookup.csv"] ?? empty()), "fair_lending.csv": String(files["fair_lending.csv"] ?? empty()) };
-        const r = await boardTransferBatch(runtime, input, f, actor);
+        const r = await boardTransferBatch(runtime, input, f, actor, { synthetic: syntheticHeader });
         done(200, r, { batch: r.batch_id, status: r.status, boarded: r.loans.boarded }); return;
       }
       if (method === "GET" && (m = /^\/v1\/transfers\/batches\/([^/]+)$/.exec(path))) {

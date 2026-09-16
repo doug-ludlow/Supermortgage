@@ -15,7 +15,7 @@ import { runPostureCheck, type CheckRunResult } from "./check.ts";
 import type { ManifestFacts, SecretEntry } from "./controls.ts";
 import { byOf } from "./decision.ts";
 import { hashedDocument, refuse, requireRoleOrService, writeDocument, type PostureDeps } from "./deps.ts";
-import { secretsCarryValue } from "./guards.ts";
+import { manifestCarriesValue } from "./guards.ts";
 import { ENVIRONMENTS, P, arr, canonicalJson, environmentOf, isUuid, obj, s, type Row } from "./types.ts";
 
 export interface ManifestInput { readonly environment: string; readonly project_id: string; readonly region: string; readonly image_digest: string; readonly migration_head: string; readonly terraform: Row; readonly secrets: readonly SecretEntry[]; readonly runtime: Row; readonly deploy_run_id: string | null }
@@ -29,7 +29,7 @@ export function parseManifest(i: Row): ManifestInput {
   const environment = environmentOf(i["environment"]);
   if (!ENVIRONMENTS.includes(environment)) throw new RangeError(`environment must be one of ${ENVIRONMENTS.join(", ")}`);
   for (const k of ["project_id", "region", "image_digest", "migration_head"]) if (typeof i[k] !== "string" || !(i[k] as string).trim()) throw new RangeError(`${k} is required`);
-  const pii = secretsCarryValue(i["secrets"]);
+  const pii = manifestCarriesValue(i);
   if (pii) refuse(409, "NO_PII_IN_EVIDENCE", `posture.record: ${pii}; the manifest records secret names and version dates only (35.12 Inputs: values only — never a secret's payload)`, { field: pii });
   const secrets: SecretEntry[] = arr(i["secrets"]).map((e) => { const o = obj(e); return { name: s(o["name"]), version_created_at: typeof o["version_created_at"] === "string" ? o["version_created_at"] : null, placeholder: o["placeholder"] === true }; });
   return { environment, project_id: s(i["project_id"]), region: s(i["region"]), image_digest: s(i["image_digest"]), migration_head: s(i["migration_head"]), terraform: obj(i["terraform"]), secrets, runtime: obj(i["runtime"]), deploy_run_id: typeof i["deploy_run_id"] === "string" && i["deploy_run_id"].trim() ? i["deploy_run_id"] : null };

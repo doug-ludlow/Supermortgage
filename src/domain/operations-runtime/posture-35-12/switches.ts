@@ -4,8 +4,9 @@
  * `compliance` member other than the requester confirms the same `request_id` within 10 minutes: ONE `integration_switches` row
  * with both ids and `effective_at` = the confirmation, `integration.switched{from, to, endpoint_class, by, confirmed_by, effective_at}`.
  * Refused before any write: MONEY_VENDOR_SANDBOX_ONLY (a money-or-person vendor `real` with `endpoint_class = live` outside
- * production; production is live only), NO_FAKE_IN_PRODUCTION (`mode: fake` in production, always after `go_live.attested` and
- * before it whenever a `parties` row exists — rule 4 / state machine), REQUEST_EXPIRED, REQUEST_NOT_FOUND. The mode in force for
+ * production; production is live only), NO_FAKE_IN_PRODUCTION (`mode: fake` in production is refused unconditionally — 35.7 rule 6 and
+ * PST-10 make production person-only and real-or-off; the refusal's message names why: after `go_live.attested`, while a `parties` row
+ * exists, or simply because it is production), REQUEST_EXPIRED, REQUEST_NOT_FOUND. The mode in force for
  * (environment, vendor) is the latest row; no row means `off` under INTEGRATIONS=real and `fake` under INTEGRATIONS=fake
  * (`integrations.status`). Running instances re-read the table within one sweep (real-ports.ts `refresh`).
  */

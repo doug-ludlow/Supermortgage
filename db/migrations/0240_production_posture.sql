@@ -265,16 +265,16 @@ CREATE TABLE staff_oidc_identities (
 CREATE INDEX staff_oidc_identities_user_idx ON staff_oidc_identities (staff_user_id) WHERE revoked_at IS NULL;
 COMMENT ON TABLE staff_oidc_identities IS '35.12 PST-06: a person behind every staff credential — the staff member''s OpenID Connect binding from the environment''s provider; issuer and subject only.';
 
--- the 19.2 controls the posture catalogue maps onto (control_test_results.control_code resolves against them)
+-- the 19.2 controls the posture catalogue maps onto, named as src/app/tools/section19-2.ts names them (control_test_results.control_code resolves against them; inserted only when 19.2 has not)
 INSERT INTO security_controls (code, name, objective, owner_role, test_frequency, automated) VALUES
   ('CTL-SEC-01', 'Multi-factor authentication', '23 NYCRR 500.12; 16 CFR 314.4(c)(5)', 'ciso', 'daily', true),
-  ('CTL-SEC-02', 'Access privileges and least privilege', '23 NYCRR 500.7; 16 CFR 314.4(c)(1)', 'ciso', 'daily', true),
-  ('CTL-SEC-03', 'Encryption of nonpublic information', '23 NYCRR 500.15; 16 CFR 314.4(c)(3)', 'ciso', 'daily', true),
-  ('CTL-SEC-04', 'Vulnerability management', '23 NYCRR 500.5', 'ciso', 'daily', true),
+  ('CTL-SEC-02', 'Credential age', '23 NYCRR 500.7; 16 CFR 314.4(c)(1) — Fannie Mae credentials past 90 (human) / 365 (system ID) days', 'ciso', 'daily', true),
+  ('CTL-SEC-03', 'TLS profile against the registry gate', '23 NYCRR 500.15; 16 CFR 314.4(c)(3)', 'ciso', 'daily', true),
+  ('CTL-SEC-04', 'Scan ingestion', '23 NYCRR 500.5 — vulnerability scans ingested and triaged', 'ciso', 'daily', true),
   ('CTL-SEC-05', 'Audit trail', '23 NYCRR 500.6; 16 CFR 314.4(c)(8)', 'ciso', 'daily', true),
   ('CTL-SEC-06', 'Asset inventory and classification', '23 NYCRR 500.13', 'ciso', 'daily', true),
   ('CTL-SEC-07', 'Monitoring and training', '23 NYCRR 500.14', 'ciso', 'daily', true),
-  ('CTL-SEC-16', 'Incident response and business continuity', '23 NYCRR 500.16(d); 16 CFR 314.4(h)', 'ciso', 'quarterly', true)
+  ('CTL-SEC-16', 'Restore test', '23 NYCRR 500.16(d); 16 CFR 314.4(h) — the backup restore test', 'ciso', 'quarterly', true)
 ON CONFLICT (code) DO NOTHING;
 
 -- the catalogue of rule 2, version 1 (a change is a new version)

@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { Queryable } from "../../../infra/db/client.ts";
 import { toJson } from "../../../infra/db/client.ts";
 import type { Actor, Clock, MemoryEventStore } from "../../../kernel/events/index.ts";
+import type { TimerEngine } from "../../../kernel/timers/index.ts";
 import { EscalationService } from "../../../app/escalations.ts";
 import type { DecisionInput } from "../../../infra/db/decisions.ts";
 import type { Runtime } from "../../../runtime/app.ts";
@@ -23,6 +24,8 @@ import { POSTURE_AGENT, POSTURE_RULE_SET_VERSION, canonicalJson, isUuid, s } fro
 export interface PostureDeps {
   readonly runtime: Runtime; readonly db: Queryable; readonly events: MemoryEventStore; readonly clock: Clock; readonly now: string; readonly actor: Actor;
   readonly escalations: EscalationService; readonly deferWrite: (fn: (q: Queryable) => Promise<void>) => void; readonly decide: (d: Omit<DecisionInput, "agent" | "ruleSetVersion"> & Partial<Pick<DecisionInput, "agent" | "ruleSetVersion">>) => void;
+  /** The unit of work's timer engine (the open global instances hydrated): the parallel run cancels a stale gate instance through it (rule 9). */
+  readonly timers: TimerEngine;
 }
 export const SYSTEM_ACTOR: Actor = { kind: "agent", id: POSTURE_AGENT };
 
@@ -32,7 +35,7 @@ export async function runGlobal<T>(rt: Runtime, actor: Actor, fn: (d: PostureDep
   let esc: EscalationService | undefined; let out!: T;
   await rt.uow.run({}, async (ctx) => {
     esc = new EscalationService(ctx.events, ctx.clock);
-    const d: PostureDeps = { runtime: rt, db: ctx.q ?? rt.db, events: ctx.events, clock: ctx.clock, now: ctx.clock.now(), actor, escalations: esc, deferWrite: (f) => { deferred.push(f); }, decide: (x) => ctx.decide({ agent: POSTURE_AGENT, ruleSetVersion: POSTURE_RULE_SET_VERSION, ...x }) };
+    const d: PostureDeps = { runtime: rt, db: ctx.q ?? rt.db, events: ctx.events, clock: ctx.clock, now: ctx.clock.now(), actor, escalations: esc, timers: ctx.timers, deferWrite: (f) => { deferred.push(f); }, decide: (x) => ctx.decide({ agent: POSTURE_AGENT, ruleSetVersion: POSTURE_RULE_SET_VERSION, ...x }) };
     out = await fn(d);
   }, { clock: rt.clock, commit: async (q) => { for (const e of esc?.list() ?? []) await rt.escalationRepo.save(e, q); for (const f of deferred) await f(q); if (o.commit) await o.commit(q); } });
   return out;

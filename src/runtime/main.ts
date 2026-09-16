@@ -38,6 +38,7 @@ import { bootstrapReviewerRoles } from "../domain/operations-runtime/roles-35-7/
 import { BorrowerFlows } from "./borrower/flows/index.ts";
 import { PgBorrowerUiRepository } from "../infra/db/borrower-ui.ts";
 import { bootstrapStaffAdmin } from "./staff/auth.ts";
+import { buildPorts } from "../domain/operations-runtime/posture-35-12/real-ports.ts";
 
 const mode = process.argv[2] ?? "serve";
 const logger = createLogger(process.env["LOG_FORMAT"] === "text" ? "text" : "json");
@@ -57,7 +58,10 @@ const rateFeed = rateFeedFromEnv(process.env); const reviewers = fakeReviewersFr
 // the demo clock (docs/DEPLOY.md "The demo clock"; src/runtime/demo-clock.ts): outside production every mode — serve, sweep, seed-demo — runs on the system clock plus the persisted demo offset (the latest demo_clock row), so the API, the sweep job and the flows agree on the instant; production is the system clock, full stop
 const demoClock = config.environment === "production" ? null : await loadDemoClock(db, { logger });
 const clock = demoClock ?? systemClock;
-const runtime = new Runtime({ db, databaseUrl: config.databaseUrl, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock, environment: config.environment, env: process.env });
+// 35.12 rule 4: the vendor ports — every FAKE under INTEGRATIONS=fake; under `real` the adapter each vendor's switch names (src/domain/operations-runtime/posture-35-12/real-ports.ts), `off` or unswitched → an OffPort answering VENDOR_OFF; the description is logged (names and modes, never a secret)
+const built = await buildPorts({ integrations: config.integrations, environment: config.environment, db, logger });
+logger.info("integration ports", { integrations: config.integrations, environment: config.environment, ports: built.description.map((p) => `${p.port}:${p.adapter}`) });
+const runtime = new Runtime({ db, databaseUrl: config.databaseUrl, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock, environment: config.environment, env: process.env, ports: built.ports });
 
 if (mode === "sweep") {
   try {
@@ -78,7 +82,7 @@ if (mode === "sweep") {
 if (mode === "seed-demo") {
   try {
     const demo = generateDemoBatch();
-    const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), { kind: "system", id: "seed-demo" });
+    const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), { kind: "system", id: "seed-demo" }, { synthetic: true });   // 35.12 rule 6: every seed writer marks its rows synthetic
     logger.info("seed-demo", { batch: r.batch_id, status: r.status, loans: r.loans, hard: r.hard, events: r.events, timers: r.timers, escalations: r.escalations });
     // 32.14: the entry experience needs open states, the partner's NMLSR ID and an active rate sheet (FAKE, idempotent — src/runtime/entry-seed.ts)
     const entry = await seedEntryDemo(runtime, {});

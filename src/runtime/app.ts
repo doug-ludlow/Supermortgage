@@ -83,6 +83,7 @@ import { notifyPartnerBookTapeLate, sendPartnerBookReminders } from "./partner-b
 import { sweepDailyReports, type SweepDailyReportsResult } from "./book-ops/routes.ts";
 import { escalateLongTrips, expireKillSwitchRequests } from "./controls/ai.ts";
 import { rolesSweepPass, type RolesSweepReport } from "../domain/operations-runtime/roles-35-7/sweep.ts";
+import { posturePass, type PostureSweepReport } from "../domain/operations-runtime/posture-35-12/sweep.ts";
 import type { Logger } from "./log.ts";
 
 export interface RuntimeDeps {
@@ -146,6 +147,8 @@ export interface SweepReport {
   readonly controls: { readonly kill_requests_expired: number; readonly long_trips_escalated: number };
   /** 35.7: the roles pass (src/domain/operations-runtime/roles-35-7/sweep.ts rolesSweepPass) — the daily queue scan at/after 06:30 ET, the re-scan of roles with open items, the break-glass / request / principal expiries; after the FAKE reviewers, before the breach pass; null when it failed. */
   readonly roles: RolesSweepReport | null;
+  /** 35.12: the posture pass (src/domain/operations-runtime/posture-35-12/sweep.ts posturePass) — the stale two-person requests, the ports re-read under INTEGRATIONS=real, the daily check at/after 05:30 ET, the daily scan at/after 05:45 ET, the evening reconciliation, the vendor canaries; after the roles pass, before the verify and breach passes; null when it failed. */
+  readonly posture: PostureSweepReport | null;
   /** 35.1 rule 12: the run's `sweep_runs` row, its holder and outcome (`skipped{lease_held}` when another execution holds the lease; `failed{lease_unavailable}` when the dedicated client cannot connect). */
   readonly run_id: string;
   readonly holder: string;
@@ -364,7 +367,7 @@ export class Runtime {
     const notRun = (reason: string) => ({ refi: null as RefiDailyReport | null, reviewers: null as FakeReviewerReport | null,
       partner_book_review: { at: nowIso, as_of_date: asOfDate as ReviewRunReport["as_of_date"], ran: false, reason, monitored_loans: 0, programs: [], line: `partner book review: not run (${reason})` } as ReviewRunReport,
       partner_book_readiness: { checked: 0, ready: 0, not_ready: 0, skipped: reason, as_of_date: asOfDate, ran: false, loans_skipped: [], line: `partner book readiness: not run (${reason})` } as ReadinessRunReport,
-      partner_book_reminders: 0, partner_book_tape_late: 0, partner_book_daily_reports: null, controls: { kill_requests_expired: 0, long_trips_escalated: 0 } });
+      partner_book_reminders: 0, partner_book_tape_late: 0, partner_book_daily_reports: null, controls: { kill_requests_expired: 0, long_trips_escalated: 0 }, posture: null as PostureSweepReport | null });
     const leased = await acquireSweepLease(this.db, nowIso, holder);
     if (!leased.ok) {
       // rule 12: a firing that finds the lease held writes skipped{lease_held} and sweep.run_skipped, and exits 0; a lease that cannot be taken at all is failed{lease_unavailable}
@@ -400,6 +403,8 @@ export class Runtime {
       const reviewers = this.reviewers ? await logged("fake_reviewers", () => this.reviewers!.tick(this, nowIso), () => null as FakeReviewerReport | null, (r) => ({ ran: r !== null })) : null;
       // 35.7: the roles pass after the FAKE reviewers (a FAKE approval of the day is counted by the daily scan that follows) and before the verify and breach passes (a day's scan receipt never breaches) — errors logged, never thrown; runId = this run's sweep_runs id
       const roles = await logged("roles.sweep", () => rolesSweepPass(this, nowIso, { runId }), () => null as RolesSweepReport | null, (r) => (r ? { daily_scan: r.daily_scan, rescanned: r.rescanned, unstaffed_raised: r.unstaffed_raised.length, staffed_raised: r.staffed_raised.length } : { failed: true }));
+      // 35.12: the posture pass for this runtime's environment — after the roles pass (the daily check reads the handover state the roles pass keeps), before the breach pass (a day's receipt never breaches) — errors logged, never thrown
+      const posture = await logged("posture.sweep", () => posturePass(this, nowIso, { runId }), () => null as PostureSweepReport | null, (r) => (r ? { daily_check: r.daily_check !== null, daily_scan: r.daily_scan !== null, reconciled: r.reconciled.length, canaries: r.canaries.length, switch_requests_expired: r.switch_requests_expired } : { failed: true }));
       // rule 13: the daily verify run once per calendar day at/after 06:00 ET — its own global unit of work (the gaps, the mismatches and their escalations, one projection_runs row, `projection.run_completed`); a failed run inserts `failed` and no event
       let verify: VerifyReport | null = null;
       const wc = wallClock(Date.parse(nowIso), "America/New_York");
@@ -447,7 +452,7 @@ export class Runtime {
       const outboxCounts = { claimed: outboxDispatch.claimed, sent: outboxDispatch.sent, retried: outboxDispatch.retried, dead: outboxDispatch.dead };
       await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_completed", aggregate: { kind: "sweep_run", id: runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: runId, as_of_date: asOfDate, holder, duration_ms: durationMs, passes: passes.map((p) => p.name), due: due.length, breaches: breaches.length, outbox: outboxCounts } }),
         { clock: this.clock, commit: async (q) => { await q.query(`UPDATE sweep_runs SET outcome = 'completed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, outbox = $4::jsonb WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), JSON.stringify(outboxCounts)]); } });
-      return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, roles, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls,
+      return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, roles, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls, posture,
         run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify };
     } catch (e) {
       await this.db.query(`UPDATE sweep_runs SET outcome = 'failed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, skipped_reason = $4 WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), (e instanceof Error ? e.message : String(e)).slice(0, 500)]).catch(() => undefined);

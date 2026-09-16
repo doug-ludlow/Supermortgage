@@ -32,8 +32,10 @@ export const findingAggregate = (finding_id: string): { kind: string; id: string
 export async function latestFindings(q: Queryable, environment: string, control?: string): Promise<Map<string, FindingRow>> {
   const rows = await q.query<FindingRow & Record<string, unknown>>(`SELECT DISTINCT ON (finding_id) ${FINDING_COLS} FROM posture_findings WHERE environment = $1 ${control ? "AND control_code = $2" : ""} ORDER BY finding_id, created_at DESC, id DESC`, control ? [environment, control] : [environment]);
   const out = new Map<string, FindingRow>();
-  // per control, the newest finding decides (an older resolved finding never shadows a newer open one)
-  for (const r of rows.sort((a, b) => a.created_at.localeCompare(b.created_at))) out.set(r.control_code, r);
+  // per control, the newest finding decides; among rows written in one transaction (the same created_at: an `expired` finding and the one
+  // reopened beside it) the live one wins — opened/acknowledged over excepted over resolved/expired
+  const rank = (r: FindingRow): number => (r.action === "opened" || r.action === "acknowledged" ? 2 : r.action === "excepted" ? 1 : 0);
+  for (const r of rows.sort((a, b) => a.created_at.localeCompare(b.created_at) || rank(a) - rank(b))) out.set(r.control_code, r);
   return out;
 }
 export async function findingById(q: Queryable, finding_id: string): Promise<FindingRow | undefined> {
@@ -111,4 +113,22 @@ export async function runPostureCheck(d: PostureDeps, i: CheckInput): Promise<Ch
   const payload = P({ run_id, environment, as_of_date, manifest_id, trigger: i.trigger ?? "request", controls: rows.length, ...counts, report_document_id: report.id, sha256: report.sha256, by: byOf(actor) });
   d.events.append({ type: receipt === "run_completed" ? "posture.check.run_completed" : "posture.check.run_repeated", aggregate: { kind: "posture_check_run", id: run_id }, actor, payload });
   return { run_id, environment, as_of_date, manifest_id, controls: rows.length, ...counts, rows, findings_opened: opened.map(({ finding_id, control_code, severity }) => ({ finding_id, control_code, severity })), findings_resolved: resolved.map(({ finding_id, control_code }) => ({ finding_id, control_code })), findings_expired: expired, receipt, report_document_id: report.id, by: byOf(actor) };
+}
+
+/** A scan-driven finding (rule 6: the production scan fails PST-11): a check row on the latest production manifest (or none), then the finding, the drift event and the ciso escalation — once per open finding. */
+export async function openFindingFromScan(d: PostureDeps, i: { environment: string; control_code: string; scan_id: string; observed: Row }): Promise<{ finding_id: string; control_code: string } | null> {
+  const controls = await loadControls(d.db); const c = controls.find((x) => x.code === i.control_code);
+  if (!c) return null;
+  const cur = (await latestFindings(d.db, i.environment, i.control_code)).get(i.control_code);
+  if (isOpen(cur)) return null;
+  const manifest = await latestManifest(d.db, i.environment);
+  const check_id = randomUUID(); const finding_id = randomUUID(); const now = d.now; const actor = d.actor; const by = personId(actor); const manifest_id = manifest?.id ?? null;
+  d.deferWrite(async (q) => {
+    await q.query(`INSERT INTO posture_checks (id, run_id, environment, manifest_id, control_code, control_version, result, observed, expected, checked_at) VALUES ($1, $2, $3, $4, $5, $6, 'fail', $7::jsonb, $8::jsonb, $9::timestamptz)`, [check_id, i.scan_id, i.environment, manifest_id, c.code, c.version, toJson({ ...i.observed, source: "data.scan" }), toJson(c.expected), now]);
+    const decision_id = await decisionFor(q, "scan", i.scan_id);
+    await q.query(`INSERT INTO posture_findings (finding_id, environment, control_code, action, check_id, severity, detected_at, by, decision_id) VALUES ($1, $2, $3, 'opened', $4, $5, $6::timestamptz, $7, $8)`, [finding_id, i.environment, c.code, check_id, c.severity, now, by, decision_id]);
+  });
+  d.events.append({ type: "posture.drift.detected", aggregate: findingAggregate(finding_id), actor, payload: P({ finding_id, environment: i.environment, control_code: c.code, severity: c.severity, detected_at: now, run_id: i.scan_id, manifest_id, check_id, source: "data.scan" }) });
+  d.escalations.open({ kind: `sev${severityLevel(c.severity)}`, ownerRole: "ciso", severity: String(severityLevel(c.severity)), payload: { code: "POSTURE_DRIFT", finding_id, environment: i.environment, control_code: c.code, severity: c.severity, run_id: i.scan_id, reason: `${c.code} failed in ${i.environment} (the production scan found synthetic rows); a finding in production resolves only by a 19.2 exception or by proving the marker wrongly set (35.12 rule 6)` } }, actor);
+  return { finding_id, control_code: c.code };
 }

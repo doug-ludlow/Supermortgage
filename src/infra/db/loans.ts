@@ -52,7 +52,7 @@ export class PgLoanRepository {
   }
 
   async createFixture(f: FixtureInput, q: Queryable = this.db): Promise<Fixture> {
-    const partner = await q.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name) VALUES ('servicer', $1) RETURNING id`, [f.partnerName ?? "Test Partner Servicing LLC"]);
+    const partner = await q.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, synthetic) VALUES ('servicer', $1, true) RETURNING id`, [f.partnerName ?? "Test Partner Servicing LLC"]);
     const partnerPartyId = partner[0]!.id;
     const p = f.property ?? { line1: "1 Test St", city: "Testville", state: "TX", postalCode: "75001" };
     const prop = await q.query<{ id: string }>(`INSERT INTO properties (address_line1, city, state, postal_code) VALUES ($1, $2, $3, $4) RETURNING id`, [p.line1, p.city, p.state, p.postalCode]);

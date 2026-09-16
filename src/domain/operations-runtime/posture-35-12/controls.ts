@@ -48,7 +48,7 @@ export async function gatherDbFacts(q: Queryable, environment: string, nowIso: s
   const shared = await one<{ n: string }>(`SELECT count(*)::text AS n FROM staff_actions WHERE surface = 'v1' AND source IN ('shared_token', 'header') AND at >= $1::timestamptz AND at <= $2::timestamptz`, [since, nowIso]);
   const staff = await one<{ active: string; pw: string; no_oidc: string }>(`SELECT count(*)::text AS active,
       (SELECT count(*)::text FROM staff_credentials c JOIN staff_users u2 ON u2.id = c.staff_user_id WHERE u2.status = 'active' AND c.kind = 'password' AND c.revoked_at IS NULL) AS pw,
-      (SELECT count(*)::text FROM staff_users u3 WHERE u3.status = 'active' AND NOT EXISTS (SELECT 1 FROM staff_oidc_identities o WHERE o.staff_user_id = u3.id AND o.revoked_at IS NULL)) AS no_oidc
+      (SELECT count(*)::text FROM staff_users u3 WHERE u3.status = 'active' AND NOT EXISTS (SELECT 1 FROM (SELECT DISTINCT ON (issuer, subject) action FROM staff_oidc_identities o WHERE o.staff_user_id = u3.id ORDER BY issuer, subject, created_at DESC, id DESC) b WHERE b.action = 'bound')) AS no_oidc
     FROM staff_users u WHERE u.status = 'active'`);
   const inForce = await q.query<{ vendor: string; mode: string; endpoint_class: string; secret_ref: string | null }>(`SELECT DISTINCT ON (vendor) vendor, mode, endpoint_class, secret_ref FROM integration_switches WHERE environment = $1 AND effective_at IS NOT NULL AND effective_at <= $2::timestamptz ORDER BY vendor, effective_at DESC, created_at DESC, id DESC`, [environment, nowIso]);
   const enabled = await enabledHandovers(q, environment);

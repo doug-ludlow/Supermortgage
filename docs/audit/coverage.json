@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8743/8787 (99.5%): tids 2443/2480, tables 852/852, timers 2097/2097, notices 309/309, tools 1575/1579, figures 1467/1470; processes at 100%: 205/212; retired 27; hosted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql), persisted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql)",
+ "brief": "spec units built 8748/8787 (99.6%): tids 2448/2480, tables 852/852, timers 2097/2097, notices 309/309, tools 1575/1579, figures 1467/1470; processes at 100%: 206/212; retired 27; hosted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql), persisted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql)",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2443
+   "built": 2448
   },
   "tables": {
    "spec": 852,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8787,
-   "built": 8743
+   "built": 8748
   }
  },
  "exec_totals": {
@@ -437,9 +437,9 @@
   },
   "36": {
    "spec": 40,
-   "built": 14,
+   "built": 19,
    "processes": 6,
-   "done": 1
+   "done": 2
   }
  },
  "done": [
@@ -647,7 +647,8 @@
   "35.10",
   "35.11",
   "35.12",
-  "36.1"
+  "36.1",
+  "36.2"
  ],
  "processes": [
   {
@@ -11471,15 +11472,9 @@
    "title": "Partner tape drop on book.import: the upload with its report, the import history, the status line and the holds",
    "tids": {
     "spec": 5,
-    "built": 0,
-    "todo": 5,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5
-    ]
+    "built": 5,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -11519,9 +11514,9 @@
    },
    "units": {
     "spec": 5,
-    "built": 0
+    "built": 5
    },
-   "pct": 0.0,
+   "pct": 100.0,
    "retired": []
   },
   {

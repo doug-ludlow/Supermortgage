@@ -86,14 +86,17 @@ export interface PartnerContext { readonly session: PartnerSessionRow; readonly 
 export interface PartnerAuthOptions { readonly runtime: Runtime; readonly environment?: string; readonly rpId?: string; readonly allowedOrigins?: readonly string[]; readonly emailKey?: Buffer; readonly logger?: Logger }
 
 export class PartnerAuth {
-  readonly runtime: Runtime; readonly repo: PgPartnerRepository; readonly key: Buffer; readonly environment: string; readonly nonProduction: boolean; readonly rpId: string; readonly allowedOrigins: readonly string[]; readonly logger: Logger | undefined;
+  readonly runtime: Runtime; readonly repo: PgPartnerRepository; readonly environment: string; readonly nonProduction: boolean; readonly rpId: string; readonly allowedOrigins: readonly string[]; readonly logger: Logger | undefined;
+  private keyOption: Buffer | undefined; private resolvedKey: Buffer | undefined;
   constructor(o: PartnerAuthOptions) {
     this.runtime = o.runtime; this.repo = new PgPartnerRepository(o.runtime.db);
     this.environment = o.environment ?? o.runtime.environment ?? process.env["ENVIRONMENT"] ?? "nonprod"; this.nonProduction = !isProductionEnvironment(this.environment);
-    this.key = o.emailKey ?? staffEmailKey({ ...process.env, ENVIRONMENT: this.environment });
+    this.keyOption = o.emailKey;
     this.rpId = o.rpId ?? process.env["BORROWER_RP_ID"] ?? "localhost"; this.allowedOrigins = o.allowedOrigins ?? (process.env["BORROWER_ORIGINS"] ? process.env["BORROWER_ORIGINS"].split(",").map((s) => s.trim()) : []);
     this.logger = o.logger ?? o.runtime.logger;
   }
+  /** The e-mail cipher key (34.1's STAFF_EMAIL_KEY; a FAKE constant outside production), resolved at the first door use rather than at construction: the API server builds the partner router eagerly, and a production server that lacks the key must refuse the door, not the whole server (src/runtime/demo-clock.test.ts's production guard). */
+  get key(): Buffer { if (!this.resolvedKey) this.resolvedKey = this.keyOption ?? staffEmailKey({ ...process.env, ENVIRONMENT: this.environment }); return this.resolvedKey; }
   private get edelivery(): EdeliveryPort | undefined { return this.runtime.ports.edelivery; }
   private deliveryIsFake(): boolean { return !this.edelivery || this.edelivery instanceof FakeEdelivery; }
   emailOf(user: PartnerUserRow): string { return decryptEmail(user.email_encrypted, this.key); }

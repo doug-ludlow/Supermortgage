@@ -157,6 +157,14 @@ export async function importPartnerBook(rt: Runtime, input: PartnerBookImportInp
   const actorId = `${actor.kind}:${actor.id}`;
   const existing = await partnerPartyByName(rt.db, partnerName);   // read-only
 
+  // idempotent on the file hashes: the same files land once (data model) — the earlier import id, nothing written; a partner not yet on the platform has no prior
+  // import. Looked up before the profile gate's own write so a rejected file posted again answers its recorded refusal (status `rejected`, the earlier id) rather
+  // than a second row on partner_book_imports_files_idx (36.2 rule 6: "the page keeps the files for a second try").
+  if (existing) {
+    const prior = (await rt.db.query<ImportRow>(`SELECT ${IMPORT_COLUMNS} FROM partner_book_imports WHERE partner_party_id = $1 AND tape_sha256 = $2 AND coalesce(supplement_sha256, '') = coalesce($3, '') ORDER BY created_at LIMIT 1`, [existing.id, tapeHash, supplementHash]))[0];
+    if (prior) return resultOf(prior, prior.status === "rejected" ? "rejected" : "already_loaded");
+  }
+
   if (parsed.rejected) {
     // state machine: `rejected` — the header row does not carry the profile's required columns; nothing but the import's own record (and the ops_analyst's work item) is written,
     // and for a partner not yet on the platform nothing at all: the answer carries the expected and missing columns
@@ -181,11 +189,6 @@ export async function importPartnerBook(rt: Runtime, input: PartnerBookImportInp
     return { import_id: importId, status: "rejected", partner_party_id: partner.id, rows_total: parsed.rows_total, rows_loaded: 0, rows_exception: 0, loans_created: 0, loans_updated: 0, parties_created: 0, parties_linked: 0, invitations_sent: 0, report, loans: [] };
   }
 
-  // idempotent on the file hashes: the same files land once (data model) — the earlier import id, nothing written (a partner not yet on the platform has no prior import)
-  if (existing) {
-    const prior = (await rt.db.query<ImportRow>(`SELECT ${IMPORT_COLUMNS} FROM partner_book_imports WHERE partner_party_id = $1 AND tape_sha256 = $2 AND coalesce(supplement_sha256, '') = coalesce($3, '') ORDER BY created_at LIMIT 1`, [existing.id, tapeHash, supplementHash]))[0];
-    if (prior) return resultOf(prior, prior.status === "rejected" ? "rejected" : "already_loaded");
-  }
   // the partner's rows are planned here and written with the loans (before/commit hooks below), the program once the transaction has committed
   const partner: PartnerPlan = await planPartner(rt, input.partner, actor);
   const plan: BookPlan = await planPartnerBook(rt.db, parsed, partner.exists ? partner.id : null, asOf);

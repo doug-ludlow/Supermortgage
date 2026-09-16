@@ -98,6 +98,7 @@ None yet. Append below; do not edit rows in place. A rejection is a new row with
 | Delta | Needed | Have | Decision | Owner | Status |
 |---|---|---|---|---|---|
 | — | — | — | — | — | — |
+| DELTA-02 | 36.2-T3's sentence "it is absent from the next 33.2 review" for a loan on hold (`not_on_latest_tape`): the brief reads as if the held loan had no review row. | 33.1 rule 8 / 33.1-T11 / `src/runtime/partner-book-review.ts` `verdictOf({held})`: the daily review WRITES a row for the held loan — verdict `not_now`, reason `not_on_latest_tape`, the hold flag on `facts.flags` — so it is held out of candidacy (never `candidate` or `watching`, no offer delivered) and stays off the three buckets (36.3). No row of the day is skipped. | map this name: "absent from the review" on the partner surface means "held out of candidacy by the review": 36.2 rule 9 reads the row as 33.1 writes it, 36.2-T3 asserts `not_now` / `not_on_latest_tape`, no `candidate` / `watching` row and no `offered` / `engaged` opportunity for the held loan. No new verdict, reason, flag or column. | 33.1 (the hold), 33.2 (the row), 36.2 (the wording) | accepted (2026-09-16, 36.2 build: the wording of rule 9; nothing minted) |
 
 ---
 

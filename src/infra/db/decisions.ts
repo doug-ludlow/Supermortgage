@@ -22,13 +22,15 @@ export interface DecisionInput {
   readonly approvedBy?: string;
   readonly approvedRole?: string;
   readonly eventId?: string;
+  /** 35.8 rule 3: sha-256 of the canonical JSON the command received (src/app/canonical.ts); the bus sets it on every decision. */
+  readonly inputsSnapshotHash?: string;
 }
 
 export interface DecisionRecord extends DecisionInput { readonly id: string; readonly createdAt: string; }
 
 interface Row extends Record<string, unknown> {
   id: string; agent: string; loan_id: string | null; application_id: string | null; subject_kind: string | null; subject_id: string | null; rule_code: string | null; action: string; evidence_document_ids: string[];
-  confidence: string | null; rule_set_version: string; model_version: string | null; prompt_version: string | null; rationale: string; approved_by: string | null; approved_role: string | null; event_id: string | null; created_at: string;
+  confidence: string | null; rule_set_version: string; model_version: string | null; prompt_version: string | null; rationale: string; approved_by: string | null; approved_role: string | null; event_id: string | null; created_at: string; inputs_snapshot_hash: string | null;
 }
 
 function rowToRecord(r: Row): DecisionRecord {
@@ -36,7 +38,7 @@ function rowToRecord(r: Row): DecisionRecord {
     id: r.id, agent: r.agent, action: r.action, rationale: r.rationale, ruleSetVersion: r.rule_set_version, createdAt: r.created_at,
     evidenceDocumentIds: r.evidence_document_ids, confidence: r.confidence === null ? null : Number(r.confidence), modelVersion: r.model_version, promptVersion: r.prompt_version,
     ...(r.loan_id ? { loanId: r.loan_id } : {}), ...(r.application_id ? { applicationId: r.application_id } : {}), ...(r.subject_kind && r.subject_id ? { subject: { kind: r.subject_kind, id: r.subject_id } } : {}), ...(r.rule_code ? { ruleCode: r.rule_code } : {}),
-    ...(r.approved_by ? { approvedBy: r.approved_by } : {}), ...(r.approved_role ? { approvedRole: r.approved_role } : {}), ...(r.event_id ? { eventId: r.event_id } : {}),
+    ...(r.approved_by ? { approvedBy: r.approved_by } : {}), ...(r.approved_role ? { approvedRole: r.approved_role } : {}), ...(r.event_id ? { eventId: r.event_id } : {}), ...(r.inputs_snapshot_hash ? { inputsSnapshotHash: r.inputs_snapshot_hash } : {}),
   };
 }
 
@@ -48,11 +50,11 @@ export class PgDecisionRepository {
 
   async record(d: DecisionInput, q: Queryable = this.db, id: string = randomUUID()): Promise<DecisionRecord> {
     const rows = await q.query<Row>(
-      `INSERT INTO agent_decisions (id, agent, loan_id, subject_kind, subject_id, rule_code, action, evidence_document_ids, confidence, rule_set_version, model_version, prompt_version, rationale, approved_by, approved_role, event_id, application_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid[], $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
+      `INSERT INTO agent_decisions (id, agent, loan_id, subject_kind, subject_id, rule_code, action, evidence_document_ids, confidence, rule_set_version, model_version, prompt_version, rationale, approved_by, approved_role, event_id, application_id, inputs_snapshot_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid[], $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
       // `evidence_document_ids` is uuid[]: a decision that cites process-owned record ids as its evidence (13.1's `foreclosure_gate_evaluations` rows, `fge-…`) keeps them in its rationale, never in the uuid column (32.10 backend delta)
       [id, d.agent, d.loanId || null, d.subject?.kind ?? null, d.subject?.id ?? null, d.ruleCode ?? null, d.action, [...(d.evidenceDocumentIds ?? [])].filter((x) => UUID_RE.test(String(x))), d.confidence ?? null, d.ruleSetVersion,
-        d.modelVersion ?? null, d.promptVersion ?? null, d.rationale, d.approvedBy ?? null, d.approvedRole ?? null, d.eventId ?? null, d.applicationId ?? null]);
+        d.modelVersion ?? null, d.promptVersion ?? null, d.rationale, d.approvedBy ?? null, d.approvedRole ?? null, d.eventId ?? null, d.applicationId ?? null, d.inputsSnapshotHash ?? null]);
     return rowToRecord(rows[0]!);
   }
   async byApplication(applicationId: string): Promise<DecisionRecord[]> {

@@ -71,9 +71,9 @@ const NAV = [
   ["Oversight", [["dashboard", "Compliance Sentinel", OPS, null], ["controls", "Controls", STAFF_ROLES, null], ["agents", "Agents & AI path", OPS, null], ["ai", "AI conversations", OPS, null]]],
   ["Staff", [["staff", "Staff & roles", ["admin"], null], ["access_review", "Access review", ["compliance", "admin"], null]]],
 ];
-const VIEWS = new Set(NAV.flatMap(([, links]) => links.map(([v]) => v)));
+const VIEWS = new Set([...NAV.flatMap(([, links]) => links.map(([v]) => v)), "work"]);   // 35.8's work items: a view of the Home area (34.5 rule 1 fixes the sidebar's links per role; the queue opens from Home)
 /** A record view belongs to the area it opened from (the sidebar's active link). */
-const AREA_OF = { loan: "loans", directory: "people", directory_account: "people", book_import: "book", book_loan: "book", controls_clock: "controls", controls_pack: "controls", ai_party: "ai", queue: "home", kind: "home" };
+const AREA_OF = { loan: "loans", directory: "people", directory_account: "people", book_import: "book", book_loan: "book", controls_clock: "controls", controls_pack: "controls", ai_party: "ai", queue: "home", kind: "home", work: "home" };
 let renders = 0;
 const money = (c) => { const n = BigInt(c); const neg = n < 0n; const a = neg ? -n : n; return (neg ? "-$" : "$") + (a / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + (a % 100n).toString().padStart(2, "0"); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -256,7 +256,8 @@ async function renderHome(m) {
   if (!state.kind) state.home = h;
   const q = h.my_queue; const c = h.counts; const cl = h.clocks; const es = h.escalations;
   let html = `<h2>Home <span class="muted">— as of ${when(h.as_of)} · you hold ${esc((h.roles || []).join(", "))} · this read acted as ${esc(h.acted_as)}</span></h2>`;
-  if (q) html += `<h2 data-section="my_queue">My queue <span class="muted">— ${q.count} item(s) waiting for ${esc((h.ops_roles || []).join(", "))}</span></h2>`
+  if (q) html += `<p data-work-items><a href="#work">Work items</a> <span class="muted">— the operator work queue: one item per source, claimed and closed here, its screens read through the tools (35.8)</span></p>`
+    + `<h2 data-section="my_queue">My queue <span class="muted">— ${q.count} item(s) waiting for ${esc((h.ops_roles || []).join(", "))}</span></h2>`
     + `${kindForm}<span class="muted">Every held role's work in one list; each row names the role it needs. "Act as" filters nothing here — it is the role an act is sent under.</span></form>`
     + homeQueueTable(q.rows);
   html += `<div class="tiles">` + (cl ? tile("Clocks due in 24h", cl.counts.due_24h, cl.counts.due_24h ? "warn" : "") + tile("Clocks breached", cl.counts.breached, cl.counts.breached ? "bad" : "") : "")
@@ -350,6 +351,7 @@ async function render() {
     } else if (state.view === "book") { await renderBook(m);
     } else if (state.view === "book_import") { await renderBookImport(m);
     } else if (state.view === "book_loan") { await renderBookLoan(m);
+    } else if (state.view === "work") { await renderWork(m);
     } else if (state.view === "controls") { await renderControls(m);
     } else if (state.view === "controls_clock") { await renderClock(m);
     } else if (state.view === "controls_pack") { await renderPack(m);
@@ -578,6 +580,36 @@ async function renderBookLoan(m) {
 // ───────── 34.4 controls: the clocks (GET only — shown, never edited), escalations with a named completion, the outbox with the bounded requeue, the AI systems and the two-person kill switch, the evidence packs (compliance only — 34.4 rule 5; the tab is shown to no one else)
 const CONTROL_TABS = () => [["clocks", "Clocks"], ["escalations", "Escalations"], ["outbox", "Outbox"], ["ai", "AI systems"], ...(holds("compliance") ? [["evidence", "Evidence packs"]] : [])];
 const busLine = (r) => `${(r.events || []).join(", ") || "recorded"}${r.decisionId ? ` · decision ${String(r.decisionId).slice(0, 8)}…` : ""}`;
+/**
+ * 35.8 the operator work queue (rule 8): one item per source, opened by the sweep; a person claims it (rule 9: one person until the claim clock lapses it),
+ * releases it or closes it with a disposition. Every act goes to the bus through /api/work (src/domain/operations-runtime/work-35-8/routes.ts) as the
+ * session's actor with the role named here; the screen read shows the projection the tool built — ids, dates, counts and codes only (spec 35.8 rule 2).
+ */
+async function renderWork(m) {
+  const wf = state.wf || {}; const role = wf.role || OPS.find(holds) || heldRoles()[0] || "ops_analyst"; const status = wf.status || "open";
+  const qs = new URLSearchParams({ role }); if (status !== "all") qs.set("status", status); if (wf.screen) qs.set("screen", wf.screen);
+  const q = await api(`/api/work/queue?${qs}`, { role });
+  const items = q.items || [];
+  const claimCell = (x) => (x.status === "claimed" ? `${short(x.claimed_by)}<br><span class="muted">until ${esc(when(x.claim_expires_at))}${x.claim_lapses ? ` · lapses ${esc(x.claim_lapses)}` : ""}</span>` : x.status === "waiting_approval" ? `<span class="chip warn">officer</span>` : "—");
+  const acts = (x) => {
+    const b = [];
+    b.push(`<button class="ghost" data-wread="${esc(x.id)}" data-screen="${esc(x.screen_code)}" data-skind="${esc(x.subject_kind)}" data-sid="${esc(x.subject_id)}">Read screen</button>`);
+    if (x.status === "open") b.push(`<button class="primary" data-wclaim="${esc(x.id)}" data-role="${esc(x.required_role)}">Claim</button>`);
+    if (x.status === "claimed") b.push(`<button data-wrelease="${esc(x.id)}" data-role="${esc(x.required_role)}">Release</button> <select data-wdisp="${esc(x.id)}">${["done", "no_action", "handed_off"].map((d) => `<option>${d}</option>`).join("")}</select> <input data-wreason="${esc(x.id)}" placeholder="Reason" size="18"> <button data-wclose="${esc(x.id)}" data-role="${esc(x.required_role)}">Close</button>`);
+    return b.join(" ");
+  };
+  m.innerHTML = `<h2>Work items</h2>`
+    + `<form id="wf" class="row"><select name="role">${[...new Set([role, ...heldRoles()])].map((r) => `<option ${r === role ? "selected" : ""}>${esc(r)}</option>`).join("")}</select><select name="status">${["open", "claimed", "waiting_approval", "closed", "all"].map((s) => `<option ${status === s ? "selected" : ""}>${s}</option>`).join("")}</select><input name="screen" placeholder="screen code" size="18" value="${esc(wf.screen || "")}"><button class="ghost" type="submit">Filter</button></form>`
+    + `<p class="muted">${esc(q.count ?? items.length)} item(s) for ${esc(role)} as of ${when(q.as_of)} · one item per source; the sweep opens and closes them (35.8 rule 8)</p>`
+    + table(items.map((x) => [`<span class="mono">${esc(x.screen_code)}</span><br><span class="muted">${esc(x.source_kind)} ${short(x.source_id)}</span>`, `${esc(x.subject_kind)} ${short(x.subject_id)}`, esc(x.required_role), `${stateChip(x.status, ["closed"], ["waiting_approval"])}${x.due_at ? `<br><span class="muted">due ${esc(when(x.due_at))}</span>` : ""}`, when(x.opened_at), claimCell(x), acts(x)]), ["Screen · source", "Subject", "Role", "Status", "Opened", "Claim", ""])
+    + `<div id="wout"></div><pre id="wscreen" class="mono" hidden></pre>`;
+  $("#wf").addEventListener("submit", (e) => { e.preventDefault(); const f = e.target; state.wf = { role: f.role.value, status: f.status.value, screen: f.screen.value.trim() }; render(); });
+  const out = $("#wout");
+  m.querySelectorAll("[data-wclaim]").forEach((b) => b.addEventListener("click", () => attempt(out, (r) => api(`/api/work/items/${b.dataset.wclaim}/claim`, { method: "POST", role: r, body: "{}" }), () => { toast("Claimed"); render(); }, b.dataset.role)));
+  m.querySelectorAll("[data-wrelease]").forEach((b) => b.addEventListener("click", () => attempt(out, (r) => api(`/api/work/items/${b.dataset.wrelease}/release`, { method: "POST", role: r, body: "{}" }), () => { toast("Released"); render(); }, b.dataset.role)));
+  m.querySelectorAll("[data-wclose]").forEach((b) => b.addEventListener("click", () => { const id = b.dataset.wclose; const disposition = m.querySelector(`[data-wdisp="${id}"]`).value; const reason = m.querySelector(`[data-wreason="${id}"]`).value.trim(); attempt(out, (r) => api(`/api/work/items/${id}/close`, { method: "POST", role: r, body: JSON.stringify({ disposition, reason }) }), () => { toast("Closed"); render(); }, b.dataset.role); }));
+  m.querySelectorAll("[data-wread]").forEach((b) => b.addEventListener("click", () => attempt(out, (r) => api(`/api/work/screens/${encodeURIComponent(b.dataset.screen)}/${b.dataset.skind}/${b.dataset.sid}`, { role: r }), (s) => { const pre = $("#wscreen"); pre.hidden = false; pre.textContent = JSON.stringify({ screen: s.code || b.dataset.screen, version: s.version, stale: s.stale, subject: s.subject, actions: (s.actions || []).map((a) => a.code || a), projection: s.projection }, null, 2); }, role)));
+}
 async function renderControls(m) {
   const tabs = CONTROL_TABS(); if (!tabs.some(([k]) => k === state.tab)) state.tab = "clocks"; let body = "";
   if (state.tab === "clocks") {

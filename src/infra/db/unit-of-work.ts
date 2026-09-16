@@ -57,6 +57,8 @@ export interface UowOptions {
   readonly timerOptions?: Omit<TimerEngineOptions, "calendars"> & { calendars?: TimerEngineOptions["calendars"] };
   /** Runs after the lock and the hydration, before the command (35.1: the bounded entity load and the expected-version guard). */
   readonly hydrated?: (ctx: UowContext) => Promise<void>;
+  /** Aggregate subjects whose armed/breached clocks this command hydrates besides the scope's (35.8's work items and proposals — src/infra/db/timers.ts SUBJECT_HYDRATED_KINDS, never read by openGlobal()). */
+  readonly subjects?: readonly { kind: string; id: string }[];
   /** A global command (no loan, no application) takes `uow:global` before it reads (a declared read-then-bump); otherwise the runtime takes it at persist time when the command wrote a global row (src/domain/operations-runtime/seam/lock.ts). */
   readonly globalLock?: boolean;
   /** Writes that must precede the command's events in the same transaction (a new application row the events reference; 35.1's row projectors). */
@@ -104,10 +106,11 @@ export class PgUnitOfWork {
       // a global command (no loan, no application) hydrates the timers armed on global subjects — a transfer batch's clocks are satisfied by the batch-level events 17.x tools emit (32.12 backend delta; additive)
       const loanTimers = loanId ? await timerRepo.open(loanId) : applicationId ? [] : await timerRepo.openGlobal();
       const appTimers = applicationId ? await timerRepo.forApplication(applicationId) : [];
+      const subjectTimers = opts.subjects?.length ? await timerRepo.forSubjects(opts.subjects) : [];
       const seen = new Set<string>();
       const history = [...loanHistory, ...appHistory].filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => a.sequence - b.sequence);
       const tseen = new Set<string>();
-      const openTimers = [...loanTimers, ...appTimers].filter((t) => (t.status === "armed" || t.status === "breached") && (tseen.has(t.id) ? false : (tseen.add(t.id), true)));
+      const openTimers = [...loanTimers, ...appTimers, ...subjectTimers].filter((t) => (t.status === "armed" || t.status === "breached") && (tseen.has(t.id) ? false : (tseen.add(t.id), true)));
       const memEvents = new MemoryEventStore(clock, { ...(loanId ? { loanId } : {}), ...(applicationId ? { applicationId } : {}) });
       memEvents.seed(history);
       const ledger = new MemoryLedger();

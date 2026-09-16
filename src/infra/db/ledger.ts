@@ -55,6 +55,12 @@ export class PgLedgerRepository {
     return (await this.db.query<LineRow>(`SELECT * FROM ledger_lines WHERE ${w.sql} ORDER BY created_at, sequence`, w.params)).map(rowToLine);
   }
   /** Every set touching a loan (any line with that loan_id), lines included, oldest first. */
+  /** One entry set by id with its lines (a set with no loan line — 2.1's cash split — is outside `setsForLoan`'s hydration; the Reversal Engine mirrors it from here). */
+  async setById(id: string, q: Queryable = this.db): Promise<EntrySet | null> {
+    const [s] = await q.query<SetRow>(`SELECT * FROM ledger_entry_sets WHERE id = $1`, [id]); if (!s) return null;
+    const lines = (await q.query<LineRow>(`SELECT * FROM ledger_lines WHERE set_id = $1 ORDER BY sequence`, [s.id])).map(rowToLine);
+    return { id: s.id, effectiveDate: s.effective_date as PlainDate, postedAt: s.posted_at, description: s.description, lines, ...(s.source_event_id ? { sourceEventId: s.source_event_id } : {}), ...(s.reverses_set_id ? { reversesSetId: s.reverses_set_id } : {}) };
+  }
   async setsForLoan(loanId: string): Promise<EntrySet[]> {
     return this.setsWhere(`s.id IN (SELECT l.set_id FROM ledger_lines l WHERE l.loan_id = $1)`, loanId);
   }

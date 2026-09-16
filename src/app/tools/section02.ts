@@ -14,7 +14,7 @@ import { graceEndFor, receivedTowardBasis, basisCents, type WaiverReason } from 
 import { LateChargeOps } from "../../domain/cashiering/ops-2-7.ts";
 import { CashieringOps } from "../../domain/cashiering/ops.ts";
 import { withStatementSummary, withRefund } from "./section2-2.ts";
-import { postReceivedPayment } from "./section2-1.ts";
+import { postReceivedPayment, reverseReceivedPayment } from "./section2-1.ts";
 import { withAutodraftLifecycle } from "./section2-3.ts";
 import { loanCashStateFromRows } from "../../domain/operations-runtime/cashiering-cycle.ts";
 import type { Queryable } from "../../infra/db/client.ts";
@@ -72,6 +72,7 @@ const paymentsReadWrite = (() => {
   const rw = readWrite("payments", "payment.written");
   return (i: ToolInput, ctx: CommandContext, rt: ToolRuntime): unknown => {
     if (i.op === "post") return postReceivedPayment(i, ctx, rt);   // the 2.1 posting run (allocation engine + 2.2 partial rules; section2-1.ts, 32.8 delta)
+    if (i.op === "reverse") return reverseReceivedPayment(i, ctx, rt);   // 2.1 rule 9: the Reversal Engine on the bus (section2-1.ts; 35.8 worked example B)
     if (i.op !== "write" || typeof i.id !== "string") return rw(i, ctx, rt);
     const existing = rt.store.get("payments", i.id)?.data;
     const attempted = (i.changes as Record<string, unknown> | undefined)?.received_on ?? data(i).received_on;

@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8561/8787 (97.4%): tids 2378/2480, tables 826/852, timers 2087/2097, notices 308/309, tools 1536/1579, figures 1426/1470; processes at 100%: 201/212; retired 27; hosted 1512/1579, persisted 97/852",
+ "brief": "spec units built 8611/8787 (98.0%): tids 2394/2480, tables 833/852, timers 2091/2097, notices 308/309, tools 1549/1579, figures 1436/1470; processes at 100%: 202/212; retired 27; hosted 1512/1579, persisted 97/852",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2378
+   "built": 2394
   },
   "tables": {
    "spec": 852,
-   "built": 826
+   "built": 833
   },
   "timers": {
    "spec": 2097,
-   "built": 2087
+   "built": 2091
   },
   "notices": {
    "spec": 309,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1579,
-   "built": 1536
+   "built": 1549
   },
   "figures": {
    "spec": 1470,
-   "built": 1426
+   "built": 1436
   },
   "units": {
    "spec": 8787,
-   "built": 8561
+   "built": 8611
   }
  },
  "exec_totals": {
@@ -464,9 +464,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 550,
+   "built": 600,
    "processes": 12,
-   "done": 9
+   "done": 10
   },
   "36": {
    "spec": 40,
@@ -674,6 +674,7 @@
   "35.4",
   "35.5",
   "35.7",
+  "35.8",
   "35.9",
   "35.10",
   "35.11"
@@ -11155,14 +11156,13 @@
    },
    "figures": {
     "spec": 40,
-    "built": 9,
+    "built": 12,
     "missing": [
      "$1,067.72",
      "$1,096.67",
      "$1,240.00",
      "$1,375.00",
      "$1,415.00",
-     "$1,665.00",
      "$10,052.69",
      "$2,774.00",
      "$3,485.00",
@@ -11175,14 +11175,12 @@
      "$515.00",
      "$548,800.00",
      "$549,550.64",
-     "$556,852.07",
      "$557,249.57",
      "$564,503.33",
      "$566,300.00",
      "$6,579.52",
      "$7,732.38",
      "$70.10",
-     "$700.00",
      "$71.96",
      "$725.64",
      "$8,052.07",
@@ -11202,9 +11200,9 @@
    },
    "units": {
     "spec": 80,
-    "built": 12
+    "built": 15
    },
-   "pct": 15.0,
+   "pct": 18.8,
    "retired": []
   },
   {
@@ -11264,50 +11262,20 @@
    "title": "Operator work screens: the per-loan and per-application work the console lacks, each screen a bus tool with server-derived inputs, the queue and the action log",
    "tids": {
     "spec": 16,
-    "built": 0,
-    "todo": 16,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "work_actions",
-     "work_approvals",
-     "work_derivations",
-     "work_item_events",
-     "work_items",
-     "work_log_recon_runs",
-     "work_screen_versions"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 1,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_WORK_APPROVAL_1BD",
-     "SM_WORK_ITEM_AGE_2BD",
-     "SM_WORK_ITEM_AGE_5BD",
-     "SM_WORK_ITEM_CLAIM_4H"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -11316,35 +11284,13 @@
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "work.queue",
-     "work.item.open",
-     "work.item.claim",
-     "work.item.release",
-     "work.item.close",
-     "work.item.cancel",
-     "work.screen.read",
-     "work.screen.derive",
-     "work.screen.act",
-     "work.action.propose",
-     "work.action.decide",
-     "work.log.recon",
-     "writeDecision"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 22,
-    "built": 15,
-    "missing": [
-     "$1,665.00",
-     "$2,412.90",
-     "$250,390.82",
-     "$44.22",
-     "$556,852.07",
-     "$619.08",
-     "$700.00"
-    ]
+    "built": 22,
+    "missing": []
    },
    "hosted": {
     "spec": 13,
@@ -11358,9 +11304,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 16
+    "built": 63
    },
-   "pct": 25.4,
+   "pct": 100.0,
    "retired": []
   },
   {

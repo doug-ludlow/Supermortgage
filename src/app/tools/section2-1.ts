@@ -21,14 +21,17 @@
  */
 import { cents, str, num, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
 import type { CommandContext } from "../commands.ts";
-import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
+import { plainDate as D, addMonths, type PlainDate } from "../../kernel/calendar/date.ts";
+import { LateChargeOps } from "../../domain/cashiering/ops-2-7.ts";
+import { PgLedgerRepository } from "../../infra/db/ledger.ts";
+import type { Queryable } from "../../infra/db/client.ts";
+import { graceEndFor } from "../../domain/cashiering/latecharges.ts";
 import type { AccountRef, LoanAccount, CustodialAccount } from "../../kernel/ledger/ledger.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import { allocate } from "../../domain/cashiering/allocation.ts";
 import { decidePartial, type PartialContext } from "../../domain/cashiering/partials.ts";
 import { CashieringOps } from "../../domain/cashiering/ops.ts";
 import type { Designation, LoanCashState } from "../../domain/cashiering/types.ts";
-import type { Queryable } from "../../infra/db/client.ts";
 import { loanCashStateFromRows } from "../../domain/operations-runtime/cashiering-cycle.ts";
 
 const s = (c: Cents): string => c.toString();
@@ -98,3 +101,51 @@ export async function postReceivedPayment(i: ToolInput, ctx: CommandContext, rt:
 }
 
 export const TOOLS_2_1: readonly ToolDef[] = [];
+
+/**
+ * `payments.read/write{op=reverse, id, loan_id, state, custodial, reason, return_code?, nsf_fee?, run_on?}` — 2.1 rule 9's
+ * Reversal Engine for a posted payment on the bus (35.8 worked example B names it: "2.1 `payments.read/write{op: reverse}`
+ * posts the mirror set"): the rule-8 entry sets the posting run wrote (receipt · allocation · cash split) come back out in
+ * reverse order as mirror sets (`ctx.ledger.reverse`, the 2.3 return precedent in section2-3.ts handleReturn), the payment
+ * row is `reversed` with the mirror ids, the installments it satisfied are due again, UPB and LPI are what they were before
+ * the posting, and 2.7's re-evaluation runs in the same command: an installment now unpaid past its grace end is assessed
+ * (LateChargeOps.assess — once-only, credited-funds and overlay rules inside; the P&I basis, half-up once). Nothing here
+ * decides a figure: the mirror is the ledger's, the late charge is 2.7's, the state is the caller's derived cash state.
+ */
+export async function reverseReceivedPayment(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
+  const id = str(i, "id") || str(i, "payment_id"); const rec = rt.store.get("payments", id); if (!rec) throw new RangeError(`no payment ${id} on this loan`);
+  const pay = rec.data; const status = String(pay.status ?? "");
+  if (status !== "posted") throw new RangeError(`payment ${id} is ${status || "unknown"}, not posted`);
+  const state = i.state as LoanCashState | undefined; if (!state) throw new RangeError("reverse needs the loan's cash state");
+  const reason = str(i, "reason") || "correction"; const code = str(i, "return_code") || null;
+  if (code && !/^R\d{2}$/.test(code)) throw new RangeError("return_code must be a Nacha return reason code (R01 …)");
+  const runOn = D(str(i, "run_on") || ctx.now.slice(0, 10)); const loanId = String(pay.loan_id ?? ctx.loanId);
+  const sets = Array.isArray(pay.ledger_entry_set_ids) ? [...(pay.ledger_entry_set_ids as string[])].reverse() : [];
+  const why = `${reason}${code ? ` ${code}` : ""} (${id})`;
+  // the receipt and allocation sets carry loan lines and are hydrated with the loan; the cash split set (custodial lines only) is read by id from the record and mirrored line for line
+  const db = rt.services["db"] as Queryable | undefined;
+  const mirror: string[] = [];
+  for (const setId of sets) {
+    if (ctx.ledger.sets().some((x) => x.id === setId)) { mirror.push(ctx.ledger.reverse(setId, runOn, why, ctx.now).id); continue; }
+    const orig = db ? await new PgLedgerRepository(db).setById(setId) : null; if (!orig) throw new RangeError(`no entry set ${setId}`);
+    mirror.push(ctx.ledger.post({ effectiveDate: runOn, description: `REVERSAL of ${orig.description}: ${why}`, reversesSetId: setId, lines: orig.lines.map((l) => ({ account: l.account, amountCents: -l.amountCents, ruleRef: l.ruleRef, memo: `reversal: ${why}` })) }, ctx.now).id);
+  }
+  const alloc = (pay.allocation ?? {}) as Record<string, unknown>;
+  const principalApplied = cents(alloc.principal_cents ?? 0) + cents(alloc.curtailment_cents ?? 0);
+  const restoredUpb = state.upb_cents + principalApplied;
+  const dueAgain = (Array.isArray(pay.installments) ? (pay.installments as string[]) : []).map((d) => D(d));
+  const stillSatisfied = state.installments.filter((x) => x.status === "satisfied" && x.satisfied_by_payment_id !== id).map((x) => x.due_date).sort();
+  const restoredLpi = stillSatisfied.at(-1) ?? (dueAgain.length ? addMonths(dueAgain[0]!, -1) : state.lpi_date);
+  rt.store.put("payments", id, { ...pay, status: "reversed", reversal: { reason, return_code: code, reversed_at: ctx.now, reversed_on: runOn, entry_set_ids: mirror, nsf_fee: i.nsf_fee === true } }, ctx.actor, ctx.now);
+  ctx.events.append({ type: "payment.reversed", loanId, aggregate: { kind: "payment", id }, actor: ctx.actor, payload: { payment_id: id, loan_id: loanId, reason, return_code: code, reversed_on: runOn, amount_cents: s(cents(pay.amount_cents)), mirror_entry_set_ids: mirror, reversed_entry_set_ids: sets, installments: dueAgain, restored_upb_cents: s(restoredUpb), restored_lpi_date: restoredLpi, nsf_fee_requested: reason === "returned_item" && i.nsf_fee === true, nsf_fee_assessed: false } });   // the reversal assesses no NSF fee itself: 2.7's fee op does, on its own rule, when the servicer asks
+  // 2.1 rule 9 / 35.8 worked example B: 2.7's re-evaluation in the same command — the installments due again, assessed when their grace end has passed
+  const after: LoanCashState = { ...state, upb_cents: restoredUpb, lpi_date: restoredLpi, installments: state.installments.map((x) => (x.satisfied_by_payment_id === id ? { due_date: x.due_date, pi_cents: x.pi_cents, escrow_cents: x.escrow_cents, status: "due" as const } : x)) };
+  const lc = new LateChargeOps({ events: ctx.events, clock: { now: () => ctx.now }, actor: ctx.actor });
+  const assessed: Record<string, unknown>[] = [];
+  for (const due of dueAgain) {
+    if (graceEndFor(after, due) >= runOn) continue;
+    const r = lc.assess({ state: after, installment_due_date: due, run_on: runOn, unposted_receipts_on_or_before_grace: 0 });
+    if (r.outcome === "assessed" || r.outcome === "accrued_suspended") { const fee = Object.fromEntries(Object.entries({ ...r.fee, loan_id: loanId }).map(([k, v]) => [k, typeof v === "bigint" ? v.toString() : v])); rt.store.put("fees", r.fee.id, fee, ctx.actor, ctx.now); assessed.push(fee); }
+  }
+  return { payment_id: id, status: "reversed", reason, return_code: code, mirror_entry_set_ids: mirror, restored_upb_cents: s(restoredUpb), restored_lpi_date: restoredLpi, installments_due_again: dueAgain, late_charges_assessed: assessed };
+}

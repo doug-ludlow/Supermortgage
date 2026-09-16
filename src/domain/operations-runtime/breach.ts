@@ -40,6 +40,8 @@ import type { Runtime } from "../../runtime/app.ts";
 import { breachRoleFor_35_3, enrichBreach_35_3 } from "./timers-35-3.ts";
 // 35.11: a process may enrich the escalation of its own clock's breach when it is opened — SM_OPS_ADAPTER_DOWN_1H names the adapter and D15, SM_OPS_CYCLE_MISSED_2H the cycle, the period and consecutive_misses (and the row's second clause: sev 1 → compliance) — reads only, in the page's transaction
 import { BREACH_ENRICHERS } from "./stewardship.ts";
+// 35.8 timer table rows 1–3: the codes whose breach action this process's own pass executes (work-35-8/sweep.ts workBreachPass, after this pass) — the claim lapse escalates on the third lapse of one item, never on the first (35.8-T9); the age clocks open one escalation per role per sweep, never one per item — so a page opens no escalation for them (the breach is still recorded: timer.breached, the breached row, and 35.9's `escalated_only` action row)
+import { BREACH_HANDLED_BY_35_8 } from "./timers-35-8.ts";
 import { executeBreachActions } from "./default-35-9/sweep.ts";
 
 /** Rule 9's page: 500 due timers per transaction. */
@@ -94,6 +96,7 @@ async function breachPage(rt: Runtime, nowIso: string, pageSize: number, asOfDat
     const escalations = new EscalationService(events, rt.clock);
     const breaches: BreachSummary[] = [];
     for (const b of engine.evaluate(nowIso)) {
+      if (BREACH_HANDLED_BY_35_8.has(b.instance.code)) { breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [], timer_id: b.instance.id }); continue; }
       const fallback = resolveBreachRole(b) ?? "ops_analyst";
       const cycles = b.def.process === CYCLES_PROCESS_ID;
       // 35.11: the steward's own clocks — the enricher may raise the severity and name the owner (the registry row's second clause); a failing enricher is logged and the breach opens on the row's first clause

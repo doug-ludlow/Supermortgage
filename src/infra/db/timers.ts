@@ -22,6 +22,8 @@ function rowToInstance(r: TimerRow): TimerInstance {
   };
 }
 
+/** 35.8's aggregate clocks (a work item's age and claim clocks, a proposal's approval clock): thousands of rows on a worked book, hydrated only by the commands that name their subjects — never by every global command's openGlobal(). */
+export const SUBJECT_HYDRATED_KINDS: readonly string[] = ["work_item", "work_action"];
 export class PgTimerRepository {
   private readonly db: Queryable;
   constructor(db: Queryable) { this.db = db; }
@@ -37,9 +39,15 @@ export class PgTimerRepository {
           i.status, i.satisfiedAt ?? null, i.satisfiedByEventId ?? null, i.breachedAt ?? null, i.cancelledReason ?? null, i.note ?? null, i.applicationId ?? null]);
     }
   }
-  /** Armed/breached timers whose subject is neither a loan nor an application (a transfer batch, a partner, a vendor …): what a global command can satisfy (32.12 backend delta — 17.2's proofs of mailing satisfy REGX_1024_33B3_COMBINED_15 on the batch). */
+  /** Armed/breached timers whose subject is neither a loan nor an application (a transfer batch, a partner, a vendor …): what a global command can satisfy (32.12 backend delta — 17.2's proofs of mailing satisfy REGX_1024_33B3_COMBINED_15 on the batch) — less the kinds hydrated by subject (SUBJECT_HYDRATED_KINDS: one row per work item would otherwise be read by every global command). */
   async openGlobal(): Promise<TimerInstance[]> {
-    return (await this.db.query<TimerRow>(`SELECT * FROM timers WHERE loan_id IS NULL AND application_id IS NULL AND status IN ('armed', 'breached') ORDER BY armed_at`)).map(rowToInstance);
+    // the predicate is spelled as 0203's partial index (timers_open_global_idx) spells it, so the read is the index, never a scan of every item clock
+    return (await this.db.query<TimerRow>(`SELECT * FROM timers WHERE loan_id IS NULL AND application_id IS NULL AND status IN ('armed', 'breached') AND subject_kind NOT IN (${SUBJECT_HYDRATED_KINDS.map((k) => `'${k}'`).join(", ")}) ORDER BY armed_at`)).map(rowToInstance);
+  }
+  /** Armed/breached timers of the named aggregate subjects — what a command that names them (ToolDef.timerSubjects, UowOptions.subjects) hydrates in place of the global read. */
+  async forSubjects(subjects: readonly { kind: string; id: string }[]): Promise<TimerInstance[]> {
+    if (!subjects.length) return [];
+    return (await this.db.query<TimerRow>(`SELECT t.* FROM timers t JOIN unnest($1::text[], $2::text[]) AS s(kind, id) ON s.kind = t.subject_kind AND s.id = t.subject_id WHERE t.status IN ('armed', 'breached') ORDER BY t.armed_at`, [subjects.map((s) => s.kind), subjects.map((s) => s.id)])).map(rowToInstance);
   }
   /** Armed/breached timers, optionally for one loan. */
   async open(loanId?: string): Promise<TimerInstance[]> {

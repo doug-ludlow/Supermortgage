@@ -124,7 +124,7 @@ let J: App; let tokA = ""; let recordR8: Json;
 // the journey moves the clock by days between phases and sessions idle out after 30 minutes (01 §5): every test signs Alex in afresh
 const fresh = async (): Promise<string> => { tokA = (await signIn(J.A)).token; return tokA; };
 
-test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` shows E1–R7 `done`, R8 `current`, and Tasks renders Progress \"7 of 12\" from `journey_progress`.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
+test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` shows E1–R7 `done`, R8 `current`, and Tasks renders Progress \"7 of 12\" from `journey_progress`.", { skip }, async () => {
   // the journey fixture to R8: the application (E1–E6 are the door: the lead, the disclosure, the goal, the identified and verified borrowers, the consents), the 21.1 interview (R1–R7, the six-item moment → application.trid_received), credit for both (R2), DU findings received and interpreted (R8 — no decision yet)
   J = await openApp();
   await J.j.quoteOnly();   // 20.4's quote and the credit-report fee handling (22.2 R1: no hard pull before the six items and the fee are recorded) — no LE yet
@@ -155,16 +155,12 @@ test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` show
   // a serviced loan has no journey to show; a purchase application walks P1–P9, C1–C7
   assert.equal(journeyProgress({ stage: "servicing", transaction_type: null, events: [], cards: [] }), null);
   assert.equal(journeyProgress({ stage: "origination", transaction_type: "purchase", events: [], cards: [] })!.total, 16);
-  // Progress renders "7 of 12" on the rail, R8 marked current, the earlier steps done
-  const { page, ctx } = await openShell(tokA, 1280);
-  // "7 of 12" is on the "Your record" line (always in view); the steps are inside it, one tap away
-  const recordSec = page.locator('[data-testid="record"] [data-record-section="record"]');
-  assert.equal((await recordSec.getByTestId("progress-count").innerText()).trim(), "7 of 12");
-  await recordSec.locator("> h2 > button").click();
-  const progress = page.locator('[data-testid="record"] [data-record-section="progress"]');
-  assert.equal(await progress.locator('[data-step-id][data-state="done"]').count(), 7);
-  assert.equal(await progress.locator('[data-step-id="R8"][data-state="current"]').count(), 1);
-  assert.equal(await progress.locator('[data-step-id][data-state="upcoming"]').count(), 4);
+  // Tasks renders Progress "7 of 12" from journey_progress (32.19 §2.3: the Apply product's Tasks tab, the second line of the tasks card — the API's counts, never counted by the page)
+  const { page, ctx } = await openApply(tokA, 1280);
+  await page.getByTestId("apply-tab-tasks").click(); await page.waitForSelector('[data-testid="apply-tasks"]', { timeout: 30_000 });
+  const progress = page.getByTestId("progress-count"); await progress.waitFor({ timeout: 30_000 });
+  assert.equal((await progress.innerText()).trim(), "7 of 12");
+  assert.match(await page.getByTestId("apply-tasks").innerText(), /Progress\s+7 of 12/, "the Progress line (apply.tasks.journey_label + apply.tasks.journey)");
   await page.screenshot({ path: `${SCREENSHOTS}/t13-progress-1280.png`, fullPage: false }).catch(() => undefined);
   await ctx.close();
 });

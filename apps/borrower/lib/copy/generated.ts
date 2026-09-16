@@ -828,7 +828,22 @@ export const COPY = {
   "apply.account.signed_in": { key: "apply.account.signed_in", kind: "label", text: "Signed in", notes: "32.19 §2.3: when the party has no first name yet.", extras: [], section: "The Apply product (32.19)" },
   "apply.account.sign_out": { key: "apply.account.sign_out", kind: "button", text: "Sign out", notes: "32.19 §2.3: `POST auth/sign-out`; the next load is the door.", extras: [], section: "The Apply product (32.19)" },
   "apply.chat.placeholder": { key: "apply.chat.placeholder", kind: "field", text: "Message", notes: "32.19 §2.3: the composer; `POST /v1/borrower/messages` only.", extras: ["helper: \"Ask Supermortgage\""], section: "The Apply product (32.19)" },
+  "apply.chat.empty": { key: "apply.chat.empty", kind: "line", text: "Ask anything about your loan or application.", notes: "32.19 §2.3: the Chat tab before the first line.", extras: [], section: "The Apply product (32.19)" },
+  "apply.questions.waiting": { key: "apply.questions.waiting", kind: "line", text: "Loading your questions…", notes: "32.19 §2.2 questions: shown while the first declarations card is awaited from the flows.", extras: [], section: "The Apply product (32.19)" },
+  "apply.questions.done": { key: "apply.questions.done", kind: "line", text: "Your answers are in.", notes: "32.19 §2.2 questions: the sequence's last tap ran the command; Continue goes on.", extras: [], section: "The Apply product (32.19)" },
+  "apply.questions.answer_first": { key: "apply.questions.answer_first", kind: "refusal", text: "Answer the question on the card first.", notes: "32.19 §3.0: Continue never skips a pending declarations card; nothing is posted.", extras: [], section: "The Apply product (32.19)" },
+  "apply.demographics.done": { key: "apply.demographics.done", kind: "line", text: "Thanks. That part is done.", notes: "32.19 §2.2 demographics: the card is resolved; Continue goes on.", extras: [], section: "The Apply product (32.19)" },
+  "apply.demographics.answer_first": { key: "apply.demographics.answer_first", kind: "refusal", text: "Answer or decline on the card first.", notes: "32.19 §3.0: the demographics card is pending; nothing is posted.", extras: [], section: "The Apply product (32.19)" },
+  "apply.review.products": { key: "apply.review.products", kind: "labels", text: "Loan type", notes: "32.19 §2.2 review: FRM30, or FRM15 for Pay off sooner (`refi.product.choice`).", extras: [], options: ["30-year fixed", "15-year fixed"], section: "The Apply product (32.19)" },
+  "apply.review.required": { key: "apply.review.required", kind: "refusal", text: "Fill in the numbers above first.", notes: "32.19 §3.0: the value, the balance or the down payment is empty; nothing is posted.", extras: [], section: "The Apply product (32.19)" },
+  "apply.result.waiting": { key: "apply.result.waiting", kind: "line", text: "Your application is in. We are checking it now.", notes: "32.19 §2.2 result: before the copy library's `du.running` card arrives.", extras: [], section: "The Apply product (32.19)" },
+  "apply.tasks.journey_label": { key: "apply.tasks.journey_label", kind: "label", text: "Progress", notes: "32.19 §2.3 / 32.16-T13: beside `journey_progress`.", extras: [], section: "The Apply product (32.19)" },
+  "apply.tasks.journey": { key: "apply.tasks.journey", kind: "line", text: "{{done}} of {{total}}", notes: "32.19 §2.3 / 32.16-T13: `journey_progress` as the API derives it (\"7 of 12\").", extras: [], section: "The Apply product (32.19)" },
+  "apply.tasks.needed_count": { key: "apply.tasks.needed_count", kind: "line", text: "{{count}} needed from you", notes: "32.19 §2.3 / 32.16-T16: `needed_summary.count`, the record's own number.", extras: [], section: "The Apply product (32.19)" },
+  "apply.loan.servicer": { key: "apply.loan.servicer", kind: "label", text: "Serviced by", notes: "32.19 §2.3 My Loan: the servicer of record (33.1 rule 6).", extras: [], section: "The Apply product (32.19)" },
+  "apply.loan.number": { key: "apply.loan.number", kind: "line", text: "Loan ending in {{last4}}", notes: "32.19 §2.3 My Loan: the loan's last four, never the number.", extras: [], section: "The Apply product (32.19)" },
+  "apply.loan.nothing_scheduled": { key: "apply.loan.nothing_scheduled", kind: "line", text: "Nothing scheduled", notes: "32.19 §2.3 My Loan: no next event on the record.", extras: [], section: "The Apply product (32.19)" },
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 816;
+export const COPY_KEY_COUNT = 831;

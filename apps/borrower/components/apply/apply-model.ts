@@ -77,8 +77,6 @@ export type Draft = {
   dependents: string;
   military: Military;
   language: Language;
-  noneApply: boolean;
-  declinedDemo: boolean;
 };
 
 export const EMPTY: Draft = {
@@ -118,8 +116,6 @@ export const EMPTY: Draft = {
   dependents: "",
   military: "",
   language: "",
-  noneApply: true,
-  declinedDemo: false,
 };
 
 /** The seven tasks in order; the row labels are `apply.tasks.rows`' options in the same order. */
@@ -145,10 +141,46 @@ export const STEP_OF_COPY_KEY: Readonly<Record<string, Step>> = {
   "refi.loan_amount.confirm": "review",
   "refi.product.choice": "review",
   "preapproval.target": "review",
+  "du.running": "result",   // the copy library's line while underwriting runs (32.18 rule 3) — read on Result, never a task
+  "conditions.checklist": "result",   // the ChecklistCard when it comes (32.3 R8)
 };
 export function stepOfCopyKey(copyKey: string): Step | undefined {
   if (copyKey.startsWith("declarations.")) return "questions";
   return STEP_OF_COPY_KEY[copyKey];
+}
+/** 32.18 rule 7: a card the assembly re-sent for a gap it found (`flow_key` `…:gap:<emission>`) — hosted in Tasks and listed on Review/Result with the copy library's `application.gap.resend` line, never folded back into a step's form. */
+export function isGapCard(card: AnyCardInstance): boolean {
+  const flowKey = (card.props as { flow_key?: unknown }).flow_key;
+  return typeof flowKey === "string" && flowKey.includes(":gap:");
+}
+/** The step that hosts a card: the interview's own cards by copy key; a re-sent gap card has no step (Tasks hosts it). */
+export function stepOfCard(card: AnyCardInstance): Step | undefined {
+  return isGapCard(card) ? undefined : stepOfCopyKey(card.copy_key);
+}
+/** Kinds with nothing of the borrower's to tap (01 §3; the rail's HOMED_ELSEWHERE): never a task, never under "Still needed" — Result reads the status and the checklist, My Loan the notices and people. */
+export const INFORMATIONAL_KINDS: ReadonlySet<string> = new Set(["StatusCard", "PersonCard", "ChecklistCard", "HandoffCard", "NoticeCard"]);
+/** The pending cards that are asks (a control to tap), newest last. */
+export function neededCards(cards: readonly AnyCardInstance[]): AnyCardInstance[] {
+  return cards.filter((c) => c.status === "pending" && !INFORMATIONAL_KINDS.has(c.kind));
+}
+/** The pending asks with no step of their own — a gap card, `credit.liabilities.confirm`, `refi.current_loan.confirm`, a 33.x OfferCard — hosted in Tasks through `components/cards` (docs/ux/18 §2.3). */
+export function hostedInTasks(cards: readonly AnyCardInstance[]): AnyCardInstance[] {
+  return neededCards(cards).filter((c) => !stepOfCard(c));
+}
+/** The interview's pending `declarations.*` card (one question at a time; a gap re-send is Tasks' — `isGapCard`), the oldest first. */
+export function pendingDeclaration(cards: readonly AnyCardInstance[]): AnyCardInstance | undefined {
+  return cards.filter((c) => c.status === "pending" && c.copy_key.startsWith("declarations.") && !isGapCard(c)).sort((a, b) => (a.created_at < b.created_at ? -1 : 1))[0];
+}
+/**
+ * docs/ux/18 §2.3 (still looking): the purchase is to-be-determined when the goal tap carried `{tbd: true}` (the card's
+ * `command_output.property_tbd`) or `preapproval.where` was sent, and no address has reached the record since —
+ * `record.property` is null without an `application_properties` row, so the card is the source, not the record.
+ */
+export function isTbdPurchase(cards: readonly AnyCardInstance[], record: BorrowerRecord | null): boolean {
+  if (record?.property?.address) return false;
+  const goal = resolved(cards, "entry.goal.question");
+  const out = (goal?.evidence as { command_output?: { property_tbd?: unknown } } | undefined)?.command_output;
+  return out?.property_tbd === true || cards.some((c) => c.copy_key === "preapproval.where") || Boolean(resolved(cards, "preapproval.target"));
 }
 
 /**
@@ -165,6 +197,12 @@ export function cents(raw: string): string {
   return BigInt(`${whole}${frac}`).toString();
 }
 
+/** The thread lists a card once per message that carries it (a card's own line and, for a gap re-send, the `application.gap.resend` line beside it): one entry per card id, the last wins. */
+export function uniqueCards(cards: readonly AnyCardInstance[]): AnyCardInstance[] {
+  const byId = new Map<string, AnyCardInstance>();
+  for (const c of cards) byId.set(c.card_instance_id, c);
+  return [...byId.values()];
+}
 /** The pending card whose copy key is exactly `key` (never `startsWith`: `declarations.title` is not `declarations.title.x`). */
 export function pending(cards: readonly AnyCardInstance[], key: string): AnyCardInstance | undefined {
   return cards.find((c) => c.status === "pending" && c.copy_key === key);
@@ -184,7 +222,7 @@ export function resolved(cards: readonly AnyCardInstance[], key: string): AnyCar
 export function doneFrom(cards: readonly AnyCardInstance[], record: BorrowerRecord | null): Record<TaskId, boolean> {
   const goal = Boolean(resolved(cards, "entry.goal.question"));
   const address = Boolean(record?.property?.address) && record?.property?.tbd !== true;
-  const declarations = cards.filter((c) => c.copy_key.startsWith("declarations."));
+  const declarations = cards.filter((c) => c.copy_key.startsWith("declarations.") && !isGapCard(c));   // a re-sent gap card is its own task (Tasks hosts it), not the row's state
   return {
     property: goal && (address || Boolean(resolved(cards, "preapproval.where")) || Boolean(resolved(cards, "refi.home.confirm"))),
     you: Boolean(resolved(cards, "identity.ssn.title")),

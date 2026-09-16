@@ -9,7 +9,10 @@
  *  - `flush(step, ctx)`: the per-step commit with the §3.1 evidence shapes. Session 1 wired `property` (the three
  *    branches: the addressed purchase, still looking, the refinance); Session 2 wires `you` (the FAKE identity session,
  *    the identity, SSN, prior-residence and — on a refinance — the home card), `connect` (the two FAKE connections and the
- *    income card) and `details` (the profile card); the later steps post nothing yet.
+ *    income card) and `details` (the profile card); Session 3 wires `review` (the number cards — the readiness view's one
+ *    CTA; `preapproval.target` on a still-looking purchase) and the card-hosted steps' follow-through (`waitAfterDeclaration`:
+ *    the next question of the declarations sequence, or its end). Questions and Demographics post through the card
+ *    components themselves (`ApplyProduct.onResolveCard`); Result posts nothing (the DU moment is the flows' own run).
  *  - `vendorSession(kind, ...)`: the FAKE vendor sessions, always `fake_complete: true` (a real vendor ignores it).
  *  - `messageOf(e)`: `ApiRequestError.body.copy_key` → `copy(copy_key)`, `error.generic` when the key is unknown —
  *    never the code; a local refusal (`StepError`) names its own copy key.
@@ -19,7 +22,8 @@
 import { api, ApiRequestError } from "@/lib/api/client";
 import { copy, isCopyKey } from "@/lib/copy";
 import type { AnyCardInstance, ResolveRequest, Uuid } from "@/lib/types/cards";
-import { cents, goalOptionOf, pending, resolved, type Draft, type Step } from "./apply-model";
+import type { BorrowerRecord } from "@/lib/types/record";
+import { cents, goalOptionOf, isTbdPurchase, pending, pendingDeclaration, resolved, uniqueCards, type Draft, type Step } from "./apply-model";
 
 /** A refusal raised before anything is posted (a required field empty); rendered as `copy(copyKey)`. */
 export class StepError extends Error {
@@ -38,9 +42,9 @@ export function messageOf(e: unknown): string {
 const now = () => new Date().toISOString();
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/** The thread's cards as the API lists them (always an array — adapt.ts). */
+/** The thread's cards as the API lists them (always an array — adapt.ts), one entry per card. */
 export async function loadCards(): Promise<AnyCardInstance[]> {
-  return (await api.thread()).cards;
+  return uniqueCards((await api.thread()).cards);
 }
 
 /** Poll the thread until a pending card with `copy_key === key` exists; a timeout is an error the step shows. */
@@ -88,7 +92,7 @@ export function addressWithState(address: string, state: string): string {
   return /,\s*[A-Za-z]{2}(\s*\d{5}(?:-?\d{4})?)?$/.test(typed) ? typed : `${typed}, ${state.toUpperCase()}`;
 }
 
-export type FlushContext = { draft: Draft; cards: readonly AnyCardInstance[]; applicationId: string | null };
+export type FlushContext = { draft: Draft; cards: readonly AnyCardInstance[]; applicationId: string | null; record?: BorrowerRecord | null };
 /** `patch` is applied to the draft after the commit (the SSN is held only until its card is written — never echoed, never kept). */
 export type FlushResult = { next: Step; outcomes: ResolveOutcome[]; patch?: Partial<Draft> };
 
@@ -293,7 +297,98 @@ export async function commitDetails(ctx: FlushContext): Promise<FlushResult> {
   return { next: "questions", outcomes };
 }
 
-/** The per-step commit. Steps not wired yet hold their values in the draft and post nothing (docs/ux/18 §5: Session 3). */
+/** `a − b` and `a + b` over decimal strings of cents — BigInt, never a float (32.13-T9). */
+const minus = (a: string, b: string): string => (BigInt(a) - BigInt(b)).toString();
+const plus = (a: string, b: string): string => (BigInt(a) + BigInt(b)).toString();
+const shownValue = (card: AnyCardInstance | null, path: string): string => (card && card.kind === "ConfirmCard" ? card.props.fields.find((f) => f.path === path)?.value ?? "" : "");
+
+/**
+ * Review (docs/ux/18 §2.2 review, §2.3, §2.4): the readiness view's one CTA — "Confirm these numbers" — is the last number
+ * cards' tap; nothing submits (owner decision 1; the DU moment is the flows' own run on `application.trid_received`).
+ *  - An addressed purchase: `refi.value.confirm` ← the price, `refi.loan_amount.confirm` ← price − down payment,
+ *    `refi.product.choice` FRM30.
+ *  - A refinance: the value ← "worth" (the FAKE AVM's figure stands when nothing was typed), the loan amount ← the balance
+ *    (+ the cash out on `cash_out`), the product FRM30 or FRM15 (Pay off sooner). A pending `refi.current_loan.confirm`
+ *    (after the report) takes the typed balance as `current_balance_cents` — the same number, the same tap.
+ *  - Still looking: `preapproval.target` ← the price high, the down payment, high − down, FRM30; the file stays received.
+ * Each card is resolved only while pending (resolve-first): a return to Review after the tap posts nothing and goes to Result.
+ */
+export async function commitReview(ctx: FlushContext): Promise<FlushResult> {
+  const { draft, applicationId } = ctx;
+  if (!applicationId) throw new StepError("apply.property.waiting");
+  const outcomes: ResolveOutcome[] = [];
+  const at = now();
+  // the number cards (or preapproval.target) ride application.demographics.collected: while a question or the demographics card is still
+  // pending (Tasks → Review early) there is no card to wait for — the step stays with the ask named and nothing is posted (§3.0), never a 30 s wait
+  if (!pending(ctx.cards, "refi.value.confirm") && !resolved(ctx.cards, "refi.value.confirm") && !pending(ctx.cards, "preapproval.target") && !resolved(ctx.cards, "preapproval.target")) {
+    if (pendingDeclaration(ctx.cards)) throw new StepError("apply.questions.answer_first");
+    if (pending(ctx.cards, "demographics.title")) throw new StepError("apply.demographics.answer_first");
+  }
+  if (isTbdPurchase(ctx.cards, ctx.record ?? null)) {
+    const target = await cardOf(ctx.cards, "preapproval.target");
+    if (target) {
+      const high = draft.priceHigh.trim() || draft.price.trim();
+      if (!digitsOf(high) || !draft.down.trim()) throw new StepError("apply.review.required");
+      const price = cents(high); const down = cents(draft.down);
+      if (BigInt(down) > BigInt(price)) throw new StepError("apply.review.required");
+      outcomes.push(await resolveFirst([target], "preapproval.target", { evidence: { fields: [confirmed("target_price_cents", price, at), confirmed("down_payment_cents", down, at), confirmed("loan_amount_sought", minus(price, down), at), confirmed("product_code", "FRM30", at)], edited: true } }));
+    }
+    return { next: "result", outcomes };
+  }
+  const purchase = draft.intent === "purchase";
+  // the three cards ride application.demographics.collected together; the value card is awaited when none has arrived yet
+  let cards = ctx.cards;
+  if (!pending(cards, "refi.value.confirm") && !resolved(cards, "refi.value.confirm")) { await waitForCard("refi.value.confirm"); cards = await loadCards(); }
+  const valueCard = pending(cards, "refi.value.confirm") ?? null;
+  if (valueCard) {
+    const typed = purchase ? draft.price.trim() : draft.value.trim();
+    const value = digitsOf(typed) ? cents(typed) : shownValue(valueCard, "property_value_estimate");
+    if (!digitsOf(value)) throw new StepError("apply.review.required");
+    outcomes.push(await resolveFirst([valueCard], "refi.value.confirm", fieldsEvidence(valueCard, digitsOf(typed) ? { property_value_estimate: value } : {}, now())));
+  }
+  const amountCard = pending(cards, "refi.loan_amount.confirm") ?? null;
+  if (amountCard) {
+    let amount = "";
+    // the addressed purchase: price − down (DELTA-32) — the down payment must be typed (a "0" counts), as on the still-looking path; never price − nothing
+    if (purchase) { if (digitsOf(draft.price)) { if (!draft.down.trim()) throw new StepError("apply.review.required"); const price = cents(draft.price); const down = cents(draft.down); if (BigInt(down) > BigInt(price)) throw new StepError("apply.review.required"); amount = minus(price, down); } }
+    else if (digitsOf(draft.balance)) amount = draft.refiGoal === "cash" && digitsOf(draft.cashOut) ? plus(cents(draft.balance), cents(draft.cashOut)) : cents(draft.balance);
+    const edits: Record<string, string> = amount ? { loan_amount_sought: amount } : {};
+    if (!amount && !digitsOf(shownValue(amountCard, "loan_amount_sought"))) throw new StepError("apply.review.required");
+    outcomes.push(await resolveFirst([amountCard], "refi.loan_amount.confirm", fieldsEvidence(amountCard, edits, now())));
+  }
+  const productCard = pending(cards, "refi.product.choice") ?? null;
+  if (productCard) {
+    const option = !purchase && draft.refiGoal === "faster" ? "FRM15" : "FRM30";
+    outcomes.push(await resolveFirst([productCard], "refi.product.choice", { option_id: option, evidence: { option_id: option, tapped_at: now() } }));
+  }
+  // after the report (§2.4): the current-loan card takes the typed balance — the same number the borrower confirmed above
+  const current = pending(cards, "refi.current_loan.confirm") ?? null;
+  if (current && !purchase && digitsOf(draft.balance)) outcomes.push(await resolveFirst([current], "refi.current_loan.confirm", fieldsEvidence(current, { current_balance_cents: cents(draft.balance) }, now())));
+  return { next: "result", outcomes };
+}
+
+/**
+ * After a declarations card's tap (Questions hosts the card component; the tap is the resolve): the flows send the next
+ * question on `BorrowerFlows.cardResolved`, asynchronously — poll until a different `declarations.*` card is pending, the
+ * sequence has ended (`demographics.title` pending, or nothing of the family pending after the last tap ran the command),
+ * or the wait runs out. Returns the thread's cards as last read.
+ */
+export async function waitAfterDeclaration(tappedId: Uuid, ms = 20_000, pollMs = 400): Promise<AnyCardInstance[]> {
+  const started = Date.now();
+  let cards = await loadCards();
+  for (;;) {
+    const next = pendingDeclaration(cards);
+    if (next && next.card_instance_id !== tappedId) return cards;
+    if (pending(cards, "demographics.title") || resolved(cards, "demographics.title")) return cards;
+    const tapped = cards.find((c) => c.card_instance_id === tappedId);
+    if (tapped && tapped.status !== "pending" && !next && Date.now() - started >= 3_000) return cards;   // the tap was the sequence's last and nothing followed within 3 s (the demographics card is on its way, or not owed on this file)
+    if (Date.now() - started >= ms) return cards;
+    await sleep(pollMs);
+    cards = await loadCards();
+  }
+}
+
+/** The per-step commit. Questions and Demographics post through their hosted cards (`ApplyProduct.onResolveCard`); Result posts nothing. */
 export async function flush(step: Step, ctx: FlushContext): Promise<FlushResult> {
   switch (step) {
     case "goal": {
@@ -304,9 +399,15 @@ export async function flush(step: Step, ctx: FlushContext): Promise<FlushResult>
     case "you": return commitYou(ctx);
     case "connect": return commitConnect(ctx);
     case "details": return commitDetails(ctx);
-    case "questions": return { next: "demographics", outcomes: [] };
-    case "demographics": return { next: "review", outcomes: [] };
-    case "review": return { next: "result", outcomes: [] };
+    case "questions": {
+      if (pendingDeclaration(ctx.cards)) throw new StepError("apply.questions.answer_first");   // the sequence is answered one tap at a time on the card; Continue never skips a question
+      return { next: "demographics", outcomes: [] };
+    }
+    case "demographics": {
+      if (pending(ctx.cards, "demographics.title")) throw new StepError("apply.demographics.answer_first");
+      return { next: "review", outcomes: [] };
+    }
+    case "review": return commitReview(ctx);
     case "result": return { next: "review", outcomes: [] };
   }
 }

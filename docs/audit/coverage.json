@@ -1,12 +1,12 @@
 {
- "brief": "spec units built 8202/8756 (93.7%): tids 2295/2458, tables 789/848, timers 2055/2097, notices 308/308, tools 1466/1578, figures 1289/1467; processes at 100%: 195/205",
+ "brief": "spec units built 8202/8796 (93.2%): tids 2295/2489, tables 789/852, timers 2055/2097, notices 308/309, tools 1466/1579, figures 1289/1470; processes at 100%: 195/211",
  "totals": {
   "tids": {
-   "spec": 2458,
+   "spec": 2489,
    "built": 2295
   },
   "tables": {
-   "spec": 848,
+   "spec": 852,
    "built": 789
   },
   "timers": {
@@ -14,19 +14,19 @@
    "built": 2055
   },
   "notices": {
-   "spec": 308,
+   "spec": 309,
    "built": 308
   },
   "tools": {
-   "spec": 1578,
+   "spec": 1579,
    "built": 1466
   },
   "figures": {
-   "spec": 1467,
+   "spec": 1470,
    "built": 1289
   },
   "units": {
-   "spec": 8756,
+   "spec": 8796,
    "built": 8202
   }
  },
@@ -240,6 +240,12 @@
    "built": 178,
    "processes": 12,
    "done": 3
+  },
+  "36": {
+   "spec": 40,
+   "built": 0,
+   "processes": 6,
+   "done": 0
   }
  },
  "done": [
@@ -9444,6 +9450,302 @@
     "built": 58
    },
    "pct": 100.0
+  },
+  {
+   "process": "36.1",
+   "title": "Partner identity, doors, roles, action log, tenant scope",
+   "tids": {
+    "spec": 8,
+    "built": 0,
+    "todo": 8,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "partner_actions",
+     "partner_credentials",
+     "partner_sessions",
+     "partner_users"
+    ]
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_SM_PARTNER_USER_INVITE"
+    ]
+   },
+   "tools": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "partner.user.invite"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 14,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "36.2",
+   "title": "Partner tape drop on book.import: the upload with its report, the import history, the status line and the holds",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 5,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "36.3",
+   "title": "The eligibility board: three buckets projected from the daily review",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "$3,069.79",
+     "$441,366.13",
+     "$605,000.00"
+    ]
+   },
+   "units": {
+    "spec": 8,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "36.4",
+   "title": "The refinance pipeline feed: members in motion, projected from the rows that already exist",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 5,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "36.5",
+   "title": "Home, the daily report and the two-mode loan page",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 5,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "36.6",
+   "title": "The post-refinance serviced pane contract: dark in V1, one refusal everywhere",
+   "tids": {
+    "spec": 3,
+    "built": 0,
+    "todo": 3,
+    "missing": [
+     1,
+     2,
+     3
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 3,
+    "built": 0
+   },
+   "pct": 0.0
   }
  ]
 }

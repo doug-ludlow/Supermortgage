@@ -123,7 +123,8 @@
     "34.5",
     "35.1",
     "35.2",
-    "35.7"
+    "35.7",
+    "36.1"
    ],
    "tools": [
     "buildTrialBalance",
@@ -203,7 +204,8 @@
     "principals.revoke",
     "handover.plan",
     "handover.enable",
-    "handover.board"
+    "handover.board",
+    "partner.user.invite"
    ],
    "escalates_to": [
     "attorney",
@@ -2081,6 +2083,7 @@
     "32.14",
     "32.17",
     "32.18",
+    "32.19",
     "32.2"
    ],
    "tools": [
@@ -2151,7 +2154,12 @@
    "agent": "portfolio",
    "processes": [
     "33.1",
-    "34.3"
+    "34.3",
+    "36.2",
+    "36.3",
+    "36.4",
+    "36.5",
+    "36.6"
    ],
    "tools": [
     "book.import",
@@ -6463,6 +6471,20 @@
    "escalates_to": []
   },
   {
+   "process": "32.19",
+   "agent": "borrower-app",
+   "agents_named": [
+    "borrower-app"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `human_agent`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer"
+   ]
+  },
+  {
    "process": "32.2",
    "agent": "borrower-app",
    "agents_named": [
@@ -7143,6 +7165,78 @@
     "compliance",
     "counsel",
     "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "36.1",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records"
+   ],
+   "tools": [
+    "partner.user.invite"
+   ],
+   "guardrails": "`TWO_FACTORS` (34.1's; no session on one factor), `NOT_FOUND` for anything outside the tenant (rule 4; every query carries the session's `partner_party_id`), `ROLE_REQUIRED` with `act_as` on an act (rule 3; never a silent substitution), `NO_PII_IN_LOG` (34.1's; the action log carries ids and the role only), `NO_SELF_ROLE_CHANGE` (34.1's), `LOAN_MONITORED` (33.1's; no partner role reaches a servicing command), `ANALYST_NEVER_DECIDES` (33.2's; no partner role changes a verdict); a staff session, the header actor and the machine token open nothing on `/v1/partner/*` and a partner session opens no",
+   "escalates_to": [
+    "compliance",
+    "officer"
+   ]
+  },
+  {
+   "process": "36.2",
+   "agent": "portfolio",
+   "agents_named": [
+    "portfolio"
+   ],
+   "tools": [],
+   "guardrails": "`LOAN_MONITORED` (33.1: no servicing command on a monitored row), `ROLE_REQUIRED` with `act_as` on the act (34.1 rule 3, reused by 36.1 for the partner roles), `READ_ONLY` on every GET (34.3), `NO_DESTINATION` (34.3: invitations as counts and hashes), `NO_PII_IN_LOG` (34.1, reused by 36.1's `partner_actions`), and 36.1's tenant rule (the partner is the session's; another tenant's row is 404). Escalations: none of its own \u2014 a rejected file and a late tape are 33.1's `ops_analyst` escalations; `officer` for nothing, because no money field moves here.",
+   "escalates_to": [
+    "officer"
+   ]
+  },
+  {
+   "process": "36.3",
+   "agent": "portfolio",
+   "agents_named": [
+    "portfolio"
+   ],
+   "tools": [],
+   "guardrails": "`READ_ONLY` (34.3), `NO_COMPUTED_FIGURE` (34.3), `ANALYST_NEVER_DECIDES` (33.2 \u2014 a partner user cannot change a verdict either), `NO_CREDIT_PULL`, `NO_INVESTOR_FIELDS` and `NO_PROHIBITED_BASIS` (20.1 and 33.2 \u2014 inherited by the row: no score, DTI, ZIP, name, age or investor column and no query key on one), `ROLE_MASK` (34.2's principle at 36.1's partner grade), `NO_PII_IN_LOG` (34.1, reused by 36.1). Escalations: none of its own \u2014 a day with no review receipt is 33.2's escalation to its compliance sentinel, and the board shows the latest review's date meanwhile.",
+   "escalates_to": []
+  },
+  {
+   "process": "36.4",
+   "agent": "portfolio",
+   "agents_named": [
+    "portfolio"
+   ],
+   "tools": [],
+   "guardrails": "`READ_ONLY` (34.3), `NO_COMPUTED_FIGURE` (34.3), `NO_PULL_BEFORE_YES` and `YES_REQUIRED` (33.3 \u2014 the feed orders nothing and opens nothing), `ANALYST_NEVER_DECIDES` (33.2 \u2014 no partner user changes a verdict or a stage), `NO_CREDIT_PULL`, `NO_INVESTOR_FIELDS` and `NO_PROHIBITED_BASIS` (20.1 and 33.2, inherited by the item), `ROLE_MASK` (34.2's principle at 36.1's partner grade), `NO_PII_IN_LOG` (34.1, reused by 36.1). Escalations: none of its own \u2014 a breached expiry is 20.1's, a stalled closeout or an unconfirmed payoff is 35.10's (`ops_analyst`), and the feed shows the owners' clocks meanwhile",
+   "escalates_to": []
+  },
+  {
+   "process": "36.5",
+   "agent": "portfolio",
+   "agents_named": [
+    "portfolio"
+   ],
+   "tools": [],
+   "guardrails": "`READ_ONLY` and `NO_COMPUTED_FIGURE` (34.3), `NO_DESTINATION` (34.3 \u2014 no invitation destination, no raw contact), `ANALYST_NEVER_DECIDES` and `PROVENANCE` (33.2 \u2014 the rationale is rendered from its tokens and never regenerated), `LOAN_MONITORED` (33.1 \u2014 no servicing control on a monitored row), `NO_CREDIT_PULL`, `NO_INVESTOR_FIELDS` and `NO_PROHIBITED_BASIS` (20.1 and 33.2, inherited by the row), `ROLE_MASK` (34.2's principle at 36.1's partner grade), `NO_PII_IN_LOG` (34.1, reused by 36.1). Escalations: none of its own \u2014 a late tape is 33.1's `ops_analyst` escalation and a missing report recei",
+   "escalates_to": [
+    "compliance",
+    "officer"
+   ]
+  },
+  {
+   "process": "36.6",
+   "agent": "portfolio",
+   "agents_named": [
+    "portfolio"
+   ],
+   "tools": [],
+   "guardrails": "`READ_ONLY` (34.3 \u2014 the pane never writes, in any version), `LOAN_MONITORED` (33.1 \u2014 never lit for a monitored row), `NO_COMPUTED_FIGURE` (34.3 \u2014 no placeholder, no zero, no chart), `NO_PII_IN_LOG` (34.1, reused by 36.1). Escalations: none.",
+   "escalates_to": [
     "officer"
    ]
   }

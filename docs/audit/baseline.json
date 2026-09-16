@@ -1,32 +1,33 @@
 {
+ "as_of": "2026-09-16",
  "totals": {
   "tids": {
-   "spec": 2458,
-   "built": 2294
+   "spec": 2480,
+   "built": 2283
   },
   "tables": {
-   "spec": 848,
-   "built": 789
+   "spec": 852,
+   "built": 794
   },
   "timers": {
    "spec": 2097,
-   "built": 2053
+   "built": 2062
   },
   "notices": {
-   "spec": 308,
+   "spec": 309,
    "built": 308
   },
   "tools": {
-   "spec": 1578,
-   "built": 1465
+   "spec": 1579,
+   "built": 1474
   },
   "figures": {
-   "spec": 1467,
-   "built": 1299
+   "spec": 1470,
+   "built": 1300
   },
   "units": {
-   "spec": 8756,
-   "built": 8208
+   "spec": 8787,
+   "built": 8221
   }
  },
  "done": [
@@ -224,6 +225,7 @@
   "34.4",
   "35.1",
   "35.2",
+  "35.3",
   "35.7"
  ]
 }

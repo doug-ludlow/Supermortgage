@@ -2924,5 +2924,13 @@
    "34.1"
   ],
   "context": "- Notice `NTC_SM_STAFF_INVITATION` (e-mail: the inviter's name, the roles, the sign-in address, \"a code will be sent to this e-mail\"; no borrower data)."
+ },
+ {
+  "code": "NTC_SM_PARTNER_USER_INVITE",
+  "owner_process": "36.1",
+  "mentions": [
+   "36.1"
+  ],
+  "context": "- Baseline tables written: `auth_challenges` (the e-mail code and the passkey challenge, reused from 32.2 as 34.1 reused it, with `subject_kind = partner` \u2014 migration 0127's check lists `party` and `staff`, so the new migration adds `partner` to it and a `partner_user_id` reference beside 0127's `staff_user_id`; no third OTP table), `agent_decisions` (`partner.user.invite` \u2014 a human decision with "
  }
 ]

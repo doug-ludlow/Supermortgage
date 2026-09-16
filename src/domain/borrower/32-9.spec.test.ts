@@ -192,7 +192,8 @@ test("32.9-T10: Given a typed payoff request Fri Nov 6, 2026, then `NTC_REGZ_36C
   assert.equal((card.props["copy_tokens"] as Record<string, string>)["money"], money(String(quote["total_cents"]))); assert.equal((card.props["copy_tokens"] as Record<string, string>)["date"], quote["good_through"]);
 });
 
-test("32.9-T9: Given a spoken payoff request, then the quote is given live, no 7-BD clock starts, and the one-tap conversion starts it.", { skip }, async () => {
+// 32.9-T9 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given a spoken payoff request, then the quote is given live, no 7-BD clock starts, and the one-tap conversion starts it.", { skip }, async () => {
   const { j, A, partyA, loanId } = main; assert.ok(j && loanId, "T10 boarded the loan");
   await j.firstPayment(); await settle();   // Jan 1, 2027 installment received Wed Dec 30
   clock.set(MST("2027-01-12", "10:00"));

@@ -36,6 +36,8 @@ export const retentionFor = (templateRetention: string | undefined): string => (
 
 export interface SinkDeps {
   readonly runtime: Runtime; readonly events: EventStore; readonly actor: Actor; readonly now: () => string; readonly blobs: ObjectStorePort;
+  /** The command's scope: a render that names neither key (21.6's adverse action notice renders with `loanId: ctx.loanId`, empty in an application-scoped command) is the scope's document — the kernel store defaults the event key the same way, and rule 7's ownership check reads the row's keys. */
+  readonly scope?: { readonly loanId?: string | null; readonly applicationId?: string | null };
   /** The document row's write, in the command's deferred writes in push order — before a row the calling tool defers with a foreign key onto it (20.3's prequalifications.letter_document_id). */
   readonly defer: (fn: (q: Queryable) => Promise<void>) => void;
   /** The notice rows' write, after every tool's deferred writes — a delivery's card_instances row (DELTA-08) is one of those. */
@@ -65,7 +67,11 @@ export class PgArtifactSink implements ArtifactSink {
     const pdf = renderBlocksPdf(rendered, { template_code: input.templateCode, template_version: input.version.version, now: ctx.now });
     const id = input.documentId;
     this.results.set(id, pdf);
-    const key = docKey({ loan_id: input.loanId ?? null, application_id: input.applicationId ?? null });
+    // the subject: the render's own keys, else the command's scope (both empty only for a global command's document)
+    const loanId = input.loanId || this.deps.scope?.loanId || undefined;
+    const applicationId = input.applicationId || this.deps.scope?.applicationId || undefined;
+    input = { ...input, ...(loanId ? { loanId } : {}), ...(applicationId ? { applicationId } : {}) };
+    const key = docKey({ loan_id: loanId ?? null, application_id: applicationId ?? null });
     const aggregate = { kind: "document", id };
     ctx.events.append({ type: "document.rendered", ...key, aggregate, actor: ctx.actor, payload: { document_id: id, template_code: input.templateCode, template_version: input.version.version, payload_hash: pdf.payload_hash, sha256: pdf.sha256, byte_size: pdf.byte_size, page_count: pdf.page_count } });
     if (!this.knownIds.has(id)) {
@@ -138,10 +144,11 @@ export class MemoryArtifactSink implements ArtifactSink {
   }
 }
 
-/** The command's NoticeService with the artifact layer wired (undefined without the delivery ports — the same semantics as before 35.2). */
-export function noticeServiceFor(runtime: Runtime, ctx: UowContext, actor: Actor, deferLate: (fn: (q: Queryable) => Promise<void>) => void, defer: (fn: (q: Queryable) => Promise<void>) => void = deferLate): { notices: NoticeService | undefined; sink: PgArtifactSink | undefined } {
+/** The command's NoticeService with the artifact layer wired (undefined without the delivery ports — the same semantics as before 35.2). `ctx` is the command's UowContext or a unit's io (35.3's `UnitIo`: the events and clock of `cycles.run_unit`'s command). */
+export function noticeServiceFor(runtime: Runtime, ctx: Pick<UowContext, "events" | "clock"> | { readonly events: EventStore; readonly clock: { now(): string }; readonly loanId?: string | null; readonly applicationId?: string | null }, actor: Actor, deferLate: (fn: (q: Queryable) => Promise<void>) => void, defer: (fn: (q: Queryable) => Promise<void>) => void = deferLate): { notices: NoticeService | undefined; sink: PgArtifactSink | undefined } {
   if (!runtime.ports.printMail || !runtime.ports.edelivery) return { notices: undefined, sink: undefined };
-  const sink = new PgArtifactSink({ runtime, events: ctx.events, actor, now: () => ctx.clock.now(), blobs: runtime.blobs, defer, deferLate });
+  const scope = { loanId: (ctx as { loanId?: string | null }).loanId ?? null, applicationId: (ctx as { applicationId?: string | null }).applicationId ?? null };
+  const sink = new PgArtifactSink({ runtime, events: ctx.events, actor, now: () => ctx.clock.now(), blobs: runtime.blobs, scope, defer, deferLate });
   const notices = new NoticeService({ registry: runtime.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: runtime.ports.printMail, edelivery: runtime.ports.edelivery, notices: runtime.noticeMemory, artifacts: sink, persist: (n) => sink.persist(n) });
   return { notices, sink };
 }

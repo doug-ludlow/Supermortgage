@@ -289,6 +289,12 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
       if (out.status >= 400) { action.result = out.status >= 500 ? "error" : "refused"; action.refusal_code = codeOf(out.body, out.status); }
       json(res, out.status, out.body);
     };
+    // rule 4 (34.1): the row lands before the answer leaves — the response's `end` is held until `finally` has written the staff_actions row, so a reader
+    // who holds the answer always finds the row (under a loaded machine the write used to land after the client's next read and the log read one row short)
+    const realEnd = res.end.bind(res);
+    let heldEnd: unknown[] | null = null;
+    res.end = ((...args: unknown[]) => { heldEnd = args; return res; }) as typeof res.end;
+    const releaseEnd = (): void => { res.end = realEnd; if (heldEnd) (realEnd as (...a: unknown[]) => ServerResponse)(...heldEnd); };
     try {
       setSubject(subjectOf(path, null));
       // ───────── the door (no session; rule 1): the code, the enrol/step token, the password, the passkey assertion, the sign-in, the sign-out
@@ -533,6 +539,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
     } finally {
       // rule 4: one staff_actions row per request, ids only (the `email` query parameter is dropped from the route, a directory search's `q` is its hash; no name, phone, code, token or figure is ever set on `action`) — with the role that acted, or on a refusal the role that was asked for (`action.role`, migration 0139)
       if (repo) { try { await repo.logAction({ ...action, at: now, route: logRoute, method, surface: "ops", source: action.session_id ? "session" : held.length ? "header" : null }); } catch (err) { opts.logger?.error("staff_actions.write.failed", { path, error: err }); } }
+      releaseEnd();
     }
   });
 }

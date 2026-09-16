@@ -41,6 +41,8 @@ import { LEGEND_1, LEGEND_2, SM_FILER } from "./documents/irs-1098.ts";
 import { monthlyInterest, ratePercent } from "../../kernel/money/cents.ts";
 import type { Recipient } from "../../notices/channel.ts";
 import { FIGURE_KEYS } from "../payoff/ops-16-1.ts";
+import { FakeEsignSigner } from "../../infra/integrations/esign.ts";
+import { verifyChain, signatureEvents, consumeConsentWithdrawn } from "./documents/esign.ts";
 
 // ───────── the harness: this file's own database, one runtime over it, the FAKE object store (document_blobs), the FAKE ports
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
@@ -71,6 +73,29 @@ async function signInL2(email: string, f: { tin_last4: string; dob: string; loan
   const l2 = await api("POST", "/v1/borrower/auth/l2", { ssn_last4: f.tin_last4, date_of_birth: f.dob }, token); assert.equal(l2.status, 200, JSON.stringify(l2.body)); assert.equal(l2.body["level"], "L2");
   return { token, party_id: partyId, session_id: sessionId };
 }
+/** An application whose borrower carries the L2 facts and a contact e-mail (createApplication's shape, 32-3's precedent); the OTP sign-in on that e-mail links the party. */
+async function appFixture(email: string, f: { legal_name: string; tin_last4: string; dob: string }): Promise<{ id: string; partnerPartyId: string; abId: string }> {
+  const partner = (await one<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number) VALUES ('servicer', $1, '123456789') RETURNING id`, [`Partner ${uniq()}`])).id;
+  const app = await runtime.createApplication({ partner_party_id: partner, channel: "organic", transaction_type: "limited_cash_out", occupancy: "primary", borrowers: [{ legal_name: f.legal_name, tin_last4: f.tin_last4, date_of_birth: f.dob, contact: { email } }] }, { kind: "system", id: "35.2-test" });
+  return { id: app.application.id, partnerPartyId: partner, abId: app.application.borrowers[0]!.id };
+}
+/** L1 through the FAKE code path on the application borrower's e-mail (the party is linked to the application_borrowers row), then L2 on the borrower's own facts. */
+async function signInL2App(email: string, f: { tin_last4: string; dob: string }): Promise<{ token: string; party_id: string; session_id: string }> {
+  const req = await api("POST", "/v1/borrower/auth/otp", { action: "request", channel: "email", destination: email }); assert.equal(req.status, 200, JSON.stringify(req.body));
+  const ver = await api("POST", "/v1/borrower/auth/otp", { action: "verify", challenge_id: req.body["challenge_id"], code: req.body["fake_code"] }); assert.equal(ver.status, 200, JSON.stringify(ver.body));
+  const token = ver.body["token"] as string;
+  const l2 = await api("POST", "/v1/borrower/auth/l2", { ssn_last4: f.tin_last4, date_of_birth: f.dob }, token); assert.equal(l2.status, 200, JSON.stringify(l2.body));
+  return { token, party_id: (ver.body["party"] as { party_id: string }).party_id, session_id: (ver.body["session"] as { session_id: string }).session_id };
+}
+/** 7.4's E-SIGN consent row covering `scope` for the party (section32-2.ts consent.capture's columns). */
+async function esignConsent(partyId: string, applicationId: string, scope: string[]): Promise<string> {
+  const id = randomUUID();
+  await db.query(`INSERT INTO consents (id, kind, granted, provenance, verified, captured_at, scope, status, application_id, party_id, captured_via, loan_ids) VALUES ($1, 'esign', true, 'portal', true, $2, $3::text[], 'active', $4, $5, 'portal', '{}')`, [id, T0, scope, applicationId, partyId]);
+  return id;
+}
+const CD = "NTC_REGZ_1026_38_CD_CORRECTED";
+const cdSample = (): Record<string, unknown> => { const reg = registryWithAuthored(); const v = reg.activeVersion(CD, D("2026-09-17")) ?? reg.versionsOf(CD)[0]; assert.ok(v, "25.2's corrected Closing Disclosure is authored"); return v.samplePayload; };
+let completedEnvelopeId = "";   // T13's, refused ENVELOPE_TERMINAL in T14
 /** A second L1 session of the same party (a stolen URL is mis-signed for it). */
 async function signInAgain(email: string): Promise<string> {
   const req = await api("POST", "/v1/borrower/auth/otp", { action: "request", channel: "email", destination: email });
@@ -543,8 +568,112 @@ test("35.2-T12: Given worked example B's `tax_forms_1098` row, when `documents.r
   const doc = await one<{ kind: string; retention_class: string; template_code: string; sha256: string; storage_status: string }>(`SELECT kind, retention_class::text AS retention_class, template_code, sha256, storage_status FROM documents WHERE id = $1`, [out.document_id]);
   assert.equal(doc.kind, "irs_1098_copy_b"); assert.equal(doc.retention_class, "tax_4y"); assert.equal(doc.template_code, "IRS_1098_COPY_B"); assert.equal(doc.sha256, sha256(bytes)); assert.equal(doc.storage_status, "stored");
 });
-test("35.2-T13: Given a borrower with an active E-SIGN consent covering `disclosure_ack` and a rendered CD, when `esign.envelope.create` and `esign.envelope.send` run, then the envelope is `sent`, `esign.envelope.sent` is logged and `SM_ESIGN_ENVELOPE_EXPIRY_30` is armed on `sent_at`; when the FAKE signer signs every required field through an L2 session, then `esign_signature_events` holds `viewed`, `authenticated`, `consent_affirmed`, one `field_signed` per field and `completed`, each with `auth_method`, `ip`, `user_agent` and a valid hash chain, a signed `documents` row exists with `supersedes_document_id` = the unsigned row and a different `sha256`, `esign_envelope_documents.signed_document_id` is set once, `evidence_document_id` names an audit-trail PDF whose text lists every event, and `esign.envelope.completed` satisfies the clock.", { todo: true });
-test("35.2-T14: Given a party with no active E-SIGN consent, when `esign.envelope.send` runs, then it is refused `NO_ENVELOPE_WITHOUT_CONSENT` and nothing is written; given a sent envelope whose signer emits `consent.esign.withdrawn`, then the envelope is `voided` with the reason and an audit-trail PDF; given a sent envelope untouched for 30 calendar days, then the breach voids it as `expired`, logs `esign.envelope.expired` and opens an `ops_analyst` escalation; a `completed` envelope refuses `esign.envelope.void`.", { todo: true });
+test("35.2-T13: Given a borrower with an active E-SIGN consent covering `disclosure_ack` and a rendered CD, when `esign.envelope.create` and `esign.envelope.send` run, then the envelope is `sent`, `esign.envelope.sent` is logged and `SM_ESIGN_ENVELOPE_EXPIRY_30` is armed on `sent_at`; when the FAKE signer signs every required field through an L2 session, then `esign_signature_events` holds `viewed`, `authenticated`, `consent_affirmed`, one `field_signed` per field and `completed`, each with `auth_method`, `ip`, `user_agent` and a valid hash chain, a signed `documents` row exists with `supersedes_document_id` = the unsigned row and a different `sha256`, `esign_envelope_documents.signed_document_id` is set once, `evidence_document_id` names an audit-trail PDF whose text lists every event, and `esign.envelope.completed` satisfies the clock.", { skip }, async () => {
+  clock.set(T0);
+  const email = `avery-${uniq()}@example.test`;
+  const app = await appFixture(email, { legal_name: "Avery Borrower", tin_last4: "6789", dob: "1985-06-15" });
+  const a = await signInL2App(email, { tin_last4: "6789", dob: "1985-06-15" });
+  const consentId = await esignConsent(a.party_id, app.id, ["disclosure_ack"]);
+  // the rendered CD on the application (25.2's authored corrected CD through documents.render; no recipients — the row is the artifact)
+  const cd = (await run("documents.render", { template_code: CD, payload: cdSample(), recipients: [] }, RECORDS, { applicationId: app.id })).output as { document_id: string; sha256: string };
+  assert.ok(cd.document_id && cd.sha256);
+  // create → draft; send → sent with the consent recorded, the clock armed on sent_at
+  const c = await run("esign.envelope.create", { kind: "disclosure_ack", owner_process: "25.2", documents: [{ document_id: cd.document_id, required_fields: [{ field_id: "sig1", signer_party_id: a.party_id, page: 1, kind: "signature" }, { field_id: "date1", signer_party_id: a.party_id, page: 1, kind: "date" }] }], signers: [a.party_id], consent_ids: [consentId] }, RECORDS, { applicationId: app.id });
+  const env = c.output as { id: string; status: string }; assert.equal(env.status, "draft"); completedEnvelopeId = env.id;
+  assert.ok(c.events.some((e) => e.type === "esign.envelope.created" && e.payload["envelope_id"] === env.id && e.applicationId === app.id));
+  const s = await run("esign.envelope.send", { envelope_id: env.id }, RECORDS, { applicationId: app.id });
+  const row = await one<{ status: string; sent_at: string; consent_ids: string[]; expires_on: string }>(`SELECT status, sent_at, consent_ids, expires_on::text AS expires_on FROM esign_envelopes WHERE id = $1`, [env.id]);
+  assert.equal(row.status, "sent"); assert.equal(row.sent_at, T0); assert.deepEqual(row.consent_ids, [consentId]); assert.equal(row.expires_on, "2026-10-17");
+  const sentEv = s.events.find((e) => e.type === "esign.envelope.sent"); assert.ok(sentEv, "esign.envelope.sent is logged");
+  assert.equal(sentEv.payload["envelope_id"], env.id); assert.equal(sentEv.payload["sent_at"], T0); assert.deepEqual(sentEv.payload["signer_party_ids"], [a.party_id]); assert.equal(sentEv.applicationId, app.id);
+  const t = s.timers.find((x) => x.code === "SM_ESIGN_ENVELOPE_EXPIRY_30"); assert.ok(t, "SM_ESIGN_ENVELOPE_EXPIRY_30 is armed on sent_at");
+  assert.equal(t.status, "armed"); assert.deepEqual(t.subject, { kind: "application", id: app.id }); assert.equal(t.anchorDate, "2026-09-17"); assert.equal(t.dueDate, "2026-10-17");
+  // the FAKE signer signs every required field through the borrower's own L2 session
+  const signer = new FakeEsignSigner();
+  const done = await signer.sign(runtime, { envelope_id: env.id, session_id: a.session_id, party_id: a.party_id, typed_name: "Avery Borrower" });
+  assert.equal(done.completed, true); assert.equal(done.signed_document_ids.length, 1); assert.ok(done.evidence_document_id);
+  const events = await signatureEvents(db, env.id);
+  assert.deepEqual(events.map((e) => e.kind), ["created", "sent", "viewed", "authenticated", "consent_affirmed", "field_signed", "field_signed", "completed"]);
+  for (const e of events) assert.ok(e.auth_method, `${e.kind} carries auth_method`);
+  for (const e of events.filter((x) => ["viewed", "authenticated", "consent_affirmed", "field_signed"].includes(x.kind))) { assert.equal(e.auth_method, "session_l2"); assert.equal(e.ip, signer.ip); assert.equal(e.user_agent, signer.userAgent); assert.equal(e.signer_party_id, a.party_id); }
+  assert.deepEqual(events.filter((x) => x.kind === "field_signed").map((x) => [x.field_id, x.page, x.typed_name, x.document_sha256_at_event]), [["sig1", 1, "Avery Borrower", cd.sha256], ["date1", 1, "Avery Borrower", cd.sha256]]);
+  const chain = verifyChain(events); assert.equal(chain.ok, true, chain.failures.join("; ")); assert.equal(chain.count, 8); assert.equal(chain.head, events.at(-1)!.event_hash);
+  assert.equal(events[0]!.prev_event_hash, null); for (let k = 1; k < events.length; k++) assert.equal(events[k]!.prev_event_hash, events[k - 1]!.event_hash);
+  await rejectsSql(db.query(`UPDATE esign_signature_events SET typed_name = 'Someone Else' WHERE id = $1`, [events[5]!.id]), /forbid_mutation|append-only|immutable/i);
+  // the signed row supersedes the unsigned one; signed_document_id is set once
+  const ed = await one<{ signed_document_id: string; signed_sha256: string; signed_at: string }>(`SELECT signed_document_id, signed_sha256, signed_at FROM esign_envelope_documents WHERE envelope_id = $1`, [env.id]);
+  assert.equal(ed.signed_document_id, done.signed_document_ids[0]); assert.equal(ed.signed_at, T0);
+  const signed = await one<{ kind: string; supersedes_document_id: string; sha256: string; storage_status: string; retention_class: string; application_id: string }>(`SELECT kind, supersedes_document_id, sha256, storage_status, retention_class::text AS retention_class, application_id FROM documents WHERE id = $1`, [ed.signed_document_id]);
+  assert.equal(signed.kind, "signed_document"); assert.equal(signed.supersedes_document_id, cd.document_id); assert.notEqual(signed.sha256, cd.sha256); assert.equal(signed.sha256, ed.signed_sha256); assert.equal(signed.storage_status, "stored"); assert.equal(signed.retention_class, "esign_consent_life_of_loan_plus_4y"); assert.equal(signed.application_id, app.id);
+  const signedText = textLayer((await blobs.get(ed.signed_document_id))!.bytes).text;
+  assert.ok(signedText.includes("Signature page") && signedText.includes("sig1") && signedText.includes("date1") && signedText.includes("/s/ Avery Borrower"), "the signed bytes carry the stamps and the signature page");
+  await rejectsSql(db.query(`UPDATE esign_envelope_documents SET signed_document_id = $2, signed_sha256 = $3, signed_at = now() WHERE envelope_id = $1`, [env.id, cd.document_id, cd.sha256]), /esign_envelope_documents_signed_once/);
+  // the audit trail: every event and the chain's head; the envelope is completed and its clock satisfied
+  const final = await one<{ status: string; completed_at: string; evidence_document_id: string; evidence_sha256: string }>(`SELECT status, completed_at, evidence_document_id, evidence_sha256 FROM esign_envelopes WHERE id = $1`, [env.id]);
+  assert.equal(final.status, "completed"); assert.equal(final.completed_at, T0); assert.equal(final.evidence_document_id, done.evidence_document_id);
+  const evidence = await one<{ sha256: string; kind: string; mime_type: string }>(`SELECT sha256, kind, mime_type FROM documents WHERE id = $1`, [final.evidence_document_id]);
+  assert.equal(evidence.sha256, final.evidence_sha256); assert.equal(evidence.mime_type, "application/pdf");
+  const trail = textLayer((await blobs.get(final.evidence_document_id))!.bytes).text.replace(/\s+/g, " ");
+  for (const k of ["created", "sent", "viewed", "authenticated", "consent_affirmed", "field_signed", "completed"]) assert.ok(trail.includes(`. ${k} at `), `the audit trail lists ${k}`);
+  assert.ok(trail.includes("sig1") && trail.includes("date1") && trail.includes(`head ${chain.head}`) && trail.includes("verified"), "the audit trail names the fields and the chain's head");
+  assert.ok(done.results.some((r) => r.events.some((e) => e.type === "esign.envelope.completed" && e.payload["envelope_id"] === env.id && e.payload["evidence_document_id"] === final.evidence_document_id)), "esign.envelope.completed is logged");
+  assert.equal((await one<{ status: string }>(`SELECT status FROM timers WHERE id = $1`, [t.id])).status, "satisfied", "esign.envelope.completed satisfies the clock");
+  await rejectsSql(db.query(`UPDATE esign_envelopes SET status = 'voided', voided_at = now(), void_reason = 'x' WHERE id = $1`, [env.id]), /terminal/);
+});
+test("35.2-T14: Given a party with no active E-SIGN consent, when `esign.envelope.send` runs, then it is refused `NO_ENVELOPE_WITHOUT_CONSENT` and nothing is written; given a sent envelope whose signer emits `consent.esign.withdrawn`, then the envelope is `voided` with the reason and an audit-trail PDF; given a sent envelope untouched for 30 calendar days, then the breach voids it as `expired`, logs `esign.envelope.expired` and opens an `ops_analyst` escalation; a `completed` envelope refuses `esign.envelope.void`.", { skip }, async () => {
+  clock.set(T0);
+  const email = `blake-${uniq()}@example.test`;
+  const app = await appFixture(email, { legal_name: "Blake Borrower", tin_last4: "4321", dob: "1979-01-02" });
+  const b = await signInL2App(email, { tin_last4: "4321", dob: "1979-01-02" });
+  const cd = (await run("documents.render", { template_code: CD, payload: cdSample(), recipients: [] }, RECORDS, { applicationId: app.id })).output as { document_id: string };
+  const create = () => run("esign.envelope.create", { kind: "disclosure_ack", owner_process: "25.2", documents: [{ document_id: cd.document_id, required_fields: [{ field_id: "sig1", signer_party_id: b.party_id, page: 1, kind: "signature" }] }], signers: [b.party_id] }, RECORDS, { applicationId: app.id }).then((r) => (r.output as { id: string }).id);
+  // no consent: send is refused and writes nothing
+  const e1 = await create();
+  await refused(run("esign.envelope.send", { envelope_id: e1 }, RECORDS, { applicationId: app.id }), "NO_ENVELOPE_WITHOUT_CONSENT");
+  const r1 = await one<{ status: string; sent_at: string | null }>(`SELECT status, sent_at FROM esign_envelopes WHERE id = $1`, [e1]); assert.equal(r1.status, "draft"); assert.equal(r1.sent_at, null);
+  assert.equal(await count(`FROM esign_signature_events WHERE envelope_id = $1`, [e1]), 1, "created only"); assert.equal(await count(`FROM loan_events WHERE type = 'esign.envelope.sent' AND payload->>'envelope_id' = $1`, [e1]), 0);
+  // with the consent: a sent envelope voided on the signer's withdrawal — the reason and the audit trail
+  const consentId = await esignConsent(b.party_id, app.id, ["disclosure_ack", "consent"]);
+  const e2 = await create(); await run("esign.envelope.send", { envelope_id: e2 }, RECORDS, { applicationId: app.id });
+  const v = await run("esign.envelope.void", { envelope_id: e2, reason: "consent.esign.withdrawn", consent_withdrawn: true }, RECORDS, { applicationId: app.id });
+  const r2 = await one<{ status: string; void_reason: string; voided_at: string; evidence_document_id: string | null }>(`SELECT status, void_reason, voided_at, evidence_document_id FROM esign_envelopes WHERE id = $1`, [e2]);
+  assert.equal(r2.status, "voided"); assert.equal(r2.void_reason, "consent.esign.withdrawn"); assert.equal(r2.voided_at, T0); assert.ok(r2.evidence_document_id, "an audit-trail PDF");
+  assert.ok(v.events.some((e) => e.type === "esign.envelope.voided" && e.payload["envelope_id"] === e2 && e.payload["reason"] === "consent.esign.withdrawn"));
+  const trail2 = textLayer((await blobs.get(r2.evidence_document_id!))!.bytes).text.replace(/\s+/g, " "); assert.ok(trail2.includes(". voided at ") && trail2.includes("consent.esign.withdrawn"));
+  assert.equal((await signatureEvents(db, e2)).map((x) => x.kind).join(","), "created,sent,voided");
+  // 7.4's consumer: the withdrawal event on the application voids every open envelope the party is a signer of
+  const e3 = await create(); await run("esign.envelope.send", { envelope_id: e3 }, RECORDS, { applicationId: app.id });
+  const SYSTEM: Actor = { kind: "system", id: "7.4-withdrawal" };
+  await runtime.uow.run({ applicationId: app.id }, async (ctx) => {
+    ctx.events.append({ type: "consent.esign.withdrawn", applicationId: app.id, actor: SYSTEM, payload: { party_id: b.party_id, consent_id: consentId, classes: ["disclosure_ack"] } });
+    const out = await consumeConsentWithdrawn({ q: runtime.db, blobs, events: ctx.events, actor: SYSTEM, now: clock.now() }, { party_id: b.party_id, consent_id: consentId });
+    assert.deepEqual(out.map((o) => [o.envelope_id, o.status, o.reason]), [[e3, "voided", "consent.esign.withdrawn"]]);
+  }, { clock });
+  assert.equal((await one<{ status: string; void_reason: string }>(`SELECT status, void_reason FROM esign_envelopes WHERE id = $1`, [e3])).status, "voided");
+  assert.equal(await count(`FROM loan_events WHERE application_id = $1 AND type = 'esign.envelope.voided' AND payload->>'envelope_id' = $2`, [app.id, e3]), 1);
+  // untouched for 30 calendar days: the breach voids it as expired, logs esign.envelope.expired, opens the ops_analyst escalation
+  const e4 = await create(); const sent4 = await run("esign.envelope.send", { envelope_id: e4 }, RECORDS, { applicationId: app.id });
+  const t4 = sent4.timers.find((x) => x.code === "SM_ESIGN_ENVELOPE_EXPIRY_30")!; assert.equal(t4.dueDate, "2026-10-17");
+  clock.set("2026-10-18T12:00:00.000Z");
+  const rep = await runtime.sweep("2026-10-18T12:00:00.000Z");
+  assert.ok(rep.breaches.some((x) => x.code === "SM_ESIGN_ENVELOPE_EXPIRY_30" && x.timer_id === t4.id), "the breach pass breached the envelope's clock");
+  assert.equal(rep.documents?.envelopes_expired, 1, rep.documents?.line);
+  const r4 = await one<{ status: string; void_reason: string; voided_at: string; evidence_document_id: string | null }>(`SELECT status, void_reason, voided_at, evidence_document_id FROM esign_envelopes WHERE id = $1`, [e4]);
+  assert.equal(r4.status, "expired"); assert.equal(r4.void_reason, "SM_ESIGN_ENVELOPE_EXPIRY_30"); assert.equal(r4.voided_at, "2026-10-18T12:00:00.000Z"); assert.ok(r4.evidence_document_id);
+  const expiredEv = await one<{ payload: Record<string, unknown>; application_id: string }>(`SELECT payload, application_id FROM loan_events WHERE type = 'esign.envelope.expired' AND payload->>'envelope_id' = $1`, [e4]);
+  assert.equal(expiredEv.application_id, app.id); assert.equal(expiredEv.payload["timer_id"], t4.id);
+  assert.equal((await signatureEvents(db, e4)).map((x) => x.kind).join(","), "created,sent,expired");
+  const esc = await db.query<{ kind: string; status: string; sla_timer_id: string }>(`SELECT kind, status, sla_timer_id FROM escalations WHERE owner_role = 'ops_analyst' AND payload->>'envelope_id' = $1`, [e4]);
+  assert.equal(esc.length, 1); assert.equal(esc[0]!.kind, "sev3"); assert.equal(esc[0]!.status, "open"); assert.equal(esc[0]!.sla_timer_id, t4.id);
+  assert.equal((await runtime.sweep("2026-10-18T13:00:00.000Z")).documents?.envelopes_expired, 0, "a second sweep expires nothing more");
+  assert.equal(await count(`FROM escalations WHERE owner_role = 'ops_analyst' AND payload->>'envelope_id' = $1`, [e4]), 1);
+  clock.set(T0);
+  // a completed envelope is never voided
+  assert.ok(completedEnvelopeId, "T13 completed an envelope");
+  const completedApp = (await one<{ application_id: string }>(`SELECT application_id FROM esign_envelopes WHERE id = $1`, [completedEnvelopeId])).application_id;
+  await refused(run("esign.envelope.void", { envelope_id: completedEnvelopeId, reason: "x" }, RECORDS, { applicationId: completedApp }), "ENVELOPE_TERMINAL");
+  assert.equal((await one<{ status: string }>(`SELECT status FROM esign_envelopes WHERE id = $1`, [completedEnvelopeId])).status, "completed");
+});
 test("35.2-T15: Given 26.2's FAKE RON session completes worked example 1 of 26.2, when the platform's audit trail arrives, then `documents.store` writes it with `retention_class = fnma_enote_signing_life_plus_7y`, `signing_sessions.audit_trail_document_id` names the row and `audit_trail_hash` equals its `sha256`, the signed closing documents are rows with `closing_documents.signed_document_id` set, and 26.2's `SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE` evaluator opens on that hash.", { todo: true });
 test("35.2-T16: Given a document rendered and stored on runtime A, when runtime B (a second `Runtime` over the same database, its own process) serves `…/content` and runs `documents.verify` on it, then the bytes and hash are the stored ones — the FAKE object store is `document_blobs`, not process memory — and the borrower's `/doc/{id}` page renders the PDF with its text layer from that response.", { skip }, async () => {
   clock.set(T0);

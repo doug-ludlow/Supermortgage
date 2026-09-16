@@ -2,15 +2,15 @@
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2256
+   "built": 2258
   },
   "tables": {
    "spec": 848,
-   "built": 770
+   "built": 773
   },
   "timers": {
    "spec": 2097,
-   "built": 2044
+   "built": 2045
   },
   "notices": {
    "spec": 308,
@@ -18,7 +18,7 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1439
+   "built": 1443
   },
   "figures": {
    "spec": 1467,
@@ -26,7 +26,7 @@
   },
   "units": {
    "spec": 8756,
-   "built": 8086
+   "built": 8096
   }
  },
  "done": [

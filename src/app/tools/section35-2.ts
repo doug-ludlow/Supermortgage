@@ -17,7 +17,15 @@
  *                          — one row re-read and hashed (VERIFY_STORED_BYTES_ONLY: never re-rendered).
  *   documents.open    read {document_id, purpose, party_id? | staff_user_id?, session_id?, ip?, user_agent?} → the bytes (base64), hash,
  *                          served_from and text layer; a `document_access_log` row; `document.opened`.
- *   (the e-sign and mail tools follow in their commit groups)
+ *   esign.envelope.create act {kind, documents: [{document_id, required_fields}], signers, consent_ids?, owner_process?} on the
+ *                          envelope's application or loan → a draft envelope with its `created` evidence row.
+ *   esign.envelope.send   act {envelope_id} — an active E-SIGN consent per signer covering the kind (NO_ENVELOPE_WITHOUT_CONSENT), arms
+ *                          SM_ESIGN_ENVELOPE_EXPIRY_30.
+ *   esign.envelope.sign   act {envelope_id, document_id, signer_party_id, field_ids, auth: {method: session_l2|session_l3, session_id, ip,
+ *                          user_agent, typed_name}} — a human party through its own L2+ session (NO_AGENT_SIGNS, SESSION_LEVEL); the last
+ *                          required field completes the envelope (the signed row, the audit trail, `esign.envelope.completed`).
+ *   esign.envelope.void   act {envelope_id, reason} — the owning process (or 7.4's withdrawal consumer); a terminal envelope refuses.
+ *   (the mail tools follow in their commit group)
  *
  * Guardrails: BYTES_ARE_WRITE_ONCE, URI_SWAP_ONCE (the trigger's), VERIFY_STORED_BYTES_ONLY, HOLD_RELEASE_HUMAN_ONLY,
  * DISPOSE_NEEDS_OFFICER_ATTESTATION, NO_ENVELOPE_WITHOUT_CONSENT, NO_AGENT_SIGNS, NO_MONEY_FIELD, NO_PII_IN_DECISION.
@@ -31,6 +39,7 @@ import { placeHold, releaseHold } from "../../domain/operations-runtime/document
 import { disposeDocument } from "../../domain/operations-runtime/documents/dispose.ts";
 import { integrityRun, verifyOne } from "../../domain/operations-runtime/documents/integrity.ts";
 import { openDocument, type OpenPurpose } from "../../domain/operations-runtime/documents/open.ts";
+import { createEnvelope, sendEnvelope, signFields, voidEnvelope, type RequiredField, type SignerAuth } from "../../domain/operations-runtime/documents/esign.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { docsDecision } from "../../domain/operations-runtime/documents/decision.ts";
 import { render1098CopyB, boxesFromRow, SM_FILER, IRS_1098_TEMPLATE_CODE, IRS_1098_TEMPLATE_VERSION } from "../../domain/operations-runtime/documents/irs-1098.ts";
@@ -55,6 +64,9 @@ export const BYTES_ARE_WRITE_ONCE = never("BYTES_ARE_WRITE_ONCE", "35.2 guardrai
 /** Rule 1: the integrity unit compares stored bytes to the recorded hash and never re-renders — an input asking for a re-render or carrying a payload/template is refused. */
 export const VERIFY_STORED_BYTES_ONLY = never("VERIFY_STORED_BYTES_ONLY", "35.2 rule 1 / guardrails: VERIFY_STORED_BYTES_ONLY — the daily integrity unit re-reads and hashes stored bytes; it never re-renders, so a change of the writer, of node:zlib or of a template can never open a sev 1 on an old document",
   (i) => i["re_render"] === true || has(i, "payload") || has(i, "template_code"), "documents.verify compares stored bytes to documents.sha256; it takes no payload, template or re_render");
+/** Rule 8: no agent ever signs — a signature field's actor is always a human party. */
+export const NO_AGENT_SIGNS = guard("NO_AGENT_SIGNS", "35.2 rule 8: 'No agent ever signs (NO_AGENT_SIGNS); a signature field's actor is always a human party'",
+  (_i, ctx) => (ctx.actor.kind !== "human" ? `${ctx.actor.kind}:${ctx.actor.id} may not sign; a signature is a human party's act through its own session` : undefined));
 const OPEN_PURPOSES: ReadonlySet<string> = new Set(["borrower_view", "staff_view", "esign_view", "verify_portal", "evidence_pack", "integrity"]);
 export const HOLD_RELEASE_HUMAN_ONLY = guard("HOLD_RELEASE_HUMAN_ONLY", "35.2 rule 5 / 19.1 AI agent design: holds.release is not allowed — human only (compliance or counsel)",
   (i, ctx) => (str(i, "op") === "release" && !(ctx.actor.kind === "human" && hasRole(ctx.actor, ["compliance", "counsel"])) ? `a hold is released by a human compliance or counsel actor; ${ctx.actor.kind}:${ctx.actor.id} may not` : undefined));
@@ -187,6 +199,28 @@ export const TOOLS_35_2: readonly ToolDef[] = defineTools(PROCESS, AGENT, [
       ctx.events.append({ type: "document.opened", ...(r.row.loan_id ? { loanId: r.row.loan_id } : {}), ...(r.row.application_id ? { applicationId: r.row.application_id } : {}), aggregate: { kind: "document", id: r.row.id }, actor: ctx.actor, payload: { document_id: r.row.id, purpose, party_id: str(i, "party_id") || null, staff_user_id: str(i, "staff_user_id") || (ctx.actor.kind === "human" ? ctx.actor.id : null), sha256: r.sha256, byte_size: r.byte_size, served_from: r.served_from, access_log_id: r.access_log_id } });
       return { document_id: r.row.id, tombstone: false, mime_type: r.mime_type, sha256: r.sha256, byte_size: r.byte_size, served_from: r.served_from, text_layer: r.text, bytes_base64: r.bytes.toString("base64"), access_log_id: r.access_log_id, storage_status: r.row.storage_status, verify_status: r.row.verify_status };
     })) },
+  { name: "esign.envelope.create", kind: "act", ruleSetVersion: RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD],
+    handler: compute(async (i, ctx, rt) => refusing("esign.envelope.create", async () => {
+      need(i, "kind", "documents", "signers");
+      const docs = i["documents"]; if (!Array.isArray(docs)) throw new RangeError("documents is a list of {document_id, required_fields}");
+      const signers = i["signers"]; if (!Array.isArray(signers)) throw new RangeError("signers is a list of party ids");
+      return inTx(ctx, rt, async (q) => createEnvelope({ ...depsOf(ctx, rt), q }, scopeOf(ctx), { kind: str(i, "kind"), ...(has(i, "owner_process") ? { owner_process: str(i, "owner_process") } : {}), documents: (docs as { document_id: string; required_fields?: RequiredField[] }[]).map((d) => ({ document_id: String(d.document_id), required_fields: d.required_fields ?? [] })), signers: (signers as unknown[]).map(String), ...(Array.isArray(i["consent_ids"]) ? { consent_ids: (i["consent_ids"] as unknown[]).map(String) } : {}), expires_on: str(i, "expires_on") || null, vendor_envelope_ref: str(i, "vendor_envelope_ref") || null }));
+    })),
+    decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "envelope", id: String(o["id"] ?? "") }, action: "envelope.create", ...scopeOf(ctx), retention_class: typeof o["retention_class"] === "string" ? o["retention_class"] : null, counts: { documents: Array.isArray(i["documents"]) ? (i["documents"] as unknown[]).length : 0, signers: Array.isArray(i["signers"]) ? (i["signers"] as unknown[]).length : 0 }, rationale: `draft ${str(i, "kind")} envelope for ${str(i, "owner_process") || "35.2"}` }); } },
+  { name: "esign.envelope.send", kind: "act", ruleSetVersion: RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD],
+    handler: compute(async (i, ctx, rt) => refusing("esign.envelope.send", async () => { need(i, "envelope_id"); return inTx(ctx, rt, async (q) => sendEnvelope({ ...depsOf(ctx, rt), q }, { envelope_id: str(i, "envelope_id") })); })),
+    decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "envelope", id: str(i, "envelope_id") }, action: "envelope.send", ...scopeOf(ctx), counts: { signers: Array.isArray(o["signer_party_ids"]) ? (o["signer_party_ids"] as unknown[]).length : 0, consents: Array.isArray(o["consent_ids"]) ? (o["consent_ids"] as unknown[]).length : 0 }, rationale: `sent: an active E-SIGN consent covers ${String(o["kind"] ?? "")} for every signer; expires ${String(o["expires_on"] ?? "")}` }); } },
+  { name: "esign.envelope.sign", kind: "act", ruleSetVersion: RULE_SET_VERSION, humanRoles: ["borrower", "ops_analyst", "officer"], guardrails: [NO_MONEY_FIELD, NO_AGENT_SIGNS],
+    handler: compute(async (i, ctx, rt) => refusing("esign.envelope.sign", async () => {
+      need(i, "envelope_id", "document_id", "signer_party_id", "field_ids", "auth");
+      const fields = i["field_ids"]; if (!Array.isArray(fields)) throw new RangeError("field_ids is a list");
+      const auth = i["auth"] as SignerAuth; if (!auth || typeof auth !== "object" || typeof auth.method !== "string") throw new RangeError("auth {method, session_id, ip, user_agent, typed_name} is required");
+      return inTx(ctx, rt, async (q) => signFields({ ...depsOf(ctx, rt), q }, { envelope_id: str(i, "envelope_id"), document_id: str(i, "document_id"), signer_party_id: str(i, "signer_party_id"), field_ids: (fields as unknown[]).map(String), auth }));
+    })),
+    decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; const auth = (i["auth"] ?? {}) as { method?: string }; return docsDecision({ subject: { kind: "envelope", id: str(i, "envelope_id") }, action: "envelope.sign", ...scopeOf(ctx), counts: { fields_signed: Array.isArray(o["fields_signed"]) ? (o["fields_signed"] as unknown[]).length : 0, remaining: Number(o["remaining"] ?? 0) }, rationale: `fields ${Array.isArray(o["fields_signed"]) ? (o["fields_signed"] as unknown[]).join(", ") : ""} signed by a human party through ${String(auth.method ?? "")}${o["completed"] === true ? `; envelope completed, evidence ${String(o["evidence_document_id"] ?? "")}` : ""}` }); } },
+  { name: "esign.envelope.void", kind: "act", ruleSetVersion: RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD],
+    handler: compute(async (i, ctx, rt) => refusing("esign.envelope.void", async () => { need(i, "envelope_id", "reason"); return inTx(ctx, rt, async (q) => voidEnvelope({ ...depsOf(ctx, rt), q }, { envelope_id: str(i, "envelope_id"), reason: str(i, "reason") })); })),
+    decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "envelope", id: str(i, "envelope_id") }, action: "envelope.void", ...scopeOf(ctx), sha256: typeof o["evidence_sha256"] === "string" ? o["evidence_sha256"] : null, rationale: `voided (${str(i, "reason")}); the audit trail is document ${String(o["evidence_document_id"] ?? "")}` }); } },
   { name: "documents.dispose", kind: "act", ruleSetVersion: RULE_SET_VERSION, humanRoles: ["officer", "compliance"], guardrails: [NO_MONEY_FIELD],
     handler: compute(async (i, ctx, rt) => refusing("documents.dispose", async () => { need(i, "document_id", "disposal_run_id"); return inTx(ctx, rt, async (q) => disposeDocument({ ...depsOf(ctx, rt), q }, { document_id: str(i, "document_id"), disposal_run_id: str(i, "disposal_run_id") })); })),
     decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "document", id: str(i, "document_id") }, action: "dispose", sha256: String(o["sha256"] ?? ""), ...scopeOf(ctx), rationale: `disposed under 19.1 run ${str(i, "disposal_run_id")} (officer attestation and WORM check on the log); the row is the tombstone` }); } },

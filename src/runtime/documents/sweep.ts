@@ -5,11 +5,17 @@
  *      (a loan, an application, or keyless) and drained through `documents.store{op: drain}` on that subject, so
  *      `document.stored` satisfies the SM_DOC_WORM_DRAIN_1D armed on the same subject (a global unit of work cannot see a
  *      loan's clock);
- *   2. the e-sign envelope expiry (SM_ESIGN_ENVELOPE_EXPIRY_30's breach action) and 3. the print vendor probe — added with
- *      the e-sign and mail commit groups (they report zero until then).
+ *   2. the e-sign envelope expiry: every SM_ESIGN_ENVELOPE_EXPIRY_30 the breach pass marked breached whose envelope is still
+ *      open is voided as `expired` on its own subject (the audit trail, `esign.envelope.expired`) with one sev 3 `ops_analyst`
+ *      escalation per envelope (the registry parses the breach cell's first word, so the breach pass's own escalation is
+ *      owned by `expired` — the hook opens the analyst's unless one is open on the timer already);
+ *   3. the print vendor probe — added with the mail commit group (it reports zero until then).
  */
 import type { Runtime } from "../app.ts";
 import type { Actor } from "../../kernel/events/index.ts";
+import type { Queryable } from "../../infra/db/client.ts";
+import { EscalationService } from "../../app/escalations.ts";
+import { closeEnvelope } from "../../domain/operations-runtime/documents/esign.ts";
 
 export const SYSTEM_DOCUMENTS: Actor = { kind: "system", id: "documents-sweep" };
 export const DRAIN_SCOPES_PER_SWEEP = 500;
@@ -41,6 +47,28 @@ export async function documentsSweepPass(runtime: Runtime, nowIso: string): Prom
       } catch (e) { drainFailed += Number(g.n); runtime.logger?.error("documents drain failed for a subject", { at: nowIso, loan_id: g.loan_id, application_id: g.application_id, error: e }); }
     }
   } catch (e) { runtime.logger?.error("documents drain pass failed", { at: nowIso, error: e }); }
-  const line = `documents: ${drained} drained, ${drainFailed} not yet, over ${scopes} subject(s)`;
-  return { at: nowIso, drained, drain_failed: drainFailed, scopes, envelopes_expired: 0, mail_vendor_down: false, fallback_proposed: 0, line };
+  let envelopesExpired = 0;
+  try { envelopesExpired = await expireEnvelopes(runtime, nowIso); } catch (e) { runtime.logger?.error("envelope expiry pass failed", { at: nowIso, error: e }); }
+  const line = `documents: ${drained} drained, ${drainFailed} not yet, over ${scopes} subject(s); ${envelopesExpired} envelope(s) expired`;
+  return { at: nowIso, drained, drain_failed: drainFailed, scopes, envelopes_expired: envelopesExpired, mail_vendor_down: false, fallback_proposed: 0, line };
+}
+
+interface BreachedEnvelope extends Record<string, unknown> { timer_id: string; envelope_id: string; application_id: string | null; loan_id: string | null; }
+/** SM_ESIGN_ENVELOPE_EXPIRY_30's breach action: the envelope is voided as `expired`, the owning process is told by event, sev 3 to ops_analyst. */
+export async function expireEnvelopes(runtime: Runtime, nowIso: string): Promise<number> {
+  const rows = await runtime.db.query<BreachedEnvelope>(`SELECT t.id AS timer_id, e.id AS envelope_id, e.application_id, e.loan_id FROM timers t JOIN loan_events ev ON ev.id = t.armed_by_event_id JOIN esign_envelopes e ON e.id = (ev.payload->>'envelope_id')::uuid WHERE t.code = 'SM_ESIGN_ENVELOPE_EXPIRY_30' AND t.status = 'breached' AND e.status IN ('sent', 'in_progress') ORDER BY t.breached_at, t.id`);
+  let expired = 0;
+  for (const r of rows) {
+    try {
+      let escalations: EscalationService | null = null;
+      await runtime.uow.run({ ...(r.loan_id ? { loanId: r.loan_id } : {}), ...(r.application_id ? { applicationId: r.application_id } : {}) }, async (ctx) => {
+        const q = (ctx as { q?: Queryable }).q ?? runtime.db;
+        await closeEnvelope({ q, blobs: runtime.blobs, events: ctx.events, actor: SYSTEM_DOCUMENTS, now: nowIso }, { envelope_id: r.envelope_id, outcome: "expired", reason: "SM_ESIGN_ENVELOPE_EXPIRY_30", timer_id: r.timer_id });
+        const open = await q.query(`SELECT 1 FROM escalations WHERE sla_timer_id = $1 AND owner_role = 'ops_analyst' AND status = 'open'`, [r.timer_id]);
+        if (!open.length) { escalations = new EscalationService(ctx.events, runtime.clock); escalations.open({ kind: "sev3", ownerRole: "ops_analyst", severity: "3", slaTimerId: r.timer_id, ...(r.loan_id ? { loanId: r.loan_id } : {}), ...(r.application_id ? { applicationId: r.application_id } : {}), payload: { kind: "envelope_expired", envelope_id: r.envelope_id, timer_id: r.timer_id, timer_code: "SM_ESIGN_ENVELOPE_EXPIRY_30", breach: "the envelope is voided as expired; the owning process is told by event and falls back to mail or re-issues" } }, SYSTEM_DOCUMENTS); }
+      }, { clock: runtime.clock, commit: async (q) => { for (const e of escalations?.list() ?? []) await runtime.escalationRepo.save(e, q); } });
+      expired++;
+    } catch (e) { runtime.logger?.error("envelope expiry failed", { at: nowIso, envelope_id: r.envelope_id, error: e }); }
+  }
+  return expired;
 }

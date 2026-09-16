@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8086/8756 (92.3%): tids 2256/2458, tables 770/848, timers 2044/2097, notices 308/308, tools 1439/1578, figures 1269/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8096/8756 (92.5%): tids 2258/2458, tables 773/848, timers 2045/2097, notices 308/308, tools 1443/1578, figures 1269/1467; processes at 100%: 192/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2256
+   "built": 2258
   },
   "tables": {
    "spec": 848,
-   "built": 770
+   "built": 773
   },
   "timers": {
    "spec": 2097,
-   "built": 2044
+   "built": 2045
   },
   "notices": {
    "spec": 308,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1439
+   "built": 1443
   },
   "figures": {
    "spec": 1467,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8756,
-   "built": 8086
+   "built": 8096
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 62,
+   "built": 72,
    "processes": 12,
    "done": 0
   }
@@ -8461,12 +8461,10 @@
    "title": "Documents and artifacts: the object store, the PDF writer, stored-byte integrity, legal holds, e-sign envelopes, the borrower viewer and print/mail manifests",
    "tids": {
     "spec": 18,
-    "built": 12,
-    "todo": 6,
+    "built": 14,
+    "todo": 4,
     "missing": [
      7,
-     13,
-     14,
      15,
      17,
      18
@@ -8474,21 +8472,17 @@
    },
    "tables": {
     "spec": 12,
-    "built": 7,
+    "built": 10,
     "missing": [
-     "esign_envelope_documents",
-     "esign_envelopes",
-     "esign_signature_events",
      "mail_manifest_pieces",
      "mail_manifests"
     ]
    },
    "timers": {
     "spec": 4,
-    "built": 2,
+    "built": 3,
     "armable": 4,
     "missing": [
-     "SM_ESIGN_ENVELOPE_EXPIRY_30",
      "SM_MAIL_MANIFEST_2BD"
     ]
    },
@@ -8499,12 +8493,8 @@
    },
    "tools": {
     "spec": 13,
-    "built": 6,
+    "built": 10,
     "missing": [
-     "esign.envelope.create",
-     "esign.envelope.send",
-     "esign.envelope.sign",
-     "esign.envelope.void",
      "mail.batch",
      "mail.manifest.ingest",
      "mail.fallback"
@@ -8517,9 +8507,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 38
+    "built": 48
    },
-   "pct": 65.5
+   "pct": 82.8
   },
   {
    "process": "35.3",

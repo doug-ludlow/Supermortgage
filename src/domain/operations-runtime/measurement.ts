@@ -260,9 +260,16 @@ export async function runPersistedCount(i: PersistedInput = {}): Promise<Persist
       const c = connect(url);
       try {
         const counts = await countTables(c, names);
+        const g = (await c.query<{ n: string }>(`SELECT count(*)::text AS n FROM projection_gaps`).catch(() => [{ n: "0" }]))[0]!.n;
         for (const [t, n] of counts) if (n !== null) after.set(t, (after.get(t) ?? 0n) + n);
-        const g = (await c.query<{ n: string }>(`SELECT count(*)::text AS n FROM projection_gaps`).catch(() => [{ n: "0" }]))[0]!.n; gaps += BigInt(g); gapsBy.set(d.name, BigInt(g));
-      } finally { await c.end(); }
+        gaps += BigInt(g); gapsBy.set(d.name, BigInt(g));
+      } catch (e) {
+        // the journey file's harness drops its database at process exit (src/infra/db/test-db.ts dropDatabase, WITH (FORCE), unless KEEP_TEST_DB=1): one that vanished between the pg_database check and the read — 3D000 invalid_catalog_name on connect, 57P01 admin_shutdown mid-read — is not measured, never failed (open question 4); nothing of it is summed
+        const code = (e as { code?: unknown } | null)?.code;
+        if (code !== "3D000" && code !== "57P01") throw e;
+        journeyDbs[journeyDbs.length - 1] = { name: d.name, database: dbName(url), present: false };
+        logger.warn("persisted count: journey database vanished during the read (not measured)", { run_id, journey: d.name, database: dbName(url), code });
+      } finally { await c.end().catch(() => undefined); }
     } } finally { await admin.end().catch(() => undefined); }
   } catch (e) { failure = e instanceof Error ? e.message : String(e); logger.error("persisted count failed", { run_id, error: failure }); }
   finally { await dropDatabase(measureUrl).catch(() => undefined); await lock?.release().catch(() => undefined); }

@@ -13,11 +13,14 @@
  *                       within that interval. The one-shot modes (`sweep`, `seed-demo`) read the row once at start.
  *   advanceDemoClock    POST /v1/demo/advance { to?: ISO instant | days?: number, budget_ms?: number }. For every
  *                       America/New_York calendar day the advance crosses the clock steps to that day (noon ET, so the
- *                       UTC, ET and Phoenix civil dates agree) and runs the sweep minute — the passes in the order the
- *                       wall clock runs them (what main.ts `sweep` and POST /v1/sweep run): first 35.3's cycles pass
- *                       (rule 10 — `OffsetClock.refresh` from the row the step just wrote, `cycles.plan{as_of: step.at}`
+ *                       UTC, ET and Phoenix civil dates agree) and runs the sweep minute — the wall clock's passes (what
+ *                       main.ts `sweep` and POST /v1/sweep run: the flows' tick, then Runtime.sweep, whose own first pass
+ *                       is the cycles pass) with the one reordering rule 10 asks for: first 35.3's cycles pass, ahead of
+ *                       the flows' tick (`OffsetClock.refresh` from the row the step just wrote, `cycles.plan{as_of: step.at}`
  *                       as `demo:<advance_id>`, then the day's queued units drained inline with no executor budget: the
- *                       advance has its own and stops between steps, never inside one), then the borrower flows' `tick`
+ *                       advance has its own and stops between steps, never inside one — so the registry is projected
+ *                       before the flows' tick even on the first step and the day's cashiering runs once, as the cycle's
+ *                       units; on the wall clock the direct passes yield the same way, D13), then the borrower flows' `tick`
  *                       (every flow's scheduled pass — 4-disclosures' originationDailySweep, 8-servicing's
  *                       servicingDailySweep and the December irs_estatement ask, 10-hardship's delinquencyDailySweep,
  *                       the card expiries — 8-servicing's and 10-hardship's daily passes yield to the cycles once the registry
@@ -246,8 +249,9 @@ export function refiDailyOutcome(sweep: SweepReport): HookOutcome {
 }
 
 /**
- * One sweep minute at `step.at`, in the order the wall clock runs it (main.ts `sweep`, POST /v1/sweep): 35.3's cycles pass
- * first (rule 10 — the persisted offset re-read, `cycles.plan{as_of: step.at}` planned by `demo:<advance_id>`, the day's
+ * One sweep minute at `step.at`: the wall clock's passes (main.ts `sweep`, POST /v1/sweep — the flows' tick, then
+ * Runtime.sweep with the cycles pass as its own first pass) with rule 10's one reordering — 35.3's cycles pass first, ahead
+ * of the flows' tick (the persisted offset re-read, `cycles.plan{as_of: step.at}` planned by `demo:<advance_id>`, the day's
  * queued jobs drained to completion inline, no 240 s budget), then the flows' tick and settle (or, without flows, the three
  * runtime-level daily sweeps in the flows' order — the cashiering and counter passes yield to their cycles, D13), then
  * Runtime.sweep with its own cycles pass skipped (the refinance daily run and the FAKE reviewers when wired, then the

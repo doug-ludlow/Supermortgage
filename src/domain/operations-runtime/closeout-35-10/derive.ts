@@ -150,3 +150,11 @@ export function securityInstrumentFor(store: EntityStore, loanId: string, state:
 }
 /** The prior loan's purchase state for the retirement's remittance path (rule 4 edge case): purchased → fnma_crs; still in the warehouse → warehouse_paydown. */
 export const remittedTo = (facts: PriorLoanFacts): "fnma_crs" | "warehouse_paydown" => (facts.purchased && facts.fnma_loan_number ? "fnma_crs" : "warehouse_paydown");
+/** 3.x's in-flight escrow disbursements on the prior loan, from the record: a tax / insurance / MI `disbursement.issued` with no later clearing, confirmation or cancellation for the same id (3.5's InFlightDisbursement). */
+export function inFlightOf(events: readonly DomainEvent[], loanId: string): { id: string; kind: "tax" | "insurance" | "mi" | "other"; amount_cents: Cents; due_on: PlainDate; status: "sent" }[] {
+  const mine = events.filter((e) => e.loanId === loanId);
+  const closed = new Set(mine.filter((e) => ["disbursement.cleared", "disbursement.confirmed", "disbursement.cancelled", "disbursement.voided"].includes(e.type)).map((e) => String(pl(e)["disbursement_id"] ?? pl(e)["id"] ?? "")));
+  return mine.filter((e) => e.type === "disbursement.issued" && ["tax", "insurance", "mi", "hazard", "flood"].includes(String(pl(e)["kind"] ?? "")) && !closed.has(String(pl(e)["disbursement_id"] ?? pl(e)["id"] ?? e.id)))
+    .map((e) => ({ id: String(pl(e)["disbursement_id"] ?? pl(e)["id"] ?? e.id), kind: (["tax", "insurance", "mi"].includes(String(pl(e)["kind"])) ? String(pl(e)["kind"]) : String(pl(e)["kind"]) === "hazard" || String(pl(e)["kind"]) === "flood" ? "insurance" : "other") as "tax" | "insurance" | "mi" | "other", amount_cents: c(pl(e)["amount_cents"]), due_on: D(String(pl(e)["due_on"] ?? pl(e)["issued_on"] ?? e.occurredAt.slice(0, 10))), status: "sent" as const }));
+}
+

@@ -498,7 +498,7 @@ export class Journey {
    * the closeout pass (POST /v1/sweep) quotes, settles, retires and releases the prior loan and boards the new one from the record.
    */
   async refinanceAgain(): Promise<string> {
-    const { runtime } = this.o; const clock = this.clock; const R = this.R; const priorLoanId = this.loanId; assert.ok(priorLoanId, "board() first");
+    const clock = this.clock; const R = this.R; const priorLoanId = this.loanId; assert.ok(priorLoanId, "board() first");
     clock.set(MST("2027-01-05", "10:00"));
     const opened = await this.call("POST", "/v1/applications", { actor: INTAKE, application: { partner_party_id: this.o.partnerPartyId, channel: "refi_trigger", transaction_type: "limited_cash_out", occupancy: "primary", prior_loan_id: priorLoanId,
       borrowers: [{ legal_name: "Alex Borrower", tin_last4: "6789", contact: { email: this.o.borrowerEmail } }, { legal_name: "Blake Borrower", borrower_role: "co_borrower", tin_last4: "4321", contact: { email: this.o.coBorrowerEmail } }],
@@ -527,7 +527,6 @@ export class Journey {
     const funded = await this.tool(scope, "26.3", "confirmDisbursement", { funding_id: F, disbursement_date: "2027-01-29", confirmed_at: "2027-01-29T18:40:00.000Z", source: "final_settlement_statement", evidence_document_id: `DOC-FSS-2-${R}`, escrow_deposit_cents: "343750",
       payoff_lines: [{ payoff_demand_id: `${this.refiAppId}:prior-loan:${priorLoanId}`, liability_id: `prior-loan:${priorLoanId}`, payee_party_id: this.o.partnerPartyId, amount_cents: "56208439", wire_reference: `INTERNAL-${R}` }] }, FUNDER);
     assert.ok(funded.events.some((e) => e.type === "loan.funded"), JSON.stringify(funded.events.map((e) => e.type)));
-    void runtime;
     return this.refiAppId;
   }
   /**

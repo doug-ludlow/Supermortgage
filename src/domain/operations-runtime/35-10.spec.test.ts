@@ -224,7 +224,10 @@ async function resyncedB(n = 1): Promise<PriorB & { c: Json; resyncId: string }>
 async function retiredB(n = 1): Promise<PriorB & { c: Json; evidenceId: string; wire: string }> {
   const st = stage(n); if (st.retired) return st.retired;
   const p = await resyncedB(n);
-  const { evidenceId, wire } = await fundB(p, String(B.slipped_disbursement), B.slipped_total_cents);
+  // the settlement statement's payoff line = the partner's refreshed statement total for this loan (worked example B's $443,765.81 for loan 1; each demo loan its own)
+  const total = BigInt(String((await entity("payoff_demands", p.demandId))!["total_cents"]));
+  if (n === 1) assert.equal(total, B.slipped_total_cents);
+  const { evidenceId, wire } = await fundB(p, String(B.slipped_disbursement), total);
   await sweep(`${B.slipped_disbursement}T19:00:00.000Z`);
   st.retired = { ...p, c: await closeoutOf(p.appId), evidenceId, wire }; return st.retired;
 }
@@ -421,6 +424,8 @@ test("35.10-T7: Given T6 and `funding.date.resynced` to 2026-11-02, then 24.4's 
   const { payoffGoodThroughGate } = await import("../property/ops-24-4.ts");
   const first = { liability_id: `prior-loan:${p.loanId}`, status: "received", good_through_date: D(String(B.disbursement)) };
   assert.equal(payoffGoodThroughGate({ payoffs: [first], disbursement_date: D(String(B.slipped_disbursement)) }).open, false, "closed: good-through 2026-10-30 < 2026-11-02");
+  assert.ok((await versions("payoff_demands", String(c["payoff_demand_id"]))).some((v) => v["status"] === "stale" && v["computed_total_at_disbursement_cents"] === B.slipped_total_cents), "24.4 marked the received statement stale with the planning figure before the refresh");
+  const staleEvents = await appEvents(p.appId, "payoff.statement.stale"); assert.equal(staleEvents.length, 1); assert.equal(String(staleEvents[0]!.payload["planning_total_cents"] ?? staleEvents[0]!.payload["computed_total_at_disbursement_cents"] ?? ""), String(B.slipped_total_cents));
   assert.equal(demand["status"], "refreshed"); assert.equal(demand["good_through_date"], String(B.slipped_disbursement)); assert.equal(demand["total_cents"], B.slipped_total_cents); assert.equal(demand["interest_cents"], 280_288n, "Oct 1–Nov 1 = 32 × $87.59 = $2,802.88"); assert.equal(B.refreshed_interest_cents, 280_288n);
   assert.equal(payoffGoodThroughGate({ payoffs: [{ liability_id: first.liability_id, status: String(demand["status"]), good_through_date: D(String(demand["good_through_date"])) }], disbursement_date: D(String(B.slipped_disbursement)) }).open, true, "open after the refresh");
   assert.equal(c["good_through"], String(B.slipped_disbursement)); assert.equal(BigInt(String(c["quoted_total_cents"])), B.slipped_total_cents);
@@ -439,7 +444,7 @@ test("35.10-T8: Given T7 and `loan.funded` on 2026-11-02 with a settlement state
   const demand = (await entity("payoff_demands", String(c["payoff_demand_id"])))!;
   assert.equal(demand["status"], "paid"); assert.equal(demand["payoff_posted_on"], String(B.slipped_disbursement)); assert.equal(demand["wire_reference"], p.wire);
   const retired = await loanEvents(p.loanId, "refinance.prior_loan.retired"); assert.equal(retired.length, 1); const rp = retired[0]!.payload;
-  assert.equal(rp["mode"], "monitored_partner"); assert.equal(rp["remitted_to"], "partner_wire"); assert.equal(String(rp["payoff_total_cents"]), String(B.slipped_total_cents)); assert.equal(rp["evidence_document_id"], p.evidenceId); assert.equal(rp["retired_on"], String(B.slipped_disbursement));
+  assert.equal(rp["mode"], "monitored_partner"); assert.equal(rp["remitted_to"], "partner_wire"); assert.equal(String(rp["payoff_total_cents"]), String(B.slipped_total_cents)); assert.equal(demand["total_cents"], B.slipped_total_cents, "paid at the partner's statement total"); assert.equal(rp["evidence_document_id"], p.evidenceId); assert.equal(rp["retired_on"], String(B.slipped_disbursement));
   const paid = await loanEvents(p.loanId, "partner_book.loan.paid_off"); assert.equal(paid.length, 1); const pp = paid[0]!.payload;
   assert.equal(pp["prior_status"], "monitored"); assert.equal(pp["status"], "paid_off"); assert.equal(pp["origination"], true); assert.equal(pp["application_id"], p.appId); assert.equal(pp["new_loan_id"], c["new_loan_id"]); assert.equal(pp["funding_date"], String(B.slipped_disbursement)); assert.equal(paid[0]!.actor_id, "payoff-release");
   const row = (await db.query<{ s: string; r: string | null; by: string | null }>(`SELECT status::text AS s, retired_reason AS r, refinanced_by_loan_id::text AS by FROM loans WHERE id = $1`, [p.loanId]))[0]!;
@@ -650,11 +655,9 @@ test("35.10-T14: Given the lifecycle journey on the hosted runtime through `loan
   const newLoanRow = (await db.query<{ upb: string; pi: string }>(`SELECT l.original_upb_cents::text AS upb, t.pi_cents::text AS pi FROM loans l JOIN loan_terms t ON t.loan_id = l.id AND t.effective_to IS NULL WHERE l.id = $1`, [newLoanId]))[0]!;
   assert.equal(BigInt(newLoanRow.upb), 57_500_000n); assert.equal(BigInt(newLoanRow.pi), 321_983n);
   // every 16.x / 3.5 command on the prior loan after the funding was the payoff-release agent's, from the sweep — none from this test
-  const executed = (await loanEvents(priorLoanId, "command.executed")).filter((e) => ["16.1", "16.2", "16.3", "3.5"].includes(String(e.payload["process"])) && String(e.payload["command"]) !== "computePayoffQuote" || false);
   const afterFunding = (await loanEvents(priorLoanId, "command.executed")).filter((e) => ["16.1", "16.2", "16.3", "3.5"].includes(String(e.payload["process"])));
   assert.ok(afterFunding.length >= 3, "16.1 quoted, 16.2 settled, 16.3 opened the release");
-  for (const e of afterFunding) assert.equal(e.actor_id, "payoff-release", `${e.payload["process"]} ${e.payload["command"]} ran as the agent from the sweep`);
-  void executed;
+  for (const e of afterFunding) { assert.equal(e.actor_id, "payoff-release", `${e.payload["process"]} ${e.payload["command"]} ran as the agent from the sweep`); assert.ok(String(e.payload["run_id"] ?? "").startsWith(`35.10:${String(c["id"])}:`), `${e.payload["command"]}: the closeout's own run (${e.payload["run_id"]}), never this test's`); }
   assert.equal((await loanEvents(priorLoanId, "loan.paid_in_full")).length, 1);
 });
 test("35.10-T15: Given the demo book with closeouts in every mode and step, when the daily pass runs at 06:45 ET, then one `refinance_closeout_daily_receipts` row exists for the day with counts equal to a direct query of `refinance_closeouts` (open, by mode, by step, retired today, releases open, partners unconfirmed), `refinance.closeout.daily.run_completed` satisfies and re-arms `SM_REFI_CLOSEOUT_BOARD_DAILY` on the global subject, and 35.8's Refinance board renders the receipt.", { skip }, async () => {

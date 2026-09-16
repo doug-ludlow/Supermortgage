@@ -31,7 +31,7 @@ import type { Cents } from "../kernel/money/cents.ts";
 import { CommandRefused } from "../app/commands.ts";
 import { closeoutByApplication, openCloseouts, applicationsWithoutCloseout, updateCloseout, appendStep } from "../domain/operations-runtime/closeout-35-10/repo.ts";
 import { fold, next, before, MAX_ATTEMPTS, type Next } from "../domain/operations-runtime/closeout-35-10/machine.ts";
-import { creditConsent, cdInitialDeposit, fundingIdFor, projectedDisbursement } from "../domain/operations-runtime/closeout-35-10/derive.ts";
+import { creditConsent, cdInitialDeposit, fundingIdFor, projectedDisbursement, inFlightOf } from "../domain/operations-runtime/closeout-35-10/derive.ts";
 import { AGENT, PROCESS, type CloseoutRow } from "../domain/operations-runtime/closeout-35-10/types.ts";
 import { finalDisbursementHold } from "../domain/escrow/ops-3-5.ts";
 import { prepaidInterest, type LoanFundedPayload } from "../domain/orig-boarding/ops-30-2.ts";
@@ -177,7 +177,7 @@ export async function closeoutPass(rt: Runtime, nowIso: string, opts: CloseoutPa
       // the escrow refund after the 5-BD in-flight hold (3.5's clock; the pass issues it once the gate opens — never a write while it waits)
       const refundElected = c.mode === "serviced_same_servicer" && c.escrow_treatment === "refund" && !c.refund_disbursement_id && !!c.payoff_date && !!c.retirement_id;
       // rule 6: the refund issues once 3.5's 5-BD in-flight hold has elapsed (worked example A: Fri 2027-02-05), or at 3.5's 20-BD deadline — never on the payoff date itself
-  const refundDue = refundElected ? ((h) => h.hold_elapsed || h.reason === "deadline")(finalDisbursementHold({ payoff_date: c.payoff_date!, today: asOf, in_flight: [] })) : null;
+  const refundDue = refundElected ? ((h) => h.hold_elapsed || h.reason === "deadline")(finalDisbursementHold({ payoff_date: c.payoff_date!, today: asOf, in_flight: inFlightOf(events, c.prior_loan_id) })) : null;
       let n: Next = next(c, f, { newLoanLinked: !!c.new_loan_id, goodThroughCovers, disposed, refundDue });
       if (refundDue === true && (n.kind === "wait" || (n.kind === "run" && n.tool !== "closeout.escrow"))) n = { kind: "run", tool: "closeout.escrow", trigger: null, reason: "the 5-BD in-flight hold elapsed: 3.5's refund issues" };
       // the new loan staged but not linked yet (35.6 stages later than the settlement, or before it): the current step's own tool folds the link (linkIfStaged), never a step it has not reached

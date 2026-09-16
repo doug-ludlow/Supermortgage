@@ -280,10 +280,14 @@ export const TOOLS_24_4: readonly ToolDef[] = defineTools("24.4", "title-closing
       const c = ectx(i, ctx);
       recordPayoffStale(ctx.events, c, { liability_id: str(i, "liability_id"), good_through_date: figures.good_through_date, disbursement_date: on, reasons: staleness.reasons, planning_total_cents: r.total_at_cents });
       persist(rt, ctx, "payoff_demands", `${app}:${str(i, "liability_id")}`, { ...row, status: "stale", disbursement_date: on, computed_total_at_disbursement_cents: r.total_at_cents });
+      // 35.10 T7: the refinance closeout requests the refresh itself (citing 26.3's resync) — request_refresh: false leaves the demand stale for that request
+      if (i.request_refresh === false) refresh = "stale";
+      else {
       const rq = requestPayoff(ctx.events, c, { application_id: app, liability_id: str(i, "liability_id"), same_servicer: row.same_servicer === true, servicing_loan_id: (row.servicing_loan_id as string | null) ?? null, existing_servicer_party_id: String(row.existing_servicer_party_id), requested_at: at(i, ctx), requested_on: dateOf(at(i, ctx)), request_channel: String(row.request_channel ?? "email"), written_authorization_document_id: String(row.written_authorization_document_id), requested_good_through: on, state: optStr(i, "state") ?? "AZ", refresh: true });
       refresh = rq.demand_event.type;
+      }
     } else if (row && flag(i, "planned_disbursement")) persist(rt, ctx, "payoff_demands", `${app}:${str(i, "liability_id")}`, { ...row, disbursement_date: on, computed_total_at_disbursement_cents: r.total_at_cents });
-    return { ...r, staleness, refresh_requested: refresh !== null, status: refresh ? "stale" : row?.status ?? null, funding_figure: r.stale ? null : figures.total_cents };
+    return { ...r, staleness, refresh_requested: refresh !== null && refresh !== "stale", status: refresh ? "stale" : row?.status ?? null, funding_figure: r.stale ? null : figures.total_cents };
   }), guardrails: [never("FUNDING_PAYOFF_NEVER_FROM_STALE_STATEMENT", "24.4 guardrails: never compute a funding payoff from a stale statement (comment 36(c)(3)-3)", (i) => i.use_for_funding === true, "the planning figure is total + per diem × extra days; funding uses only a statement good through the disbursement date — refresh instead of 'adding a day'")] },
   { name: "decideEscrowTreatment", kind: "act", handler: compute((i, ctx, rt) => {
     need(i, "liability_id", "servicing_loan_id", "payoff_posted_on", "escrow_balance_cents", "settlement_date");

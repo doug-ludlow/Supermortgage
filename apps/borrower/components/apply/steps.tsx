@@ -19,7 +19,7 @@ import { SHOW_FAKE_MARKERS } from "@/lib/env";
 import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
 import type { BorrowerRecord } from "@/lib/types/record";
 import { formatMoney } from "@/lib/format";
-import { BASES, CITIZENSHIPS, LANGUAGES, MARITALS, MILITARIES, cents, isGapCard, isTbdPurchase, neededCards, pending, pendingDeclaration, resolved, stepOfCard, stepOfCopyKey, type Basis, type Citizenship, type Draft, type EstateType, type Language, type Marital, type Military, type Occupancy, type RefiGoal, type Step, type Tab, type YesNo } from "./apply-model";
+import { BASES, CASH_OUT_PURPOSES, CITIZENSHIPS, LANGUAGES, MARITALS, MILITARIES, cents, isGapCard, isTbdPurchase, neededCards, pending, pendingDeclaration, resolved, stepOfCard, stepOfCopyKey, type Basis, type Citizenship, type Draft, type EstateType, type Language, type Marital, type Military, type Occupancy, type RefiGoal, type Step, type Tab, type YesNo } from "./apply-model";
 import { underTwoYears } from "./wire";
 
 export type StepProps = {
@@ -168,6 +168,7 @@ export function PropertyStep({ draft, cards, busy, patch, onContinue }: StepProp
           <Field copyKey="apply.property.value" value={draft.value} inputMode="decimal" onChange={(value) => patch({ value })} />
           <Field copyKey="apply.property.balance" value={draft.balance} inputMode="decimal" onChange={(balance) => patch({ balance })} />
           {draft.refiGoal === "cash" ? <Field copyKey="apply.property.cash_out" value={draft.cashOut} inputMode="decimal" onChange={(cashOut) => patch({ cashOut })} /> : null}
+          {draft.refiGoal === "cash" ? <Select copyKey="apply.property.cash_out_purpose" value={draft.cashOutPurpose} ids={CASH_OUT_PURPOSES} onChange={(cashOutPurpose) => patch({ cashOutPurpose })} /> : null}
         </>
       )}
       {!shopping ? (
@@ -423,6 +424,8 @@ export function ReviewStep({ draft, record, cards, busy, patch, onContinue, setS
   const purpose = purchase ? purposeBuy : draft.intent === "refinance" ? purposeRefi : record?.header.purpose ?? copy("apply.tasks.purpose");
   const home = record?.property?.address || (draft.shopping ? draft.state : draft.property);
   const numbersDone = Boolean(resolved(cards, "refi.product.choice")) || Boolean(resolved(cards, "preapproval.target"));
+  // DELTA-37: the purpose is asked when the draft says cash OR the pending amount card requires it — the same list wire.ts `amountEdits` refuses on — so a draft whose goal was changed on Goal after the tap (or seeded without one) gets the select, never a refusal with nothing to fill in
+  const purposeAsked = draft.refiGoal === "cash" || (() => { const c = pending(cards, "refi.loan_amount.confirm"); return Boolean(c && c.kind === "ConfirmCard" && (c.props.required_paths ?? []).includes("cash_out_purpose")); })();
   const valueTyped = tbd ? draft.priceHigh || draft.price : purchase ? draft.price : draft.value;
   const amountTyped = (() => {
     const price = tbd ? draft.priceHigh || draft.price : draft.price;
@@ -447,9 +450,11 @@ export function ReviewStep({ draft, record, cards, busy, patch, onContinue, setS
         ) : null}
         {!numbersDone && !tbd && !purchase && !draft.balance.trim() ? <Field copyKey="apply.property.balance" value={draft.balance} inputMode="decimal" onChange={(balance) => patch({ balance })} /> : null}
         {!numbersDone && (purchase || tbd) && !draft.down.trim() ? <Field copyKey="apply.property.down" value={draft.down} inputMode="decimal" onChange={(down) => patch({ down })} /> : null}
+        {!numbersDone && !purchase && purposeAsked && !draft.cashOutPurpose ? <Select copyKey="apply.property.cash_out_purpose" value={draft.cashOutPurpose} ids={CASH_OUT_PURPOSES} onChange={(cashOutPurpose) => patch({ cashOutPurpose })} /> : null}
         <div className="sm-row"><span>{numValue}</span><strong data-testid="apply-review-value">{tbd ? (valueTyped.trim() ? formatMoney(cents(valueTyped), { whole: true }) : "") : shownNumber(cards, "refi.value.confirm", "property_value_estimate", valueTyped)}</strong></div>
         <div className="sm-row"><span>{numAmount}</span><strong data-testid="apply-review-amount">{amountShown}</strong></div>
         <div className="sm-row"><span>{numProduct}</span><strong data-testid="apply-review-product">{product}</strong></div>
+        {!purchase && purposeAsked && draft.cashOutPurpose ? <div className="sm-row"><span data-copy-key="apply.property.cash_out_purpose">{copy("apply.property.cash_out_purpose")}</span><strong data-testid="apply-review-purpose">{copyOptions("apply.property.cash_out_purpose")[CASH_OUT_PURPOSES.indexOf(draft.cashOutPurpose)] ?? ""}</strong></div> : null}
       </div>
       {record?.status.badge ? (
         <p className="sm-lead"><span data-copy-key="apply.review.status">{copy("apply.review.status")}</span> <strong className="sm-badge" data-testid="apply-badge">{record.status.badge}</strong></p>

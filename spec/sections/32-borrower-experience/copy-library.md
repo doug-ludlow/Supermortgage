@@ -807,6 +807,7 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `apply.property.value` — field — "About what is it worth?" — *32.19 §2.4: held for `refi.value.confirm`.*
 - `apply.property.balance` — field — "Current balance" — *32.19 §2.4: held for `refi.current_loan.confirm`.*
 - `apply.property.cash_out` — field — "Cash out" — *32.19 §2.4: only when the purpose is cash; folded into the loan amount (DELTA-33).*
+- `apply.property.cash_out_purpose` — field — "What the cash is for" — options `Pay off other debts` · `Improve the home` · `Pay for school` · `Other / keep the cash` — *32.19 §2.4: only when the purpose is cash; rides `refi.loan_amount.confirm` as `cash_out_purpose` (DELTA-37; the ids DebtConsolidation · HomeImprovement · Education · Cash, in this order).*
 - `apply.property.required` — refusal — "Fill in each field before you continue." — *32.19 §3.0: a required field empty stays on the step; nothing is posted.*
 - `apply.property.waiting` — line — "Setting up your application…" — *32.19 §3.0: shown while the goal card is awaited after the account door.*
 - `apply.you.title` — heading — "You, then credit." — *32.19 §2.2 you.*

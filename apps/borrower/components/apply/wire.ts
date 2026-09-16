@@ -309,12 +309,31 @@ const plus = (a: string, b: string): string => (BigInt(a) + BigInt(b)).toString(
 const shownValue = (card: AnyCardInstance | null, path: string): string => (card && card.kind === "ConfirmCard" ? card.props.fields.find((f) => f.path === path)?.value ?? "" : "");
 
 /**
+ * The amount card's edits (docs/ux/18 §2.2 review, §2.4): the loan amount — price − down on the addressed purchase (DELTA-32; the down payment must be typed,
+ * a "0" counts, never price − nothing), the balance (+ the cash out on a cash-out, DELTA-33) on a refinance, nothing when the card's own figure stands — and, on a
+ * cash-out, what the cash is for (DELTA-37: `cash_out_purpose`, a MISMO id the card requires; empty → `apply.review.required` before anything is posted, the
+ * same refusal the API would give as 409 CARD_FIELD_REQUIRED). `requiredPaths` is the card's own list, so a reloaded draft whose goal was seeded from the record
+ * still learns the ask from the card.
+ */
+export function amountEdits(draft: Draft, purchase: boolean, requiredPaths: readonly string[] = []): Record<string, string> {
+  let amount = "";
+  if (purchase) { if (digitsOf(draft.price)) { if (!draft.down.trim()) throw new StepError("apply.review.required"); const price = cents(draft.price); const down = cents(draft.down); if (BigInt(down) > BigInt(price)) throw new StepError("apply.review.required"); amount = minus(price, down); } }
+  else if (digitsOf(draft.balance)) amount = draft.refiGoal === "cash" && digitsOf(draft.cashOut) ? plus(cents(draft.balance), cents(draft.cashOut)) : cents(draft.balance);
+  const edits: Record<string, string> = amount ? { loan_amount_sought: amount } : {};
+  if (!purchase && (draft.refiGoal === "cash" || requiredPaths.includes("cash_out_purpose"))) {
+    if (!draft.cashOutPurpose.trim()) throw new StepError("apply.review.required");
+    edits["cash_out_purpose"] = draft.cashOutPurpose.trim();
+  }
+  return edits;
+}
+
+/**
  * Review (docs/ux/18 §2.2 review, §2.3, §2.4): the readiness view's one CTA — "Confirm these numbers" — is the last number
  * cards' tap; nothing submits (owner decision 1; the DU moment is the flows' own run on `application.trid_received`).
  *  - An addressed purchase: `refi.value.confirm` ← the price, `refi.loan_amount.confirm` ← price − down payment,
  *    `refi.product.choice` FRM30.
  *  - A refinance: the value ← "worth" (the FAKE AVM's figure stands when nothing was typed), the loan amount ← the balance
- *    (+ the cash out on `cash_out`), the product FRM30 or FRM15 (Pay off sooner). A pending `refi.current_loan.confirm`
+ *    (+ the cash out on `cash_out`, with what the cash is for — DELTA-37), the product FRM30 or FRM15 (Pay off sooner). A pending `refi.current_loan.confirm`
  *    (after the report) takes the typed balance as `current_balance_cents` — the same number, the same tap.
  *  - Still looking: `preapproval.target` ← the price high, the down payment, high − down, FRM30; the file stays received.
  * Each card is resolved only while pending (resolve-first): a return to Review after the tap posts nothing and goes to Result.
@@ -354,12 +373,8 @@ export async function commitReview(ctx: FlushContext): Promise<FlushResult> {
   }
   const amountCard = pending(cards, "refi.loan_amount.confirm") ?? null;
   if (amountCard) {
-    let amount = "";
-    // the addressed purchase: price − down (DELTA-32) — the down payment must be typed (a "0" counts), as on the still-looking path; never price − nothing
-    if (purchase) { if (digitsOf(draft.price)) { if (!draft.down.trim()) throw new StepError("apply.review.required"); const price = cents(draft.price); const down = cents(draft.down); if (BigInt(down) > BigInt(price)) throw new StepError("apply.review.required"); amount = minus(price, down); } }
-    else if (digitsOf(draft.balance)) amount = draft.refiGoal === "cash" && digitsOf(draft.cashOut) ? plus(cents(draft.balance), cents(draft.cashOut)) : cents(draft.balance);
-    const edits: Record<string, string> = amount ? { loan_amount_sought: amount } : {};
-    if (!amount && !digitsOf(shownValue(amountCard, "loan_amount_sought"))) throw new StepError("apply.review.required");
+    const edits = amountEdits(draft, purchase, amountCard.kind === "ConfirmCard" ? amountCard.props.required_paths ?? [] : []);
+    if (!edits["loan_amount_sought"] && !digitsOf(shownValue(amountCard, "loan_amount_sought"))) throw new StepError("apply.review.required");
     outcomes.push(await resolveFirst([amountCard], "refi.loan_amount.confirm", fieldsEvidence(amountCard, edits, now())));
   }
   const productCard = pending(cards, "refi.product.choice") ?? null;

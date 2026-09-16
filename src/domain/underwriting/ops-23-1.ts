@@ -102,6 +102,8 @@ export interface UladSnapshot {
   readonly income_limited_product?: boolean;
   /** The rate decrease results from a permanent buydown (B3-2-10: must be resubmitted). */
   readonly permanent_buydown?: boolean;
+  /** DELTA-37: the cash-out refinance's primary purpose (21.1 `cash_out_purpose`, MISMO RefinancePrimaryPurposeBase) — written only when the determination is CashOut. */
+  readonly cash_out_purpose?: string | null;
   /** Eligibility Matrix maximum LTV for the transaction (20.4/23.2 supply it). */
   readonly max_ltv_pct?: string;
   readonly verified_reserves_cents?: Cents | null;
@@ -304,6 +306,8 @@ export function dealFromSnapshot(s: UladSnapshot, system_id_ref: string): DuDeal
     "ORIGINATION_SYSTEMS/ORIGINATION_SYSTEM/LoanOriginationSystemVendorIdentifier": system_id_ref || null,
     "ORIGINATION_SYSTEMS/ORIGINATION_SYSTEM/LoanOriginationSystemVersionIdentifier": LOAN_ORIGINATION_SYSTEM.version,
     "REFINANCE/RefinanceCashOutDeterminationType": purpose?.cash_out ?? null,
+    // conditional on RefinanceCashOutDeterminationType = CashOut (DU Spec conditionality; DI-C03/DI-C09 carry DebtConsolidation): the borrower's answer from 21.1's record, ABSENT when not given — the assembly then names the XPath as a gap (32.18 rule 7 re-sends the amount card)
+    "REFINANCE/RefinancePrimaryPurposeType": purpose?.cash_out === "CashOut" ? (s.cash_out_purpose ?? null) : null,
     "TERMS_OF_LOAN/BaseLoanAmount": s.loan_amount_cents,
     // 23.1's casefile is the partner's first-lien conventional loan sold to Fannie Mae (loans.lien defaults to first; subordinate
     // financing reaches the snapshot as `subordinate_liens_cents` / `heloc_limit_cents`, somebody else's lien).

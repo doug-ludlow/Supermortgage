@@ -81,6 +81,8 @@ export async function uladSnapshotOf(rt: ToolRuntime, application_id: string): P
     qualifying_income_cents: qualifying!, total_obligations_cents,
     borrowers: borrowers.map((b) => ({ borrower_id: b.id, last_name: b.legal_name.trim().split(/\s+/).at(-1) ?? b.legal_name, suffix: null, ssn_last4: b.tin_last4! })),
     max_ltv_pct: loan_purpose === "purchase" ? "97.00" : "95.00",
+    // DELTA-37: the cash-out purpose the amount card collected (21.1 captureField{cash_out_purpose}); absent on the record → absent on the deal, and 23.6 names LOAN/REFINANCE/RefinancePrimaryPurposeType as the gap on a cash-out file
+    cash_out_purpose: typeof intake["cash_out_purpose"] === "string" && intake["cash_out_purpose"] !== "" ? String(intake["cash_out_purpose"]) : null,
   };
   return { snapshot, sources: { product_code: productCode, rate_source: rateSource, pi_cents: pi.toString(), other_debts_cents: (cents(debts[0]?.total) ?? 0n).toString(), income_rows: income[0]?.total ?? null } };
 }

@@ -64,6 +64,8 @@ export const ULAD_ENUMS = {
   education_format: ["attended_workshop_in_person", "completed_web_based_workshop"],
   counseling_format: ["face_to_face", "telephone", "internet", "hybrid"],
   six_item_source: ["borrower_stated", "borrower_confirmed_prefill"],
+  /** DELTA-37: the cash-out refinance's primary purpose — MISMO RefinancePrimaryPurposeBase spellings (the four the borrower can pick in plain words; DU Map LOAN/REFINANCE/RefinancePrimaryPurposeType, conditional on RefinanceCashOutDeterminationType = CashOut). */
+  cash_out_purpose: ["DebtConsolidation", "HomeImprovement", "Education", "Cash"],
 } as const;
 export type UladField = keyof typeof ULAD_ENUMS;
 /** Validate one captured value against its ULAD/URLA enumeration; unknown fields are free text (validated by shape elsewhere). */
@@ -136,6 +138,8 @@ export interface IntakeApplication {
   readonly urla_form_version: string; readonly ulad_version: string;
   readonly last_activity_at: string; readonly abandon_at: PlainDate; readonly retention_class: "pre_application_purge" | "regb_25m";
   readonly arm_interest_recorded: boolean;
+  /** DELTA-37: the cash-out refinance's primary purpose (ULAD_ENUMS.cash_out_purpose, the MISMO spelling); null until captured, and meaningful only on `transaction_type = cash_out`. */
+  readonly cash_out_purpose: string | null;
 }
 export interface NewIntakeInput {
   readonly id: string; readonly partner_name: string; readonly partner_nmlsr_id?: string | null; readonly intake_channel: string; readonly started_at: string;
@@ -159,7 +163,7 @@ export function newIntakeApplication(i: NewIntakeInput): IntakeApplication {
     six_items: { name: EMPTY_ITEM, income: EMPTY_ITEM, ssn: EMPTY_ITEM, property_address: EMPTY_ITEM, property_value_estimate: EMPTY_ITEM, loan_amount_sought: EMPTY_ITEM }, loan_amount_sought_cents: null, property_value_estimate_cents: null, income_monthly_cents: null,
     borrowers: (i.borrowers ?? []).map((b) => newBorrower({ ...b, added_at: started_at })), mlo_of_record_id: null, mlo_name: null, mlo_nmlsr_id: null, mlo_nmls_status: null, mlo_licensed_states: [], mlo_assignment_at: null, mlo_review_state: "unassigned",
     mlo_reviews: [], safe_activity_log: [], interview_sessions: [], initial_1003_document_id: null, initial_1003_signed_at: null, initial_1003_data_hash: null, urla_form_version: URLA_FORM_VERSION, ulad_version: ULAD_VERSION,
-    last_activity_at: started_at, abandon_at: addDays(civilDate(started_at, tz), INTAKE_ABANDON_DAYS), retention_class: "pre_application_purge", arm_interest_recorded: false };
+    last_activity_at: started_at, abandon_at: addDays(civilDate(started_at, tz), INTAKE_ABANDON_DAYS), retention_class: "pre_application_purge", arm_interest_recorded: false, cash_out_purpose: null };
 }
 export const civilDate = (iso: string, tz: string): PlainDate => wallClock(Date.parse(iso), tz).date;
 const borrowerOf = (app: IntakeApplication, id: string): IntakeBorrower => { const b = app.borrowers.find((x) => x.id === id); if (!b) throw new RangeError(`no borrower ${id} on application ${app.id}`); return b; };
@@ -526,11 +530,18 @@ export function recordArmInterest(events: EventStore, app: IntakeApplication, a:
   return { app: next, event: emit(events, next, "application.arm_interest.recorded", { fnma_plan_number: a.fnma_plan_number, channel: app.intake_channel }, at) };
 }
 
+/** DELTA-37: the cash-out refinance's primary purpose, validated against ULAD_ENUMS.cash_out_purpose (the MISMO RefinancePrimaryPurposeBase spelling) and saved on the record; `application.field.captured{field: cash_out_purpose, value}`. */
+export function recordCashOutPurpose(events: EventStore, app: IntakeApplication, a: { value: unknown; at: string }): { app: IntakeApplication; event: DomainEvent } {
+  const at = isoInstant(a.at, "at"); const value = enumOrThrow("cash_out_purpose", a.value);
+  const next: IntakeApplication = { ...touched(app, at), cash_out_purpose: value };
+  return { app: next, event: emit(events, next, "application.field.captured", { application_id: next.id, field: "cash_out_purpose", value, borrower_id: null, valid: true }, at) };
+}
+
 // ============================================================ initial 1003 (1/2021) render + e-sign, intake_complete
 export interface Form1003Render { readonly urla_form_version: string; readonly ulad_version: string; readonly document_id: string; readonly data_hash: string;
   readonly borrowers: { id: string; legal_name: string; borrower_role: string; form: "borrower_information" | "additional_borrower"; unmarried_addendum: boolean; citizenship_status: string | null; section_8_demographics: "collected" | "declined" | "not_asked"; credit_requested: boolean }[];
   readonly non_borrowing_spouses: { id: string; legal_name: string; instrument: "security_instrument_only"; note_signer: false; credit_data_requested: false }[];
-  readonly section_9_loan_originator: { organization: string; organization_nmlsr_id: string | null; originator_name: string; originator_nmlsr_id: string }; readonly section_4_loan: { transaction_type: string | null; occupancy: string | null; property_address: string | null; loan_amount_sought_cents: Cents | null; property_value_estimate_cents: Cents | null }; }
+  readonly section_9_loan_originator: { organization: string; organization_nmlsr_id: string | null; originator_name: string; originator_nmlsr_id: string }; readonly section_4_loan: { transaction_type: string | null; occupancy: string | null; property_address: string | null; loan_amount_sought_cents: Cents | null; property_value_estimate_cents: Cents | null; /** URLA 4a "Refinance Type / Purpose of Refinance" on a cash-out (DELTA-37); null otherwise */ cash_out_purpose: string | null }; }
 /** Renders the initial 1003 (1/2021): Section 9 carries the MLO of record's name and NMLSR ID (§1026.36(g)); a non-borrowing spouse appears only for the security instrument. */
 export function renderForm1003(app: IntakeApplication): Form1003Render {
   if (!app.mlo_of_record_id || !app.mlo_nmlsr_id || !app.mlo_name) throw new RangeError("Section 9 needs the MLO of record's name and NMLSR ID before the 1003 renders (§1026.36(g); rule 7)");
@@ -538,7 +549,7 @@ export function renderForm1003(app: IntakeApplication): Form1003Render {
   const borrowers = applicants.map((b, i) => ({ id: b.id, legal_name: b.legal_name, borrower_role: b.borrower_role, form: i === 0 ? "borrower_information" as const : "additional_borrower" as const, unmarried_addendum: b.unmarried_addendum_required, citizenship_status: b.citizenship_status, section_8_demographics: b.demographics ? (b.demographics.declined_ethnicity && b.demographics.declined_race && b.demographics.declined_sex ? "declined" as const : "collected" as const) : "not_asked" as const, credit_requested: true as const }));
   const non_borrowing_spouses = app.borrowers.filter((b) => b.borrower_role === "non_borrowing_spouse").map((b) => ({ id: b.id, legal_name: b.legal_name, instrument: "security_instrument_only" as const, note_signer: false as const, credit_data_requested: false as const }));
   const section_9_loan_originator = { organization: app.partner_name, organization_nmlsr_id: app.partner_nmlsr_id, originator_name: app.mlo_name, originator_nmlsr_id: app.mlo_nmlsr_id };
-  const section_4_loan = { transaction_type: app.transaction_type, occupancy: app.occupancy, property_address: app.property_address, loan_amount_sought_cents: app.loan_amount_sought_cents, property_value_estimate_cents: app.property_value_estimate_cents };
+  const section_4_loan = { transaction_type: app.transaction_type, occupancy: app.occupancy, property_address: app.property_address, loan_amount_sought_cents: app.loan_amount_sought_cents, property_value_estimate_cents: app.property_value_estimate_cents, cash_out_purpose: app.transaction_type === "cash_out" ? (app.cash_out_purpose ?? null) : null };
   const data_hash = sha256(JSON.stringify({ urla: URLA_FORM_VERSION, ulad: ULAD_VERSION, borrowers, non_borrowing_spouses, section_9_loan_originator, section_4_loan: { ...section_4_loan, loan_amount_sought_cents: String(section_4_loan.loan_amount_sought_cents), property_value_estimate_cents: String(section_4_loan.property_value_estimate_cents) }, six_items: app.six_items }));
   return { urla_form_version: URLA_FORM_VERSION, ulad_version: ULAD_VERSION, document_id: `doc-1003-${app.id}-${data_hash.slice(0, 12)}`, data_hash, borrowers, non_borrowing_spouses, section_9_loan_originator, section_4_loan };
 }

@@ -40,6 +40,9 @@ export const MARITALS: readonly Exclude<Marital, "">[] = ["unmarried", "married"
 export const MILITARIES: readonly Exclude<Military, "">[] = ["none", "active_duty", "retired_or_separated", "reserve_or_guard", "surviving_spouse"];
 export const LANGUAGES: readonly Exclude<Language, "">[] = ["english", "spanish", "chinese", "korean", "tagalog", "vietnamese", "other", "not_answered"];
 
+/** DELTA-37: the four purposes the cash-out card offers, in `apply.property.cash_out_purpose`'s option order — the ids are the MISMO RefinancePrimaryPurposeBase spellings 21.1 admits (`ULAD_ENUMS.cash_out_purpose`), what `refi.loan_amount.confirm`'s `cash_out_purpose` field carries. */
+export const CASH_OUT_PURPOSES: readonly string[] = ["DebtConsolidation", "HomeImprovement", "Education", "Cash"];
+
 export type Draft = {
   intent: Intent;
   refiGoal: RefiGoal;
@@ -57,6 +60,8 @@ export type Draft = {
   value: string;
   balance: string;
   cashOut: string;
+  /** DELTA-37: what the cash is for on a cash-out — a MISMO RefinancePrimaryPurposeBase id (`CASH_OUT_PURPOSES`), the amount card's required `cash_out_purpose` path */
+  cashOutPurpose: string;
   legalName: string;
   dob: string;
   ssn: string;
@@ -96,6 +101,7 @@ export const EMPTY: Draft = {
   value: "",
   balance: "",
   cashOut: "",
+  cashOutPurpose: "",
   legalName: "",
   dob: "",
   ssn: "",

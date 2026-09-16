@@ -249,7 +249,10 @@ async function confirmFields(i: ToolInput, ctx: CommandContext, rt: ToolRuntime,
       results["ssn"] = "on_file"; break;
     }
     case "property_value_estimate": case "loan_amount_sought": {   // R7: an accepted AVM / payoff-based amount counts at the tap; an edit is the borrower's own number (T18)
-      const f = need_(path); const amount = cents(f.value).toString(); trid = await captureSix(rt, ctx, application_id, path, amount, f.source, borrower_id); await recordLeadTridItem(rt, ctx, i, path, f.source, amount); results["source"] = f.source; break;
+      const f = need_(path); const amount = cents(f.value).toString(); trid = await captureSix(rt, ctx, application_id, path, amount, f.source, borrower_id); await recordLeadTridItem(rt, ctx, i, path, f.source, amount); results["source"] = f.source;
+      // DELTA-37: on a cash-out refinance the amount card also asks what the cash is for (`cash_out_purpose`, a required path there — a bare tap is 409 CARD_FIELD_REQUIRED); 21.1 validates the MISMO spelling and keeps it on the intake record for the DU writer
+      const purpose = path === "loan_amount_sought" ? get("cash_out_purpose") : undefined; if (purpose) { await plain("cash_out_purpose", purpose.value); results["cash_out_purpose"] = purpose.value; }
+      break;
     }
     case "purchase_contract": {   // C1/C2: the extracted fields count only on Confirm; the address completes the six items (T29); the purchase_contracts row is written here
       const addr = get("property_address"); const price = get("purchase_price_cents"); if (!addr && !price) throw new RangeError("property_address or purchase_price_cents is required");

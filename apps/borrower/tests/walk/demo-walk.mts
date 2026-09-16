@@ -18,8 +18,9 @@
  *      name); no "DU" / "Desktop Underwriter" / "Fannie" on the screen.
  *   4. Buy, still looking, ends at the preapproval request: preapproval.where resolved, preapproval.target on Review, the badge
  *      Application received (or Preapproved), apply.review.tbd, and no six-item address on the ops record.
- *   5. Refinance, cash out: transaction_type cash_out on the ops record; no shopping switch; value, balance and cash out collected;
- *      refi.home.confirm resolved after the SSN with the estate and the lien; the same DU verdict.
+ *   5. Refinance, cash out: transaction_type cash_out on the ops record; no shopping switch; value, balance, cash out and what the cash is for
+ *      collected (DELTA-37: application.field.captured{cash_out_purpose} on the ops record); refi.home.confirm resolved after the SSN with the
+ *      estate and the lien; the same DU verdict (required_missing 0: the purpose reaches LOAN/REFINANCE/RefinancePrimaryPurposeType).
  *   6. Errors stay on the step, in copy: Details without citizenship keeps the step with a copy line; a 409 CARD_FIELD_REQUIRED
  *      (the refinance home card tapped bare after a reload) renders copy(copy_key) on the step, never the code.
  *   7. My Loan is empty for a fresh account (no dollar sign, no digit); Tasks marks the done rows and a tap jumps to the step.
@@ -264,7 +265,7 @@ async function walk(browser: Browser): Promise<void> {
   await ctx2.close();
 
   // 5. refinance, cash out (a third account) — and, on the way, outcome 6's two facts (recorded after 5, in the table's order)
-  const WHAT_5 = "refinance, cash out: transaction_type cash_out on the ops record; no shopping switch; value, balance and cash out collected; refi.home.confirm resolved after the SSN with the estate and the lien; the same DU verdict";
+  const WHAT_5 = "refinance, cash out: transaction_type cash_out on the ops record; no shopping switch; value, balance, cash out and what the cash is for collected (DELTA-37: application.field.captured{cash_out_purpose} on the ops record); refi.home.confirm resolved after the SSN with the estate and the lien; the same DU verdict";
   const WHAT_6 = "errors stay on the step, in copy: Details without citizenship keeps the step with a copy line; a 409 CARD_FIELD_REQUIRED from the API renders copy(copy_key) on the step, never the code";
   let six: { ok: boolean; detail: string } = { ok: false, detail: "not reached (outcome 5 stopped before Details)" };
   const ctx3 = await mobile(); const page3 = await ctx3.newPage();
@@ -272,7 +273,7 @@ async function walk(browser: Browser): Promise<void> {
     await signUpThroughDoor(page3, BASE, `walk-refi-${run}@example.test`, password, opts);
     const me3 = await applicationOnMe(page3); const applicationId3 = me3.application_id ?? "";
     const steps: StepRecord[] = [await goal(page3, "refi", "My primary home", "Take cash out", opts)];
-    const p = await property(page3, { kind: "refi", address: ADDRESS, state: "AZ", worth: "800000", balance: "500000", cashOut: "60000" }, opts); steps.push({ step: p.step, error: p.error });
+    const p = await property(page3, { kind: "refi", address: ADDRESS, state: "AZ", worth: "800000", balance: "500000", cashOut: "60000", cashOutPurpose: "Pay off other debts" }, opts); steps.push({ step: p.step, error: p.error });
     await snap(page3, "refi-you");
     // ── 6b: a 409 CARD_FIELD_REQUIRED from the API, on the step. A reload on You empties the draft (the address, estate and lien held since Property), so You's Continue resolves the
     // identity and SSN cards and then taps refi.home.confirm bare → the API refuses 409 CARD_FIELD_REQUIRED → the step stays on You with copy(thread.card_field_required), never the code.
@@ -290,7 +291,7 @@ async function walk(browser: Browser): Promise<void> {
     const sixB = step409 === "you" && apiCode === "CARD_FIELD_REQUIRED" && isCopyKey(apiKey) && err409 === copy(apiKey) && !/[A-Z]{3,}_[A-Z_]+/.test(err409) && home409?.status === "pending";
     // the recovery: Property again with the two answers, then You's Continue completes the home card
     await tab(page3, "tasks", opts); await page3.locator('[data-testid="apply-task-property"]').first().click(); await waitForStep(page3, "property", "Tasks → Property", opts);
-    await fill(page3, "Property address", ADDRESS); await fill(page3, "State", "AZ"); await fill(page3, "About what is it worth?", "800000"); await fill(page3, "Current balance", "500000"); await fill(page3, "Cash out", "60000");
+    await fill(page3, "Property address", ADDRESS); await fill(page3, "State", "AZ"); await fill(page3, "About what is it worth?", "800000"); await fill(page3, "Current balance", "500000"); await fill(page3, "Cash out", "60000"); await pick(page3, "What the cash is for", "Pay off other debts");
     await pick(page3, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(page3, "Is there a PACE or clean-energy loan on the home?", "No");
     steps.push(await continueTo(page3, "you", "property again", opts)); steps.push(await continueTo(page3, "connect", "you again", opts));
     const afterHome = await threadCards(page3); const home = afterHome.find((c) => c.copy_key === "refi.home.confirm"); const ssnCard = afterHome.find((c) => c.copy_key === "identity.ssn.title");
@@ -318,9 +319,12 @@ async function walk(browser: Browser): Promise<void> {
     await snap(page3, "refi-result");
     const final = await threadCards(page3); const value = final.find((c) => c.copy_key === "refi.value.confirm"); const amount = final.find((c) => c.copy_key === "refi.loan_amount.confirm"); const product = final.find((c) => c.copy_key === "refi.product.choice");
     const numbersOk = valueShown === "$800,000" && amountShown === "$560,000" && value?.status === "resolved" && amount?.status === "resolved" && product?.status === "resolved";
-    let txn = "(no token)"; if (OPS_TOKEN) txn = String((((await readOps(applicationId3)).application ?? {}) as Record<string, unknown>)["transaction_type"] ?? "(absent)");
-    record(5, WHAT_5, steps.every((s) => !s.error) && p.shoppingSwitch === 0 && homeOk && numbersOk && txn === "cash_out" && du.ok,
-      `application=${applicationId3} steps: ${stepsLine(steps)}; shoppingSwitch=${p.shoppingSwitch}; refi.home.confirm=${home?.status ?? "(none)"} at ${home?.resolved_at ?? "-"} (the SSN card at ${ssnCard?.resolved_at ?? "-"}; the card's required estate and lien answered — a bare tap is refused; ${sixItemDetail}); Review showed value ${JSON.stringify(valueShown)}, amount ${JSON.stringify(amountShown)}; cards: value=${value?.status ?? "(none)"} amount=${amount?.status ?? "(none)"} product=${product?.status ?? "(none)"}; transaction_type=${txn}; ${du.detail}`);
+    // DELTA-37: the purpose rode the amount card's tap — 21.1's application.field.captured{field: cash_out_purpose, value} on the ops record's events (the MISMO id the DU document then carries at LOAN/REFINANCE/RefinancePrimaryPurposeType — required_missing 0 is duVerdict's own clause)
+    let txn = "(no token)"; let purpose = "(no token)";
+    if (OPS_TOKEN) { const ops3 = await readOps(applicationId3); txn = String(((ops3.application ?? {}) as Record<string, unknown>)["transaction_type"] ?? "(absent)"); purpose = String((ops3.events ?? []).find((e) => e.type === "application.field.captured" && e.payload?.["field"] === "cash_out_purpose")?.payload?.["value"] ?? "(absent)"); }
+    const purposeOk = !OPS_TOKEN || purpose === "DebtConsolidation";
+    record(5, WHAT_5, steps.every((s) => !s.error) && p.shoppingSwitch === 0 && homeOk && numbersOk && txn === "cash_out" && purposeOk && du.ok,
+      `application=${applicationId3} steps: ${stepsLine(steps)}; shoppingSwitch=${p.shoppingSwitch}; refi.home.confirm=${home?.status ?? "(none)"} at ${home?.resolved_at ?? "-"} (the SSN card at ${ssnCard?.resolved_at ?? "-"}; the card's required estate and lien answered — a bare tap is refused; ${sixItemDetail}); Review showed value ${JSON.stringify(valueShown)}, amount ${JSON.stringify(amountShown)}; cards: value=${value?.status ?? "(none)"} amount=${amount?.status ?? "(none)"} product=${product?.status ?? "(none)"}; transaction_type=${txn}; cash_out_purpose=${purpose}; ${du.detail}`);
   } catch (e) { await snap(page3, "refi-failed"); record(5, WHAT_5, false, `${reason(e)} — on step ${await attr(page3, "data-step")} error=${JSON.stringify(await errorText(page3))}`); }
   await ctx3.close();
   record(6, WHAT_6, six.ok, six.detail);

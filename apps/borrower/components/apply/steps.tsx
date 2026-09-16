@@ -243,9 +243,10 @@ const connectStateOf = (card: AnyCardInstance): string => (card.kind === "Connec
 /**
  * Connect (docs/ux/18 §2.2): the monthly income and the employer over the step's connector cards. Each ConnectCard of the step
  * (payroll, assets) is a row — `apply-card-{id}` with its state — so a return (`/app/return/{vendor}/{card}` → `?card=`) lands on
- * it; a connection the vendor failed (`state = failed`, 32.13-T12) is hosted as the card component itself: "Try again" runs the
- * FAKE session route, the fallback is the card's own document ask, and the UploadCard 13-cross-cutting sent for it renders beside
- * it — no error code reaches the borrower (the component shows none). The CTA runs the two FAKE sessions and the income card.
+ * it; a connection the vendor failed (`state = failed`, 32.13-T12; docs/ux/01 §10) is hosted as the card component itself, whatever
+ * its status — the tap resolved the card (32.17 rule 19) and the vendor's failed webhook marked it afterwards (13-cross-cutting), so a
+ * failed connection is a resolved card whose state reads failed — and the UploadCard 13-cross-cutting sent for it renders beside it
+ * as the way forward; no error code reaches the borrower (the component shows none). The CTA runs the two FAKE sessions and the income card.
  */
 export function ConnectStep({ step, draft, cards, record, busy, patch, onContinue, onResolveCard, focusedCard, onLaunchVendor }: StepProps) {
   const connectors = cards.filter((c) => c.kind === "ConnectCard" && stepOfCopyKey(c.copy_key) === step && !isGapCard(c)).sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
@@ -255,7 +256,7 @@ export function ConnectStep({ step, draft, cards, record, busy, patch, onContinu
       {SHOW_FAKE_MARKERS ? <p className="sm-lead" data-copy-key="apply.connect.fake_note"><span className="sm-fake">{copy("apply.connect.fake_note")}</span></p> : null}
       {connectors.map((c) => {
         const state = connectStateOf(c);
-        if (c.status === "pending" && state === "failed") return <HostedCard key={c.card_instance_id} card={c} record={record} busy={busy} expanded={focusedCard === c.card_instance_id} onResolveCard={onResolveCard} onLaunchVendor={onLaunchVendor} />;
+        if (state === "failed") return <HostedCard key={c.card_instance_id} card={c} record={record} busy={busy} expanded={focusedCard === c.card_instance_id} onResolveCard={onResolveCard} onLaunchVendor={onLaunchVendor} />;
         return (
           <div key={c.card_instance_id} className="sm-row sm-connector" data-testid={`apply-card-${c.card_instance_id}`} data-copy-key={c.copy_key} data-state={state} data-expanded={focusedCard === c.card_instance_id ? "true" : "false"}>
             <span data-copy-key={c.copy_key}>{copy(c.copy_key)}</span>

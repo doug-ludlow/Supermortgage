@@ -424,8 +424,9 @@ test("32.13-T12: Degraded vendor — Given Truv returns an error, then the Conne
   const host = page.locator(`[data-testid="apply"][data-step="connect"] [data-testid="apply-card-${cardId}"]`).first(); await host.waitFor({ timeout: 30_000 });
   const article = host.locator(`article[data-card-id="${cardId}"]`).first(); await article.waitFor({ timeout: 30_000 });
   assert.equal(await article.getAttribute("data-card-kind"), "ConnectCard", "the ConnectCard component on the step");
-  assert.match((await article.getByTestId("connect-state").innerText()).trim(), /Couldn't connect — we'll take documents instead/, "the Connect step shows failed");
-  assert.equal(await article.getByRole("button", { name: "Send paystubs instead" }).count(), 1, "the upload fallback on the card"); assert.equal(await article.getByRole("button", { name: "Try Truv again" }).count(), 1);
+  assert.match(await article.innerText(), /Couldn't connect — we'll take documents instead/, "the Connect step shows failed (the resolved card's receipt, 01 §1.3, or its state line)");
+  // the tap resolved the card and the vendor's failed webhook marked it afterwards (13-cross-cutting), so the hosted card is the resolved connection reading failed; the fallback is the UploadCard beside it (01 §10)
+  assert.equal(await article.getAttribute("data-status"), "resolved", "the connection resolved on the tap; the webhook marked it failed");
   const uploadHost = page.locator(`[data-testid="apply"][data-step="connect"] [data-testid="apply-card-${upload.card_instance_id}"] article[data-card-kind="UploadCard"]`); assert.equal(await uploadHost.count(), 1, "the UploadCard renders on the step");
   assert.ok(!/TRUV_ERR|ITEM_LOGIN_REQUIRED|provider outage/.test(await page.content()), "no vendor code on the page");
   assert.equal(await page.locator('[data-testid="card-error"]').count(), 0, "every card renders"); assert.equal(await page.getByTestId("apply-error").count(), 0, "no error line");

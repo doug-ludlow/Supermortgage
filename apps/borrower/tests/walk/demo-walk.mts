@@ -85,7 +85,7 @@ type ApiAnswer = { status: number; body: Record<string, unknown> };
 /** A borrower API call made by the page itself through the same-origin proxy (/app/api → API), so a session answer's `token` becomes the page's HttpOnly cookie exactly as the app's own client gets it. */
 const apiOnPage = (page: Page, method: "GET" | "POST", path: string, body?: Record<string, unknown>): Promise<ApiAnswer> =>
   page.evaluate(async ({ method, path, body }) => {
-    const res = await fetch(`/app/api${path}`, { method, credentials: "include", headers: { accept: "application/json", ...(body !== undefined ? { "content-type": "application/json" } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
+    const res = await fetch(`/app/api${path}`, { method, credentials: "include", headers: { accept: "application/json", ...(body !== undefined ? { "content-type": "application/json" } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     let json: Record<string, unknown> = {};
     try { json = (await res.json()) as Record<string, unknown>; } catch { /* a non-JSON body */ }
     return { status: res.status, body: json };
@@ -294,8 +294,11 @@ async function walk(browser: Browser): Promise<void> {
     await pick(page3, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(page3, "Is there a PACE or clean-energy loan on the home?", "No");
     steps.push(await continueTo(page3, "you", "property again", opts)); steps.push(await continueTo(page3, "connect", "you again", opts));
     const afterHome = await threadCards(page3); const home = afterHome.find((c) => c.copy_key === "refi.home.confirm"); const ssnCard = afterHome.find((c) => c.copy_key === "identity.ssn.title");
-    // the thread carries statuses and resolved_at, never the evidence; the card requires the estate and the lien (a bare tap is refused — the 409 above), so a resolved home card carries the two answers (32.19-T5 asserts them on the database)
-    const homeOk = home?.status === "resolved" && ssnCard?.status === "resolved" && !!home.resolved_at && !!ssnCard.resolved_at && home.resolved_at >= ssnCard.resolved_at;
+    // the thread carries statuses and resolved_at, never the evidence; the card requires the estate and the lien (a bare tap is refused — the 409 above), so a resolved home card carries the two answers (32.19-T5 asserts them on the database);
+    // the resolve's write shows on the ops record as the six-item address (`application.six_item.captured{item: property_address}` — outcome 4 asserts its absence on the still-looking file)
+    let sixItemHome = 0; let sixItemDetail = "(no token)";
+    if (OPS_TOKEN && home?.status === "resolved") { const evs = (await readOps(applicationId3)).events ?? []; sixItemHome = evs.filter((e) => e.type === "application.six_item.captured" && e.payload?.["item"] === "property_address").length; sixItemDetail = `six-item address events=${sixItemHome}`; }
+    const homeOk = home?.status === "resolved" && ssnCard?.status === "resolved" && !!home.resolved_at && !!ssnCard.resolved_at && home.resolved_at >= ssnCard.resolved_at && sixItemHome >= 1;
     steps.push(await connect(page3, "11000", "Walk Industries", opts));
     // ── 6a: Details without citizenship — the step stays with a copy line, nothing posted
     await waitForStep(page3, "details", "details", opts);
@@ -317,7 +320,7 @@ async function walk(browser: Browser): Promise<void> {
     const numbersOk = valueShown === "$800,000" && amountShown === "$560,000" && value?.status === "resolved" && amount?.status === "resolved" && product?.status === "resolved";
     let txn = "(no token)"; if (OPS_TOKEN) txn = String((((await readOps(applicationId3)).application ?? {}) as Record<string, unknown>)["transaction_type"] ?? "(absent)");
     record(5, WHAT_5, steps.every((s) => !s.error) && p.shoppingSwitch === 0 && homeOk && numbersOk && txn === "cash_out" && du.ok,
-      `application=${applicationId3} steps: ${stepsLine(steps)}; shoppingSwitch=${p.shoppingSwitch}; refi.home.confirm=${home?.status ?? "(none)"} at ${home?.resolved_at ?? "-"} (the SSN card at ${ssnCard?.resolved_at ?? "-"}; the card's required estate and lien answered — a bare tap is refused); Review showed value ${JSON.stringify(valueShown)}, amount ${JSON.stringify(amountShown)}; cards: value=${value?.status ?? "(none)"} amount=${amount?.status ?? "(none)"} product=${product?.status ?? "(none)"}; transaction_type=${txn}; ${du.detail}`);
+      `application=${applicationId3} steps: ${stepsLine(steps)}; shoppingSwitch=${p.shoppingSwitch}; refi.home.confirm=${home?.status ?? "(none)"} at ${home?.resolved_at ?? "-"} (the SSN card at ${ssnCard?.resolved_at ?? "-"}; the card's required estate and lien answered — a bare tap is refused; ${sixItemDetail}); Review showed value ${JSON.stringify(valueShown)}, amount ${JSON.stringify(amountShown)}; cards: value=${value?.status ?? "(none)"} amount=${amount?.status ?? "(none)"} product=${product?.status ?? "(none)"}; transaction_type=${txn}; ${du.detail}`);
   } catch (e) { await snap(page3, "refi-failed"); record(5, WHAT_5, false, `${reason(e)} — on step ${await attr(page3, "data-step")} error=${JSON.stringify(await errorText(page3))}`); }
   await ctx3.close();
   record(6, WHAT_6, six.ok, six.detail);
@@ -391,7 +394,8 @@ async function walk(browser: Browser): Promise<void> {
     const door2 = (await attr(op, "data-door")) === "welcome";
     const body2 = await op.locator("body").innerText().catch(() => "");
     await other.close();
-    record(8, WHAT_8, hadSignOut && doorAgain && door2 && !body2.includes(email1) && !body2.includes(WALK_NAME), `signOut=${hadSignOut} doorAgain=${doorAgain} secondContextDoor=${door2}`);
+    const firstName = WALK_NAME.split(" ")[0] ?? WALK_NAME;   // Account shows the first name alone (apply-account-name), so the leak to look for is the first name, not only the full name
+    record(8, WHAT_8, hadSignOut && doorAgain && door2 && !body2.includes(email1) && !body2.includes(firstName), `signOut=${hadSignOut} doorAgain=${doorAgain} secondContextDoor=${door2} firstName=${JSON.stringify(firstName)} leaked=${body2.includes(email1) || body2.includes(firstName)}`);
   } catch (e) { await snap(page, "sign-out-failed"); record(8, WHAT_8, false, reason(e)); }
 
   // 9. a partner-book homeowner (33.1 rules 5–6): the code door on the fixture e-mail lands on My Loan — Monitored, the servicer and the last four from the deployed record; Apply shows no step; sign out. An unseeded book fails, never passes.

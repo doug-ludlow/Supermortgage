@@ -140,7 +140,9 @@ async function cancelPending(deps: FlowDeps, subject: { application_id: string |
 /**
  * A vendor failure the borrower never has to decode: the ConnectCard's evidence records `outcome: failed` and the vendor's marker only
  * (no code, no message), the thread says we'll take documents instead, and an UploadCard for the same purpose is the way forward.
- * The card itself stays pending in state `failed` so "Try again" and the upload fallback are both live (01 §10; ConnectCard.tsx).
+ * The card's status is whatever the tap left it: the borrower's tap resolved the ConnectCard before the vendor answered (commands.ts resolveCard →
+ * `resolved`; the session route needs the resolved card's order), so this marks a resolved card `state = failed` — the UploadCard is the live way forward
+ * (01 §10: retry is offered on recovery, not on the failed card); a card still pending here keeps its own "Try again" (ConnectCard.tsx).
  */
 export async function connectorFailed(deps: { runtime: Runtime; ui: PgBorrowerUiRepository }, card: { card_instance_id: string; party_id: string; subject_application_id: string | null; subject_loan_id?: string | null; props: Record<string, unknown> }, at: string, vendor: { name: string; fake: boolean; vendor_session_id: string | null }): Promise<{ upload_card_instance_id: string | null }> {
   const db = deps.runtime.db;

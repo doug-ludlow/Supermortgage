@@ -8,7 +8,9 @@
  *                            `closing_orchestrations` when the table exists, else the `orchestration.*` event literals on
  *                            loan_events (the seam every §35 process writes), else nothing.
  *   35.3  JobsPort           35.3's dead units (`job.unit.dead` without a later `job.unit.resolved`) — from loan_events.
- *   35.9  CaseMilestonesPort 35.9's `case.milestone.due` items — from loan_events.
+ *   35.9  CaseMilestonesPort 35.9's due milestones — `case_milestone_expectations{status: due}` when the table exists (35.9's daily
+ *                            unit opens the `case_milestone` item itself through its own port, source_id = the expectation id, and
+ *                            closes it on satisfied / waived / cancelled), else the `case.milestone.due` literals on loan_events.
  *   35.2  DocumentsPort      `documents.store` for the derivation JSON and the daily report; the default inserts a `documents`
  *                            row with the text retained in `metadata` (34.4's evidence-pack precedent when no blob store is wired).
  * A test injects a port through the optional `ports` argument of the pass / the tools' services map (`work_ports`).
@@ -82,6 +84,11 @@ export const defaultJobs: JobsPort = {
 };
 export const defaultCaseMilestones: CaseMilestonesPort = {
   async due(q) {
+    if (await exists(q, "case_milestone_expectations")) {
+      // 35.9's row is the source (its id is the item's source_id — default-35-9/expectations.ts markDue); the item's role is 35.9's (`attorney`), the screen by the case kind
+      const due = await q.query<Row>(`SELECT id::text AS id, loan_id::text AS loan_id, case_kind, updated_at::text AS since FROM case_milestone_expectations WHERE status = 'due' ORDER BY updated_at, id`).catch(() => [] as Row[]);
+      return due.map((r) => { const kind = String(r["case_kind"] ?? "foreclosure"); return { id: String(r["id"]), loan_id: (r["loan_id"] as string | null) ?? null, since: String(r["since"]), role: "attorney", screen_code: kind === "bankruptcy" ? "bankruptcy_case" : "foreclosure_case", case_kind: kind }; });
+    }
     const rows = await q.query<Row>(`SELECT d.id::text AS id, d.loan_id::text AS loan_id, d.payload, d.occurred_at::text AS since FROM loan_events d WHERE d.type = 'case.milestone.due' AND NOT EXISTS (SELECT 1 FROM loan_events r WHERE r.type IN ('case.milestone.met', 'case.milestone.waived') AND r.sequence > d.sequence AND r.payload->>'milestone_id' = d.payload->>'milestone_id')`);
     return rows.map((r) => { const p = (r["payload"] as Row) ?? {}; const kind = String(p["case_kind"] ?? "foreclosure"); return { id: String(p["milestone_id"] ?? r["id"]), loan_id: (r["loan_id"] as string | null) ?? null, since: String(r["since"]), role: String(p["role"] ?? "ops_analyst"), screen_code: kind === "bankruptcy" ? "bankruptcy_case" : "foreclosure_case", case_kind: kind }; });
   },

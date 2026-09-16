@@ -385,7 +385,7 @@ test("20.2 worked figures: the fixture offer renders 7.000% → 6.125% (6.155% A
   const version = reg.activeVersion("NTC_REGZ_1026_24_REFI_OFFER", D("2026-10-02"))!;
   const payload = { ...REFI_OFFER_SAMPLE, partner_name: PARTNER, pi_cents: levelPayment(56_000_000n, ratePercent("6.125"), 360) };
   const rendered = render(REFI_OFFER_SOURCE, payload);
-  assert.match(rendered.text, /Your current rate 7\.000% → offered rate 6\.125% \(6\.155% annual percentage rate \(APR\)\); 360 monthly principal-and-interest payments of \$3,402\.62/);
+  assert.match(rendered.text, /Your current rate 7\.000% to offered rate 6\.125% \(6\.155% annual percentage rate \(APR\)\); 360 monthly principal-and-interest payments of \$3,402\.62/);
   assert.match(rendered.text, /do not include amounts for taxes and insurance premiums, and your actual payment obligation will be greater/);
   assert.match(rendered.text, /\[Partner\], NMLSR ID 123456, is your current lender; Supermortgage services your loan for \[Partner\]/);
   const checklist = evaluateChecklist(version, payload, rendered);

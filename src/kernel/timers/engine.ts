@@ -54,9 +54,11 @@ export interface AnchorResolver {
   (def: TimerDef, event: DomainEvent): PlainDate | undefined;
 }
 
-/** Default anchor resolution: `payload[anchorField]` as an ISO date, else the event's own date. */
+/** Default anchor resolution: `payload[anchorField]` as an ISO date — the first present of the def's `anchorFields` when an override names the fact's spellings across emitters — else the event's own date. */
 export const defaultAnchorResolver: AnchorResolver = (def, event) => {
-  const fromPayload = def.anchorField ? (event.payload as Record<string, unknown>)[def.anchorField] : undefined;
+  const payload = event.payload as Record<string, unknown>;
+  const field = def.anchorFields?.find((k) => typeof payload[k] === "string") ?? def.anchorField;
+  const fromPayload = field ? payload[field] : undefined;
   if (typeof fromPayload === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fromPayload)) return plainDate(fromPayload);
   // Timestamps anchor on their Eastern-time civil date (Fannie Mae and Reg X cut-offs are ET / servicer-local).
   if (typeof fromPayload === "string" && /^\d{4}-\d{2}-\d{2}T/.test(fromPayload)) return wallClock(Date.parse(fromPayload), "America/New_York").date;

@@ -1,34 +1,261 @@
 {
- "brief": "spec units built 8216/8756 (93.8%): tids 2292/2458, tables 786/848, timers 2055/2097, notices 308/308, tools 1465/1578, figures 1310/1467; processes at 100%: 195/205",
+ "brief": "spec units built 8611/8787 (98.0%): tids 2394/2480, tables 833/852, timers 2091/2097, notices 308/309, tools 1549/1579, figures 1436/1470; processes at 100%: 202/212; retired 27; hosted 1512/1579, persisted 97/852",
  "totals": {
   "tids": {
-   "spec": 2458,
-   "built": 2292
+   "spec": 2480,
+   "built": 2394
   },
   "tables": {
-   "spec": 848,
-   "built": 786
+   "spec": 852,
+   "built": 833
   },
   "timers": {
    "spec": 2097,
-   "built": 2055
+   "built": 2091
   },
   "notices": {
-   "spec": 308,
+   "spec": 309,
    "built": 308
   },
   "tools": {
-   "spec": 1578,
-   "built": 1465
+   "spec": 1579,
+   "built": 1549
   },
   "figures": {
-   "spec": 1467,
-   "built": 1310
+   "spec": 1470,
+   "built": 1436
   },
   "units": {
-   "spec": 8756,
-   "built": 8216
+   "spec": 8787,
+   "built": 8611
   }
+ },
+ "exec_totals": {
+  "hosted": {
+   "spec": 1579,
+   "built": 1512
+  },
+  "persisted": {
+   "spec": 852,
+   "built": 97
+  }
+ },
+ "exec_measured": {
+  "hosted": true,
+  "persisted": true
+ },
+ "exec_notes": [],
+ "exec_done": [
+  "2.1",
+  "2.7",
+  "3.4",
+  "6.1",
+  "6.2",
+  "6.4",
+  "9.3",
+  "10.3",
+  "12.7",
+  "21.1",
+  "23.6",
+  "23.7",
+  "24.1",
+  "29.1",
+  "32.1",
+  "32.3",
+  "32.4",
+  "32.5",
+  "32.6",
+  "32.7",
+  "32.8",
+  "32.9",
+  "32.10",
+  "32.11",
+  "32.12",
+  "32.13",
+  "32.18",
+  "32.19",
+  "35.3",
+  "35.5",
+  "36.2",
+  "36.3",
+  "36.4",
+  "36.5",
+  "36.6"
+ ],
+ "retired": {
+  "count": 27,
+  "by_kind": {
+   "tids": 27,
+   "tables": 0,
+   "timers": 0,
+   "notices": 0,
+   "tools": 0,
+   "figures": 0
+  },
+  "rows": [
+   {
+    "unit_id": "32.9-T9",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "spoken payoff request (voice)"
+   },
+   {
+    "unit_id": "32.14-T1",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T2",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T3",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T4",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T5",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T6",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T19",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.16-T11",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the rail at \u2265 1024 px and reference chips"
+   },
+   {
+    "unit_id": "32.16-T12",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the rail at \u2265 1024 px and reference chips"
+   },
+   {
+    "unit_id": "32.16-T17",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "in-app voice turns"
+   },
+   {
+    "unit_id": "32.16-T18",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "in-app voice turns"
+   },
+   {
+    "unit_id": "32.16-T20",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "in-app voice turns"
+   },
+   {
+    "unit_id": "32.17-T3",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T4",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the rail beside the call"
+   },
+   {
+    "unit_id": "32.17-T6",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the rail beside the call"
+   },
+   {
+    "unit_id": "32.17-T10",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video door"
+   },
+   {
+    "unit_id": "32.17-T11",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "Michelle"
+   },
+   {
+    "unit_id": "32.17-T12",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T14",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video door"
+   },
+   {
+    "unit_id": "32.17-T15",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video door"
+   },
+   {
+    "unit_id": "32.17-T16",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video door"
+   },
+   {
+    "unit_id": "32.17-T19",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T20",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T22",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T23",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T26",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "Michelle"
+   }
+  ]
  },
  "sections": {
   "1": {
@@ -218,9 +445,9 @@
    "done": 3
   },
   "32": {
-   "spec": 359,
-   "built": 359,
-   "processes": 17,
+   "spec": 350,
+   "built": 346,
+   "processes": 18,
    "done": 17
   },
   "33": {
@@ -237,9 +464,15 @@
   },
   "35": {
    "spec": 715,
-   "built": 192,
+   "built": 600,
    "processes": 12,
-   "done": 3
+   "done": 10
+  },
+  "36": {
+   "spec": 40,
+   "built": 0,
+   "processes": 6,
+   "done": 0
   }
  },
  "done": [
@@ -436,8 +669,15 @@
   "34.3",
   "34.4",
   "35.1",
+  "35.2",
+  "35.3",
+  "35.4",
+  "35.5",
   "35.7",
-  "35.8"
+  "35.8",
+  "35.9",
+  "35.10",
+  "35.11"
  ],
  "processes": [
   {
@@ -475,11 +715,22 @@
     "built": 6,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 3,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.2",
@@ -516,11 +767,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 28,
     "built": 28
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.3",
@@ -557,11 +819,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 33,
     "built": 33
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.4",
@@ -598,11 +871,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 38,
     "built": 38
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.5",
@@ -639,11 +923,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.6",
@@ -680,11 +975,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 37,
     "built": 37
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.7",
@@ -721,11 +1027,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.1",
@@ -762,11 +1079,22 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 37,
     "built": 37
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.2",
@@ -803,11 +1131,22 @@
     "built": 4,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.3",
@@ -844,11 +1183,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 4,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.4",
@@ -885,11 +1235,22 @@
     "built": 6,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 30,
     "built": 30
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.5",
@@ -926,11 +1287,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 23,
     "built": 23
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.6",
@@ -967,11 +1339,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 24,
     "built": 24
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.7",
@@ -1008,11 +1391,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 38,
     "built": 38
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.1",
@@ -1049,11 +1443,22 @@
     "built": 2,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 26,
     "built": 26
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.2",
@@ -1090,11 +1495,22 @@
     "built": 34,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 65,
     "built": 65
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.3",
@@ -1131,11 +1547,22 @@
     "built": 15,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 45,
     "built": 45
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.4",
@@ -1172,11 +1599,22 @@
     "built": 8,
     "missing": []
    },
+   "hosted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 19,
     "built": 19
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.5",
@@ -1213,11 +1651,22 @@
     "built": 8,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 31,
     "built": 31
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.6",
@@ -1254,11 +1703,22 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 37,
     "built": 37
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.7",
@@ -1295,11 +1755,22 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 46,
     "built": 46
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.8",
@@ -1336,11 +1807,22 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.9",
@@ -1377,11 +1859,22 @@
     "built": 12,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "4.1",
@@ -1418,11 +1911,22 @@
     "built": 4,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 59,
     "built": 59
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "4.2",
@@ -1459,11 +1963,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "4.3",
@@ -1500,11 +2015,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "4.4",
@@ -1541,11 +2067,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "4.5",
@@ -1582,11 +2119,22 @@
     "built": 2,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.1",
@@ -1623,11 +2171,22 @@
     "built": 8,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.2",
@@ -1664,11 +2223,22 @@
     "built": 35,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 82,
     "built": 82
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.3",
@@ -1705,11 +2275,22 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.4",
@@ -1746,11 +2327,22 @@
     "built": 15,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 42,
     "built": 42
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.5",
@@ -1787,11 +2379,22 @@
     "built": 6,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 27,
     "built": 27
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.6",
@@ -1828,11 +2431,22 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 30,
     "built": 30
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.7",
@@ -1869,11 +2483,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 31,
     "built": 31
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "6.1",
@@ -1910,11 +2535,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 28,
     "built": 28
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "6.2",
@@ -1951,11 +2587,22 @@
     "built": 4,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 18,
     "built": 18
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "6.3",
@@ -1992,11 +2639,22 @@
     "built": 14,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 55,
     "built": 55
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "6.4",
@@ -2033,11 +2691,22 @@
     "built": 12,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 29,
     "built": 29
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "6.5",
@@ -2074,11 +2743,22 @@
     "built": 2,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 40,
     "built": 40
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.1",
@@ -2115,11 +2795,22 @@
     "built": 11,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 4,
+    "measured": true
+   },
    "units": {
     "spec": 56,
     "built": 56
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.2",
@@ -2156,11 +2847,22 @@
     "built": 9,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 46,
     "built": 46
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.3",
@@ -2197,11 +2899,22 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 20,
     "built": 20
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.4",
@@ -2238,11 +2951,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 31,
     "built": 31
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.5",
@@ -2279,11 +3003,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 22,
     "built": 22
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.6",
@@ -2320,11 +3055,22 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 31,
     "built": 31
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "8.1",
@@ -2361,11 +3107,22 @@
     "built": 9,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 49,
     "built": 49
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "8.2",
@@ -2402,11 +3159,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "8.3",
@@ -2443,11 +3211,22 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.1",
@@ -2484,11 +3263,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.2",
@@ -2525,11 +3315,22 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.3",
@@ -2566,11 +3367,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 15,
     "built": 15
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.4",
@@ -2607,11 +3419,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 13,
     "built": 13
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.5",
@@ -2648,11 +3471,22 @@
     "built": 9,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 28,
     "built": 28
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.6",
@@ -2689,11 +3523,22 @@
     "built": 2,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 34,
     "built": 34
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.7",
@@ -2730,11 +3575,22 @@
     "built": 8,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 50,
     "built": 50
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.8",
@@ -2771,11 +3627,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 34,
     "built": 34
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.9",
@@ -2812,11 +3679,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.1",
@@ -2853,11 +3731,22 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.2",
@@ -2894,11 +3783,22 @@
     "built": 6,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 39,
     "built": 39
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.3",
@@ -2935,11 +3835,22 @@
     "built": 2,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 14,
     "built": 14
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.4",
@@ -2976,11 +3887,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 26,
     "built": 26
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.5",
@@ -3017,11 +3939,22 @@
     "built": 11,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 37,
     "built": 37
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.6",
@@ -3058,11 +3991,22 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 31,
     "built": 31
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "11.1",
@@ -3099,11 +4043,22 @@
     "built": 9,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 60,
     "built": 60
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "11.2",
@@ -3140,11 +4095,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 50,
     "built": 50
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "11.3",
@@ -3181,11 +4147,22 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 48,
     "built": 48
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "11.4",
@@ -3222,11 +4199,22 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "11.5",
@@ -3263,11 +4251,22 @@
     "built": 9,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 43,
     "built": 43
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.1",
@@ -3304,11 +4303,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 52,
     "built": 52
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.2",
@@ -3345,11 +4355,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 49,
     "built": 49
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.3",
@@ -3386,11 +4407,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 27,
     "built": 27
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.4",
@@ -3427,11 +4459,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.5",
@@ -3468,11 +4511,22 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 52,
     "built": 52
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.6",
@@ -3509,11 +4563,22 @@
     "built": 9,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 50,
     "built": 50
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.7",
@@ -3550,11 +4615,22 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 26,
     "built": 26
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.8",
@@ -3591,11 +4667,22 @@
     "built": 20,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 65,
     "built": 65
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.9",
@@ -3632,11 +4719,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 17,
+    "built": 17,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 64,
     "built": 64
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.1",
@@ -3673,11 +4771,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 29,
     "built": 29
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.2",
@@ -3714,11 +4823,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.3",
@@ -3755,11 +4875,22 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 68,
     "built": 68
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.4",
@@ -3796,11 +4927,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.5",
@@ -3837,11 +4979,22 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 29,
     "built": 29
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.6",
@@ -3878,11 +5031,22 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 10,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 48,
     "built": 48
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.7",
@@ -3919,11 +5083,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 30,
     "built": 30
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.8",
@@ -3960,11 +5135,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.9",
@@ -4001,11 +5187,22 @@
     "built": 13,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "14.1",
@@ -4042,11 +5239,22 @@
     "built": 28,
     "missing": []
    },
+   "hosted": {
+    "spec": 17,
+    "built": 17,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 107,
     "built": 107
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "14.2",
@@ -4083,11 +5291,22 @@
     "built": 12,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 52,
     "built": 52
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "14.3",
@@ -4124,11 +5343,22 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "14.4",
@@ -4165,11 +5395,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 18,
     "built": 18
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "15.1",
@@ -4206,11 +5447,22 @@
     "built": 20,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 69,
     "built": 69
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "15.2",
@@ -4247,11 +5499,22 @@
     "built": 22,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 63,
     "built": 63
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "15.3",
@@ -4288,11 +5551,22 @@
     "built": 21,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 67,
     "built": 67
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "15.4",
@@ -4329,11 +5603,22 @@
     "built": 10,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 42,
     "built": 42
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "16.1",
@@ -4370,11 +5655,22 @@
     "built": 21,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 62,
     "built": 62
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "16.2",
@@ -4411,11 +5707,22 @@
     "built": 14,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 59,
     "built": 59
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "16.3",
@@ -4452,11 +5759,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "16.4",
@@ -4493,11 +5811,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 25,
     "built": 25
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "17.1",
@@ -4534,11 +5863,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 42,
     "built": 42
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "17.2",
@@ -4575,11 +5915,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 40,
     "built": 40
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "17.3",
@@ -4616,11 +5967,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 75,
     "built": 75
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "17.4",
@@ -4657,11 +6019,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.1",
@@ -4698,11 +6071,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 43,
     "built": 43
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.2",
@@ -4739,11 +6123,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 24,
     "built": 24
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.3",
@@ -4780,11 +6175,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 19,
     "built": 19
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.4",
@@ -4821,11 +6227,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 28,
     "built": 28
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.5",
@@ -4862,11 +6279,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 24,
     "built": 24
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.6",
@@ -4903,11 +6331,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 18,
     "built": 18
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.7",
@@ -4944,11 +6383,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 25,
     "built": 25
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "19.1",
@@ -4985,11 +6435,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "19.2",
@@ -5026,11 +6487,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 13,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 84,
     "built": 84
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "19.3",
@@ -5067,11 +6539,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 12,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 58,
     "built": 58
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "19.4",
@@ -5108,11 +6591,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 36,
     "built": 36
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "20.1",
@@ -5149,11 +6643,22 @@
     "built": 23,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 58,
     "built": 58
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "20.2",
@@ -5190,11 +6695,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 45,
     "built": 45
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "20.3",
@@ -5231,11 +6747,22 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "20.4",
@@ -5272,11 +6799,22 @@
     "built": 10,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.1",
@@ -5313,11 +6851,22 @@
     "built": 2,
     "missing": []
    },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 38,
     "built": 38
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.2",
@@ -5354,11 +6903,22 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 36,
     "built": 36
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.3",
@@ -5395,11 +6955,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 75,
     "built": 75
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.4",
@@ -5436,11 +7007,22 @@
     "built": 4,
     "missing": []
    },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.5",
@@ -5477,11 +7059,22 @@
     "built": 11,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 43,
     "built": 43
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.6",
@@ -5518,11 +7111,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 43,
     "built": 43
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.1",
@@ -5559,11 +7163,22 @@
     "built": 4,
     "missing": []
    },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 45,
     "built": 45
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.2",
@@ -5600,11 +7215,22 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.3",
@@ -5641,11 +7267,22 @@
     "built": 24,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 55,
     "built": 55
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.4",
@@ -5682,11 +7319,22 @@
     "built": 65,
     "missing": []
    },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 110,
     "built": 110
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.5",
@@ -5723,11 +7371,22 @@
     "built": 17,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 54,
     "built": 54
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.6",
@@ -5764,11 +7423,22 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 22,
+    "built": 22,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 64,
     "built": 64
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.1",
@@ -5805,11 +7475,22 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.2",
@@ -5846,11 +7527,22 @@
     "built": 24,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 58,
     "built": 58
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.3",
@@ -5887,11 +7579,22 @@
     "built": 6,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.4",
@@ -5928,11 +7631,22 @@
     "built": 29,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 66,
     "built": 66
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.5",
@@ -5969,11 +7683,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 12,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 37,
     "built": 37
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.6",
@@ -6010,11 +7735,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 17,
     "built": 17
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.7",
@@ -6051,11 +7787,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 17,
     "built": 17
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.1",
@@ -6092,11 +7839,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.2",
@@ -6133,11 +7891,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 19,
+    "built": 19,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.3",
@@ -6174,11 +7943,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 40,
     "built": 40
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.4",
@@ -6215,11 +7995,22 @@
     "built": 13,
     "missing": []
    },
+   "hosted": {
+    "spec": 22,
+    "built": 22,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 67,
     "built": 67
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.5",
@@ -6256,11 +8047,22 @@
     "built": 11,
     "missing": []
    },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 52,
     "built": 52
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.6",
@@ -6297,11 +8099,22 @@
     "built": 18,
     "missing": []
    },
+   "hosted": {
+    "spec": 18,
+    "built": 18,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 63,
     "built": 63
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "25.1",
@@ -6338,11 +8151,22 @@
     "built": 26,
     "missing": []
    },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 75,
     "built": 75
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "25.2",
@@ -6379,11 +8203,22 @@
     "built": 6,
     "missing": []
    },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 52,
     "built": 52
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "25.3",
@@ -6420,11 +8255,22 @@
     "built": 13,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "25.4",
@@ -6461,11 +8307,22 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 63,
     "built": 63
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "26.1",
@@ -6502,11 +8359,22 @@
     "built": 19,
     "missing": []
    },
+   "hosted": {
+    "spec": 17,
+    "built": 17,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 74,
     "built": 74
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "26.2",
@@ -6543,11 +8411,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 19,
+    "built": 19,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "26.3",
@@ -6584,11 +8463,22 @@
     "built": 30,
     "missing": []
    },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 77,
     "built": 77
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "26.4",
@@ -6625,11 +8515,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 46,
     "built": 46
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "27.1",
@@ -6666,11 +8567,22 @@
     "built": 28,
     "missing": []
    },
+   "hosted": {
+    "spec": 19,
+    "built": 19,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 87,
     "built": 87
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "27.2",
@@ -6707,11 +8619,22 @@
     "built": 57,
     "missing": []
    },
+   "hosted": {
+    "spec": 17,
+    "built": 17,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 110,
     "built": 110
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "28.1",
@@ -6748,11 +8671,22 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 20,
+    "built": 20,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 53,
     "built": 53
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "28.2",
@@ -6789,11 +8723,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 26,
+    "built": 26,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 68,
     "built": 68
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "28.3",
@@ -6830,11 +8775,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 39,
     "built": 39
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "28.4",
@@ -6871,11 +8827,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 20,
+    "built": 20,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 65,
     "built": 65
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "29.1",
@@ -6912,11 +8879,22 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 14,
+    "built": 14,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 61,
     "built": 61
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "29.2",
@@ -6953,11 +8931,22 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 18,
+    "built": 18,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 59,
     "built": 59
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "29.3",
@@ -6994,11 +8983,22 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "29.4",
@@ -7035,11 +9035,22 @@
     "built": 6,
     "missing": []
    },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 67,
     "built": 67
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "30.1",
@@ -7076,11 +9087,22 @@
     "built": 9,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "30.2",
@@ -7117,11 +9139,22 @@
     "built": 14,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 6,
+    "measured": true
+   },
    "units": {
     "spec": 59,
     "built": 59
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "30.3",
@@ -7158,11 +9191,22 @@
     "built": 20,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 55,
     "built": 55
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "30.4",
@@ -7199,11 +9243,22 @@
     "built": 10,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 53,
     "built": 53
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "31.1",
@@ -7240,11 +9295,22 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 43,
     "built": 43
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "31.2",
@@ -7281,11 +9347,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 42,
     "built": 42
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "31.3",
@@ -7322,11 +9399,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 21,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 55,
     "built": 55
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.1",
@@ -7363,11 +9451,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 3,
     "built": 3
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.2",
@@ -7404,11 +9503,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 45,
+    "built": 45,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 5,
+    "measured": true
+   },
    "units": {
     "spec": 94,
     "built": 94
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.3",
@@ -7445,11 +9555,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.4",
@@ -7486,11 +9607,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 10,
     "built": 10
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.5",
@@ -7527,11 +9659,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 13,
     "built": 13
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.6",
@@ -7568,11 +9711,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 12,
     "built": 12
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.7",
@@ -7609,11 +9763,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 13,
     "built": 13
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.8",
@@ -7650,18 +9815,29 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 11,
     "built": 11
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.9",
    "title": "Servicing: insurance, PMI, ARM, life events, requests",
    "tids": {
-    "spec": 11,
-    "built": 11,
+    "spec": 10,
+    "built": 10,
     "todo": 0,
     "missing": []
    },
@@ -7691,11 +9867,24 @@
     "built": 0,
     "missing": []
    },
-   "units": {
-    "spec": 11,
-    "built": 11
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
-   "pct": 100.0
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 10,
+    "built": 10
+   },
+   "pct": 100.0,
+   "retired": [
+    "32.9-T9"
+   ]
   },
   {
    "process": "32.10",
@@ -7732,11 +9921,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 11,
     "built": 11
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.11",
@@ -7773,11 +9973,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 10,
     "built": 10
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.12",
@@ -7814,11 +10025,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 8,
     "built": 8
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.13",
@@ -7855,18 +10077,29 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 16,
     "built": 16
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.14",
    "title": "Entry, sign-up and sign-in",
    "tids": {
-    "spec": 20,
-    "built": 20,
+    "spec": 13,
+    "built": 13,
     "todo": 0,
     "missing": []
    },
@@ -7896,18 +10129,37 @@
     "built": 0,
     "missing": []
    },
-   "units": {
-    "spec": 26,
-    "built": 26
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
    },
-   "pct": 100.0
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 19,
+    "built": 19
+   },
+   "pct": 100.0,
+   "retired": [
+    "32.14-T1",
+    "32.14-T2",
+    "32.14-T3",
+    "32.14-T4",
+    "32.14-T5",
+    "32.14-T6",
+    "32.14-T19"
+   ]
   },
   {
    "process": "32.16",
    "title": "The conversational product: an account, then a conversation, with cards only when the rules need one",
    "tids": {
-    "spec": 32,
-    "built": 32,
+    "spec": 27,
+    "built": 27,
     "todo": 0,
     "missing": []
    },
@@ -7937,18 +10189,35 @@
     "built": 0,
     "missing": []
    },
-   "units": {
-    "spec": 45,
-    "built": 45
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
    },
-   "pct": 100.0
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 40,
+    "built": 40
+   },
+   "pct": 100.0,
+   "retired": [
+    "32.16-T11",
+    "32.16-T12",
+    "32.16-T17",
+    "32.16-T18",
+    "32.16-T20"
+   ]
   },
   {
    "process": "32.17",
    "title": "The video agent: the same conversation, face to face, with the cards on the rail",
    "tids": {
-    "spec": 26,
-    "built": 26,
+    "spec": 12,
+    "built": 12,
     "todo": 0,
     "missing": []
    },
@@ -7978,11 +10247,37 @@
     "built": 0,
     "missing": []
    },
-   "units": {
-    "spec": 32,
-    "built": 32
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
    },
-   "pct": 100.0
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 18,
+    "built": 18
+   },
+   "pct": 100.0,
+   "retired": [
+    "32.17-T3",
+    "32.17-T4",
+    "32.17-T6",
+    "32.17-T10",
+    "32.17-T11",
+    "32.17-T12",
+    "32.17-T14",
+    "32.17-T15",
+    "32.17-T16",
+    "32.17-T19",
+    "32.17-T20",
+    "32.17-T22",
+    "32.17-T23",
+    "32.17-T26"
+   ]
   },
   {
    "process": "32.18",
@@ -8019,11 +10314,79 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 12,
     "built": 12
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
+  },
+  {
+   "process": "32.19",
+   "title": "The Apply product",
+   "tids": {
+    "spec": 18,
+    "built": 14,
+    "todo": 4,
+    "missing": [
+     13,
+     16,
+     17,
+     18
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 18,
+    "built": 14
+   },
+   "pct": 77.8,
+   "retired": []
   },
   {
    "process": "33.1",
@@ -8060,11 +10423,22 @@
     "built": 6,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 30,
     "built": 30
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "33.2",
@@ -8101,11 +10475,22 @@
     "built": 13,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 27,
     "built": 27
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "33.3",
@@ -8142,11 +10527,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 12,
     "built": 12
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "34.1",
@@ -8183,11 +10579,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 21,
     "built": 21
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "34.2",
@@ -8224,11 +10631,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 13,
     "built": 13
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "34.3",
@@ -8265,11 +10683,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 12,
     "built": 12
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "34.4",
@@ -8306,11 +10735,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 12,
     "built": 12
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "34.5",
@@ -8366,11 +10806,22 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 22,
     "built": 5
    },
-   "pct": 22.7
+   "pct": 22.7,
+   "retired": []
   },
   {
    "process": "35.1",
@@ -8407,66 +10858,42 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 7,
+    "measured": true
+   },
    "units": {
     "spec": 42,
     "built": 42
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.2",
    "title": "Documents and artifacts: the object store, the PDF writer, stored-byte integrity, legal holds, e-sign envelopes, the borrower viewer and print/mail manifests",
    "tids": {
     "spec": 18,
-    "built": 0,
-    "todo": 18,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18
-    ]
+    "built": 18,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 12,
-    "built": 2,
-    "missing": [
-     "document_access_log",
-     "document_blobs",
-     "document_holds",
-     "document_integrity_findings",
-     "document_integrity_runs",
-     "esign_envelope_documents",
-     "esign_envelopes",
-     "esign_signature_events",
-     "mail_manifest_pieces",
-     "mail_manifests"
-    ]
+    "built": 12,
+    "missing": []
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "SM_DOC_INTEGRITY_DAILY",
-     "SM_DOC_WORM_DRAIN_1D",
-     "SM_ESIGN_ENVELOPE_EXPIRY_30",
-     "SM_MAIL_MANIFEST_2BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8475,91 +10902,50 @@
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "documents.render",
-     "documents.store",
-     "documents.open",
-     "documents.verify",
-     "documents.hold",
-     "documents.dispose",
-     "esign.envelope.create",
-     "esign.envelope.send",
-     "esign.envelope.sign",
-     "esign.envelope.void",
-     "mail.batch",
-     "mail.manifest.ingest",
-     "mail.fallback"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 11,
+    "built": 11,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 13,
     "built": 0,
-    "missing": [
-     "$1,234.56",
-     "$1,912.65",
-     "$1,914.67",
-     "$1,916.67",
-     "$116.71",
-     "$2,334.29",
-     "$2,946.79",
-     "$400,000.00",
-     "$5,743.99",
-     "$6,010.29",
-     "$612.50"
-    ]
+    "measured": true
+   },
+   "persisted": {
+    "spec": 12,
+    "built": 2,
+    "measured": true
    },
    "units": {
     "spec": 58,
-    "built": 2
+    "built": 58
    },
-   "pct": 3.4
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.3",
    "title": "Cycles, jobs and receipts: the planner, the jobs table, `cycles.run_unit` on the bus and the registry of every scheduled cycle",
    "tids": {
     "spec": 16,
-    "built": 0,
-    "todo": 16,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "cycle_receipts",
-     "cycle_registry",
-     "cycle_runs",
-     "job_events",
-     "jobs"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 3,
-    "built": 1,
+    "built": 3,
     "armable": 3,
-    "missing": [
-     "SM_CYCLE_PLANNER_DAILY",
-     "SM_CYCLE_RUN_STALLED_1D"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8568,79 +10954,50 @@
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "cycles.registry",
-     "cycles.plan",
-     "cycles.run_unit",
-     "cycles.receipt",
-     "cycles.retry",
-     "cycles.escalate",
-     "jobs.list",
-     "jobs.requeue",
-     "writeDecision"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 6,
-    "missing": [
-     "$2,125.74"
-    ]
+    "built": 7,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
    },
    "units": {
     "spec": 40,
-    "built": 7
+    "built": 40
    },
-   "pct": 17.5
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.4",
    "title": "Month-end and year-end close: close periods, the dependency-ordered chain, the balance attestation, reopen, and the tax-year close that drives 1098 and 1099",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "close_attestations",
-     "close_period_events",
-     "close_period_steps",
-     "close_periods",
-     "close_reopens",
-     "tax_year_closes"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "SM_CLOSE_ATTEST_BD5",
-     "SM_CLOSE_PERIOD_OPEN_BD1",
-     "SM_CLOSE_STEP_STALLED_2BD",
-     "SM_TAX_YEAR_CLOSE_3BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8649,102 +11006,50 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "close.open",
-     "close.plan",
-     "close.step.start",
-     "close.step.complete",
-     "close.step.skip",
-     "close.board",
-     "close.attest",
-     "close.review",
-     "close.reopen",
-     "close.tax_year",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 19,
-    "built": 2,
-    "missing": [
-     "$1,233,000.00",
-     "$1,250.00",
-     "$1,253,050.55",
-     "$1,254,300.55",
-     "$1,265,500.55",
-     "$1,266,750.55",
-     "$12,450.00",
-     "$22,580.00",
-     "$23,412.55",
-     "$3,210.15",
-     "$33,695.07",
-     "$412.40",
-     "$45,000.00",
-     "$6,870.40",
-     "$600.00",
-     "$8,120.40",
-     "$9,870.12"
-    ]
+    "built": 19,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 11,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 55,
-    "built": 2
+    "built": 55
    },
-   "pct": 3.6
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.5",
    "title": "The installment schedule and the daily cashiering cycle: `loan_installments` at fund and at transfer boarding, the whole-book 2.1/2.7/2.3 sweep, lockbox ingest, ACH origination and NACHA returns as cycles, and the per-loan jurisdiction, time-zone and servicer-identity configuration",
    "tids": {
     "spec": 16,
-    "built": 0,
-    "todo": 16,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
-    "built": 1,
-    "missing": [
-     "ach_return_files",
-     "cashiering_unit_runs",
-     "installment_schedule_runs",
-     "loan_servicing_configs",
-     "lockbox_batches",
-     "lockbox_items",
-     "servicer_profiles"
-    ]
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 8,
-    "built": 1,
+    "built": 8,
     "armable": 8,
-    "missing": [
-     "SM_ACH_FILE_BUILD_1BD",
-     "SM_ACH_RETURN_ACTIONED_1BD",
-     "SM_CASHIERING_DAILY_RECEIPT_1D",
-     "SM_INSTALLMENT_REPROJECT_1BD",
-     "SM_INSTALLMENT_SCHEDULE_AT_BOARD_0",
-     "SM_LOAN_SERVICING_CONFIG_AT_BOARD_0",
-     "SM_LOCKBOX_BATCH_POSTED_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8753,77 +11058,30 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "installments.write",
-     "installments.reproject",
-     "installments.read",
-     "cashiering.run_unit",
-     "lockbox.ingest",
-     "lockbox.item.resolve",
-     "ach.file.build",
-     "ach.returns.ingest",
-     "ach.return.action",
-     "servicing_config.write",
-     "servicer_profile.write",
-     "writeDecision"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 53,
-    "built": 9,
-    "missing": [
-     "$1,351.71",
-     "$1,500.00",
-     "$1,517.11",
-     "$1,519.15",
-     "$1,580.17",
-     "$1,890.67",
-     "$1,896.20",
-     "$1,900.91",
-     "$1,971.20",
-     "$10.24",
-     "$100.00",
-     "$17.27",
-     "$2,292.57",
-     "$2,308.50",
-     "$2,334.29",
-     "$2,476.44",
-     "$2,855.56",
-     "$2,858.33",
-     "$2,946.79",
-     "$228.46",
-     "$249,218.31",
-     "$279,702.10",
-     "$280,081.19",
-     "$280,458.24",
-     "$3,088.94",
-     "$3,384.35",
-     "$3,401.62",
-     "$300,000.00",
-     "$370,543.62",
-     "$371,048.86",
-     "$377.05",
-     "$379.09",
-     "$4.71",
-     "$400,000.00",
-     "$412.30",
-     "$505.24",
-     "$544.29",
-     "$547.06",
-     "$558,908.65",
-     "$559,455.71",
-     "$6,000.07",
-     "$6,001.07",
-     "$612.50",
-     "$664,942.20"
-    ]
+    "built": 53,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
    },
    "units": {
     "spec": 97,
-    "built": 11
+    "built": 97
    },
-   "pct": 11.3
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.6",
@@ -8867,10 +11125,9 @@
    },
    "timers": {
     "spec": 5,
-    "built": 2,
+    "built": 3,
     "armable": 5,
     "missing": [
-     "SM_ORCH_OPEN_BOOK_DAILY",
      "SM_ORCH_PURCHASE_RECON_1BD",
      "SM_ORCH_STEP_STALLED_2BD"
     ]
@@ -8899,7 +11156,7 @@
    },
    "figures": {
     "spec": 40,
-    "built": 10,
+    "built": 12,
     "missing": [
      "$1,067.72",
      "$1,096.67",
@@ -8909,7 +11166,6 @@
      "$10,052.69",
      "$2,774.00",
      "$3,485.00",
-     "$4,090.12",
      "$403,760.00",
      "$404,852.72",
      "$410,339.52",
@@ -8923,7 +11179,6 @@
      "$564,503.33",
      "$566,300.00",
      "$6,579.52",
-     "$687.50",
      "$7,732.38",
      "$70.10",
      "$71.96",
@@ -8933,11 +11188,22 @@
      "$935.48"
     ]
    },
+   "hosted": {
+    "spec": 11,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 80,
-    "built": 12
+    "built": 15
    },
-   "pct": 15.0
+   "pct": 18.8,
+   "retired": []
   },
   {
    "process": "35.7",
@@ -8974,11 +11240,22 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.8",
@@ -9015,65 +11292,42 @@
     "built": 22,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 63,
     "built": 63
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.9",
    "title": "Default operations over time: cases progressed by the cycles and the screens \u2014 referral, milestones, docket reactions, executed breach actions, claims filed",
    "tids": {
     "spec": 17,
-    "built": 0,
-    "todo": 17,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17
-    ]
+    "built": 17,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "breach_action_registry",
-     "breach_actions",
-     "case_milestone_expectations",
-     "case_timelines",
-     "claim_candidates",
-     "default_case_daily_runs",
-     "docket_reactions",
-     "firm_dispatches"
-    ]
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 6,
-    "built": 0,
+    "built": 6,
     "armable": 6,
-    "missing": [
-     "SM_BREACH_ACTION_RECON_DAILY",
-     "SM_CASE_MILESTONE_OVERDUE_5BD",
-     "SM_CASE_REFERRAL_DECISION_2BD",
-     "SM_CLAIM_PACKAGE_5BD",
-     "SM_DEFAULT_CASE_DAILY",
-     "SM_DOCKET_REACTION_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9082,109 +11336,50 @@
    },
    "tools": {
     "spec": 14,
-    "built": 0,
-    "missing": [
-     "case.timeline",
-     "case.progress",
-     "case.refer",
-     "case.milestone.expect",
-     "case.milestone.record",
-     "docket.sync",
-     "docket.react",
-     "firm.dispatch",
-     "firm.inbound",
-     "breach.execute",
-     "breach.recon",
-     "claims.sweep",
-     "claims.package",
-     "writeDecision"
-    ]
+    "built": 14,
+    "missing": []
    },
    "figures": {
     "spec": 27,
-    "built": 1,
-    "missing": [
-     "$1,062.00",
-     "$129.12",
-     "$163,920.44",
-     "$178,525.21",
-     "$180.00",
-     "$187,450.00",
-     "$2,300.00",
-     "$2,865.00",
-     "$2,914.60",
-     "$3,263.68",
-     "$3,461.64",
-     "$385.00",
-     "$4,527.05",
-     "$53,557.56",
-     "$565.00",
-     "$6,000.00",
-     "$7,069.05",
-     "$7,198.17",
-     "$7,406.60",
-     "$7,569.46",
-     "$750.67",
-     "$785.45",
-     "$8,196.02",
-     "$8,320.13",
-     "$883.53",
-     "$98.17"
-    ]
+    "built": 27,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 14,
+    "built": 14,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 72,
-    "built": 1
+    "built": 72
    },
-   "pct": 1.4
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.10",
    "title": "The refinance close of the loop: the prior loan's payoff quote, settlement and ledger zeroing, lien release, escrow disposition and retirement \u2014 whether Supermortgage services it or a partner does \u2014 the partner's notification and the new loan linked, replacing the status flip",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "partner_retirement_notifications",
-     "prior_loan_retirements",
-     "refinance_closeout_daily_receipts",
-     "refinance_closeout_steps",
-     "refinance_closeouts"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 0,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_REFI_CLOSEOUT_BOARD_DAILY",
-     "SM_REFI_CLOSEOUT_STALLED_2BD",
-     "SM_REFI_ESCROW_CREDIT_0",
-     "SM_REFI_PARTNER_CONFIRM_21",
-     "SM_REFI_PRIOR_SETTLE_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9193,110 +11388,50 @@
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "closeout.open",
-     "closeout.pass",
-     "closeout.quote",
-     "closeout.settle",
-     "closeout.escrow",
-     "closeout.lien_release",
-     "closeout.retire",
-     "closeout.notify_partner",
-     "closeout.confirm_partner",
-     "closeout.hold",
-     "closeout.resume",
-     "closeout.board",
-     "writeDecision"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 27,
-    "built": 3,
-    "missing": [
-     "$107.30",
-     "$2,521.38",
-     "$2,540.11",
-     "$2,628.68",
-     "$2,666.59",
-     "$2,750.00",
-     "$2,802.88",
-     "$3,069.79",
-     "$3,219.83",
-     "$3,437.50",
-     "$403.20",
-     "$440,962.93",
-     "$441,366.13",
-     "$443,503.04",
-     "$443,765.81",
-     "$450,000.00",
-     "$559,455.71",
-     "$561,977.09",
-     "$562,084.39",
-     "$575,000.00",
-     "$612.50",
-     "$687.50",
-     "$87.59",
-     "$93.88"
-    ]
+    "built": 27,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 65,
-    "built": 3
+    "built": 65
    },
-   "pct": 4.6
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.11",
    "title": "Operations stewardship and hosted measurement: the ops steward over cycles, exceptions and the outbox, the daily ops report, and the audit's hosted and persisted columns",
    "tids": {
     "spec": 18,
-    "built": 0,
-    "todo": 18,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18
-    ]
+    "built": 18,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "exception_triages",
-     "hosted_probe_runs",
-     "ops_daily_reports",
-     "ops_exceptions",
-     "persisted_measurement_runs",
-     "persisted_measurements"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 0,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_HOSTED_PROBE_WEEKLY",
-     "SM_OPS_ADAPTER_DOWN_1H",
-     "SM_OPS_CYCLE_MISSED_2H",
-     "SM_OPS_EXCEPTION_TRIAGE_1BD",
-     "SM_OPS_REPORT_DAILY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9305,32 +11440,30 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "ops.cycles.watch",
-     "ops.exceptions.list",
-     "ops.exceptions.classify",
-     "ops.exceptions.requeue",
-     "ops.exceptions.assign",
-     "ops.exceptions.resolve",
-     "ops.report",
-     "ops.runbook.read",
-     "audit.hosted.run",
-     "audit.hosted.report",
-     "audit.persisted.count",
-     "writeDecision"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 0,
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 3,
+    "measured": true
+   },
    "units": {
     "spec": 41,
-    "built": 0
+    "built": 41
    },
-   "pct": 0.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.12",
@@ -9379,13 +11512,11 @@
    },
    "timers": {
     "spec": 6,
-    "built": 0,
+    "built": 2,
     "armable": 6,
     "missing": [
      "SM_NONPROD_REAL_DATA_PURGE_1BD",
      "SM_PROD_GO_LIVE_ATTEST_GATE",
-     "SM_PROD_PARALLEL_RUN_DAILY",
-     "SM_PROD_POSTURE_DAILY",
      "SM_PROD_POSTURE_DRIFT_1BD",
      "SM_PROD_RESTORE_DRILL_90D"
     ]
@@ -9417,19 +11548,391 @@
    },
    "figures": {
     "spec": 7,
-    "built": 3,
+    "built": 4,
     "missing": [
-     "$1,250.00",
      "$3,412.92",
      "$3,417.92",
      "$67.50"
     ]
    },
+   "hosted": {
+    "spec": 14,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 12,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 58,
-    "built": 5
+    "built": 8
    },
-   "pct": 8.6
+   "pct": 13.8,
+   "retired": []
+  },
+  {
+   "process": "36.1",
+   "title": "Partner identity, doors, roles, action log, tenant scope",
+   "tids": {
+    "spec": 8,
+    "built": 0,
+    "todo": 8,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "partner_actions",
+     "partner_credentials",
+     "partner_sessions",
+     "partner_users"
+    ]
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_SM_PARTNER_USER_INVITE"
+    ]
+   },
+   "tools": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "partner.user.invite"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 14,
+    "built": 0
+   },
+   "pct": 0.0,
+   "retired": []
+  },
+  {
+   "process": "36.2",
+   "title": "Partner tape drop on book.import: the upload with its report, the import history, the status line and the holds",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 5,
+    "built": 0
+   },
+   "pct": 0.0,
+   "retired": []
+  },
+  {
+   "process": "36.3",
+   "title": "The eligibility board: three buckets projected from the daily review",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "$3,069.79",
+     "$441,366.13",
+     "$605,000.00"
+    ]
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 8,
+    "built": 0
+   },
+   "pct": 0.0,
+   "retired": []
+  },
+  {
+   "process": "36.4",
+   "title": "The refinance pipeline feed: members in motion, projected from the rows that already exist",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 5,
+    "built": 0
+   },
+   "pct": 0.0,
+   "retired": []
+  },
+  {
+   "process": "36.5",
+   "title": "Home, the daily report and the two-mode loan page",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 5,
+    "built": 0
+   },
+   "pct": 0.0,
+   "retired": []
+  },
+  {
+   "process": "36.6",
+   "title": "The post-refinance serviced pane contract: dark in V1, one refusal everywhere",
+   "tids": {
+    "spec": 3,
+    "built": 0,
+    "todo": 3,
+    "missing": [
+     1,
+     2,
+     3
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "units": {
+    "spec": 3,
+    "built": 0
+   },
+   "pct": 0.0,
+   "retired": []
   }
  ]
 }

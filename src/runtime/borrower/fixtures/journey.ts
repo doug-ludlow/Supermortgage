@@ -19,6 +19,8 @@ import { newDecisionFile } from "../../../domain/application/ops-21-6.ts";
 import { REFI_OFFER_SAMPLE } from "../../../notices/authored/section20-2.ts";
 import type { Runtime } from "../../app.ts";
 import { loanCashState } from "../../servicing.ts";
+import { prepaidInterest } from "../../../domain/orig-boarding/ops-30-2.ts";
+import type { PlainDate } from "../../../kernel/calendar/date.ts";
 
 type Actor = { kind: "agent" | "human" | "system"; id: string; role?: string };
 export const INTAKE: Actor = { kind: "agent", id: "intake" }; const PRICING: Actor = { kind: "agent", id: "pricing" }; const DISCLOSURE: Actor = { kind: "agent", id: "disclosure" }; const VERIFICATION: Actor = { kind: "agent", id: "verification" }; const UNDERWRITER: Actor = { kind: "agent", id: "underwriter" }; const VALUATION: Actor = { kind: "agent", id: "valuation" }; const CLOSER: Actor = { kind: "agent", id: "title-closing" }; const FUNDER: Actor = { kind: "agent", id: "funder" }; const FRAUD_RISK: Actor = { kind: "agent", id: "fraud-risk" }; const COMPLIANCE: Actor = { kind: "agent", id: "compliance-tester" }; const FUNDING: Actor = { kind: "agent", id: "funding" }; export const CASHIERING: Actor = { kind: "agent", id: "cashiering" }; const PAYOFF: Actor = { kind: "agent", id: "payoff-release" };
@@ -446,7 +448,7 @@ export class Journey {
   async firstPayment(): Promise<void> {
     const { runtime } = this.o; const loanId = this.loanId; this.clock.set("2026-12-30T17:00:00.000Z");
     const PAY_ID = `PAY-${loanId.slice(0, 8)}`;
-    await runtime.execute({ process: "2.1", name: "payments.read/write", loanId, actor: CASHIERING, input: { op: "write", id: PAY_ID, loan_id: loanId, data: { payment_id: PAY_ID, loan_id: loanId, amount_cents: 409_012n, received_on: "2026-12-30", credited_as_of: "2026-12-30", channel: "lockbox", designation: "contractual", status: "posted", identification_confidence: 0.99, conforming: true } } });
+    await runtime.execute({ process: "2.1", name: "payments.read/write", loanId, actor: CASHIERING, input: { op: "write", id: PAY_ID, loan_id: loanId, data: { payment_id: PAY_ID, loan_id: loanId, amount_cents: 409_012n, received_on: "2026-12-30", credited_as_of: "2026-12-30", channel: "lockbox", designation: "contractual", status: "posted", installments: ["2027-01-01"], identification_confidence: 0.99, conforming: true } } });   // installments: the January 1 installment this payment satisfies (2.x's cash state reads the paid-through date from 2.1's row)
     const loanAcct = (account: string) => ({ scope: "loan" as const, loanId, account: account as "principal" }); const cust = (id: string, account: string) => ({ scope: "custodial" as const, custodialAccountId: id, account: account as "clearing_cash" });
     const post = (description: string, lines: { account: ReturnType<typeof loanAcct> | ReturnType<typeof cust>; amountCents: bigint; ruleRef: string }[]) => runtime.execute({ process: "2.1", name: "ledger.post", loanId, actor: CASHIERING, input: { loan_id: loanId, via: "payment.post", entry_set: { effectiveDate: "2026-12-30", description, lines } } });
     await post(`receipt ${PAY_ID}`, [{ account: cust(this.custodial.clearing, "clearing_cash"), amountCents: 409_012n, ruleRef: "2.1:r8:receipt" }, { account: loanAcct("suspense_unapplied"), amountCents: -409_012n, ruleRef: "2.1:r8:receipt" }]);
@@ -469,8 +471,8 @@ export class Journey {
     const o = posted.output as { outcome: string; installments: string[] };
     return { payment_id, outcome: o.outcome, installments: o.installments };
   }
-  /** e: the 16.1 quote (Jan 20, 2027), the wire on Jan 29 and 16.2's postPayoff → `loan.paid_in_full`. */
-  async payoff(): Promise<void> {
+  /** e (pre-35.10, a plain payoff): the 16.1 quote (Jan 20, 2027), the wire on Jan 29 and 16.2's postPayoff → `loan.paid_in_full` — the borrower-surface tests' "paid off" state (32.13, 32.16, record.test); the refinance's own close of the loop is `refinanceAgain()` + `payoff()`. */
+  async payoffDirect(): Promise<void> {
     const { runtime, db } = this.o; const loanId = this.loanId; const QUOTE_ID = `pq-${loanId.slice(0, 8)}`; const REQUEST_ID = `pr-${loanId.slice(0, 8)}`;
     this.clock.set("2027-01-20T16:00:00.000Z");
     const quote = await runtime.execute({ process: "16.1", name: "computePayoffQuote", loanId, actor: PAYOFF, input: { loan_id: loanId, quote_id: QUOTE_ID, request_id: REQUEST_ID, channel: "email", received_on: "2027-01-20", requester_type: "borrower", upb_cents: 55_945_571n, rate_pct: "6.125", lpi_due: "2027-01-01", good_through: "2027-01-29", state: "AZ", ledger_snapshot_id: "ledger-life-1" } });
@@ -483,6 +485,68 @@ export class Journey {
     const escrowBalance = -BigInt((await db.query<{ s: string }>(`SELECT coalesce(sum(amount_cents), 0)::text AS s FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = 'escrow'`, [loanId]))[0]!.s);
     const posted = await runtime.execute({ process: "16.2", name: "postPayoff", loanId, actor: PAYOFF, input: { loan_id: loanId, funds_id: m.funds_id, amount_cents: q.total_cents, payoff_date: "2027-01-29", remittance_type: "AA", escrowed: true, buckets: { accrued_interest: q.interest_cents, principal: 55_945_571n, escrow_balance: escrowBalance }, custodial_pi_id: this.custodial.pi, custodial_ti_id: this.custodial.ti, custodial_clearing_id: this.custodial.clearing } });
     assert.ok(posted.events.some((e) => e.type === "loan.paid_in_full"));
+  }
+  // ---- worked example A (35.10): the funded loan refinanced again — the $575,000 / 5.375% loan disbursing Fri 2027-01-29 pays it off through the refinance closeout
+  refiAppId = ""; readonly REFI_FUNDING_ID = `F2-${this.R}`; readonly REFI_CLOSING_ID = `closing-2-${this.R}`;
+  private VERIFIED_WIRE_2 = () => ({ ...this.VERIFIED_WIRE, verification_id: `WV2-${this.R}`, verified_at: "2027-01-15T15:00:00.000Z", expires_at: "2027-02-15T15:00:00.000Z" });
+  private REFI_FUNDING_FACTS = (as_of: string) => { const f = this.FUNDING_FACTS(as_of); return { ...f, funding: { ...f.funding, disbursement_date: "2027-01-29", release_date: "2027-01-29", note_date: "2027-01-25" },
+    rescission: { ...f.rescission, expires_at: "2027-01-29T06:59:59.000Z", reasonably_satisfied_at: "2027-01-28T15:00:00.000Z", now: as_of }, hazard: { ...f.hazard, effective_date: "2027-01-29" }, vvoe: { verified_on: "2027-01-20", self_employed: false },
+    wire: { ...f.wire, verified_at: this.VERIFIED_WIRE_2().verified_at, as_of }, payoffs: [{ liability_id: `prior-loan:${this.loanId}`, status: "received", good_through_date: "2027-01-29" }], first_payment: { first_payment_date: "2027-03-01" }, commitment: { active: true, expires_on: "2027-03-01" } }; };
+  /**
+   * 35.10 worked example A / T14: the refinance of the funded loan (a second application with `prior_loan_id` = this.loanId, opened over HTTP), 26.2's schedule (consummation Mon 2027-01-25)
+   * and 26.3's funding chain to `confirmDisbursement` on Fri 2027-01-29 — the final settlement statement's payoff line pays the prior loan (rule 4). Nothing here calls 16.1, 16.2, 16.3 or 3.5:
+   * the closeout pass (POST /v1/sweep) quotes, settles, retires and releases the prior loan and boards the new one from the record.
+   */
+  async refinanceAgain(): Promise<string> {
+    const clock = this.clock; const R = this.R; const priorLoanId = this.loanId; assert.ok(priorLoanId, "board() first");
+    clock.set(MST("2027-01-05", "10:00"));
+    const opened = await this.call("POST", "/v1/applications", { actor: INTAKE, application: { partner_party_id: this.o.partnerPartyId, channel: "refi_trigger", transaction_type: "limited_cash_out", occupancy: "primary", prior_loan_id: priorLoanId,
+      borrowers: [{ legal_name: "Alex Borrower", tin_last4: "6789", contact: { email: this.o.borrowerEmail } }, { legal_name: "Blake Borrower", borrower_role: "co_borrower", tin_last4: "4321", contact: { email: this.o.coBorrowerEmail } }],
+      property: { address_line1: "100 N Central Ave", city: "Phoenix", state: "AZ", postal_code: "85004", county: "Maricopa", property_type: "sfr", units: 1 } } });
+    assert.equal(opened.status, 200, JSON.stringify(opened.body).slice(0, 600));
+    this.refiAppId = (opened.body["application"] as { id: string }).id; const scope = { app: this.refiAppId }; const F = this.REFI_FUNDING_ID;
+    // 26.2: the closing scheduled Mon Jan 25, 2027 14:00 MST
+    clock.set(MST("2027-01-19", "10:00"));
+    await this.tool(scope, "26.2", "runPreSessionChecks", { op: "schedule", closing_id: this.REFI_CLOSING_ID, application_id: this.refiAppId, scheduled_at: MST("2027-01-25", "14:00"), time_zone: "America/Phoenix", state: "AZ", county_fips: "04013", transaction_type: "limited_cash_out", dry_state: true, settlement_agent_party_id: this.AGENT_PARTY, notary_party_id: this.NOTARY.party_id, ron_provider_party_id: "P-RON-1", eligibility: this.ELIGIBILITY, signers: this.SIGNERS }, CLOSER);
+    // 26.3: the funding calendar opened Wed Jan 27, the worksheet (30.2's prepaid-interest calculator for the CD figure) reconciled to the settlement statement
+    clock.set(EST("2027-01-27", "11:00"));
+    await this.tool(scope, "26.3", "computeDates", { op: "open", funding_id: F, state: "AZ", transaction_type: "limited_cash_out", time_zone: "America/Phoenix", consummation_at: MST("2027-01-25", "14:26"), review_completed_on: "2027-01-26", partner_id: this.PARTNER_ID, partner_loan_number: "PL-1002", gross_loan_cents: "57500000", note_rate_pct: "5.375", note_first_payment_date: "2027-03-01" }, FUNDER);
+    const prepaid = prepaidInterest(57_500_000n, "5.375", "2027-01-29" as PlainDate).prepaid_interest_cents;
+    await this.tool(scope, "26.3", "buildFundingWorksheet", { funding_id: F, version: 1, cd_version: 1, gross_loan_cents: "57500000", prepaid_interest_cents: prepaid.toString(), escrow_deposit_cents: "343750", lender_credits_cents: "0" }, FUNDER);
+    await this.tool(scope, "26.3", "reconcileToSettlementStatement", { funding_id: F, worksheet_id: `${F}:ws:1`, agent_requested_net_cents: (57_500_000n - prepaid - 343_750n).toString() }, FUNDER);
+    // Fri Jan 29: conditions, the advance, the wire, the agent's receipt, 26.3's confirmDisbursement with the settlement statement's payoff line for the prior loan → loan.funded
+    clock.set(EST("2027-01-29", "08:05")); const conditions = await this.tool(scope, "26.3", "evaluateFundingConditions", { funding_id: F, facts: this.REFI_FUNDING_FACTS(EST("2027-01-29", "08:05")) }, FUNDER); assert.equal(conditions.output["passed"], true, JSON.stringify(conditions.output["blocking_codes"]));
+    clock.set(EST("2027-01-29", "08:12")); await this.tool(scope, "26.3", "requestWarehouseAdvance", { funding_id: F, conditions: conditions.output, rescission: this.REFI_FUNDING_FACTS(EST("2027-01-29", "08:12")).rescission, fraud_hold: { fraud_hold: false }, ptf: { ptf_cleared: true }, cash_to_close: { worksheet: { reconciled_to_cd: true, sufficient: true } }, gifts: [] }, FUNDER);
+    await this.tool(scope, "26.3", "requestWarehouseAdvance", { funding_id: F, op: "advance_approved", advance_id: `ADV2-${R}` }, FUNDER);
+    clock.set(EST("2027-01-29", "08:20")); const wireId = `W2-${R}`;
+    await this.tool(scope, "26.3", "prepareWire", { funding_id: F, wire_id: wireId, record: this.VERIFIED_WIRE_2(), instructions_hash: this.VERIFIED_WIRE.instructions_hash, instructions_source: "verified_record", value_date: "2027-01-29", prepared_at: EST("2027-01-29", "08:20"), run_id: "run-funder-2", editors: ["u-analyst"], borrower_last_name: "Borrower", property_short: "100 N Central Ave, Phoenix AZ", funding_account_ref_hash: "sha256:funding", closing_documents: [] }, FUNDER);
+    clock.set(EST("2027-01-29", "09:40")); await this.tool(scope, "26.3", "prepareWire", { funding_id: F, op: "release", wire_id: wireId, bank_ref: "BK-2", released_at: EST("2027-01-29", "09:40") }, APPROVER);
+    await this.tool(scope, "26.3", "prepareWire", { funding_id: F, op: "accept", wire_id: wireId, imad: "20270129B1QGC01R000456", accepted_at: EST("2027-01-29", "09:41") }, FUNDER);
+    clock.set(EST("2027-01-29", "13:00")); await this.tool(scope, "26.3", "notifySettlementAgent", { funding_id: F, op: "agent_receipt", funds_received_by_agent_at: EST("2027-01-29", "13:00") }, FUNDER);
+    clock.set("2027-01-29T18:40:00.000Z");
+    const funded = await this.tool(scope, "26.3", "confirmDisbursement", { funding_id: F, disbursement_date: "2027-01-29", confirmed_at: "2027-01-29T18:40:00.000Z", source: "final_settlement_statement", evidence_document_id: `DOC-FSS-2-${R}`, escrow_deposit_cents: "343750",
+      payoff_lines: [{ payoff_demand_id: `${this.refiAppId}:prior-loan:${priorLoanId}`, liability_id: `prior-loan:${priorLoanId}`, payee_party_id: this.o.partnerPartyId, amount_cents: "56208439", wire_reference: `INTERNAL-${R}` }] }, FUNDER);
+    assert.ok(funded.events.some((e) => e.type === "loan.funded"), JSON.stringify(funded.events.map((e) => e.type)));
+    return this.refiAppId;
+  }
+  /**
+   * e (35.10 T14): after `refinanceAgain()` and two sweeps (POST /v1/sweep) this phase asserts the rows the closeout wrote — it executes no tool. The prior loan (this.loanId) reads
+   * paid_off with 16.2's settlement and 35.10's retirement row, `loans.refinanced_by_loan_id` = the new loan = `applications.loan_id`; the new loan is active, links back to the application
+   * (`origination_application_id`) and its loan_terms carry P&I $3,219.83 ($575,000 at 5.375% / 360).
+   */
+  async payoff(): Promise<{ newLoanId: string; settlementId: string }> {
+    const db = this.o.db; const priorLoanId = this.loanId; const appId = this.refiAppId; assert.ok(appId, "refinanceAgain() first");
+    const prior = (await db.query<{ status: string; refinanced_by_loan_id: string | null; retired_reason: string | null }>(`SELECT status::text AS status, refinanced_by_loan_id::text AS refinanced_by_loan_id, retired_reason FROM loans WHERE id = $1`, [priorLoanId]))[0]!;
+    assert.equal(prior.status, "paid_off", "the prior loan is paid off by the refinance closeout (35.10)"); assert.equal(prior.retired_reason, "refinance_same_servicer");
+    const settlement = (await db.query<{ id: string; data: unknown }>(`SELECT id, data FROM entity_current WHERE kind = 'payoff_settlements' AND (data->>'loan_id') = $1`, [priorLoanId]))[0]; assert.ok(settlement, "16.2's payoff_settlements row");
+    assert.equal(decodeEntityData(settlement.data)["status"], "paid_in_full");
+    const retirements = await db.query<{ new_loan_id: string | null; retired_on: string }>(`SELECT new_loan_id::text AS new_loan_id, retired_on::text AS retired_on FROM prior_loan_retirements WHERE prior_loan_id = $1 AND retired_on IS NOT NULL`, [priorLoanId]);
+    assert.equal(retirements.length, 1, "one prior_loan_retirements row"); assert.equal(retirements[0]!.retired_on, "2027-01-29");
+    const app = (await db.query<{ loan_id: string | null }>(`SELECT loan_id::text AS loan_id FROM applications WHERE id = $1`, [appId]))[0]!;
+    assert.ok(app.loan_id, "applications.loan_id: the new loan"); assert.equal(prior.refinanced_by_loan_id, app.loan_id, "loans.refinanced_by_loan_id = the new loan"); assert.equal(retirements[0]!.new_loan_id, app.loan_id);
+    const newLoan = (await db.query<{ status: string; origination_application_id: string | null; pi_cents: string }>(`SELECT l.status::text AS status, l.origination_application_id::text AS origination_application_id, t.pi_cents::text AS pi_cents FROM loans l JOIN loan_terms t ON t.loan_id = l.id AND t.effective_to IS NULL WHERE l.id = $1`, [app.loan_id]))[0]!;
+    assert.equal(newLoan.status, "active"); assert.equal(newLoan.origination_application_id, appId); assert.equal(newLoan.pi_cents, "321983", "P&I $3,219.83 ($575,000 at 5.375% / 360)");
+    return { newLoanId: app.loan_id, settlementId: settlement.id };
   }
   /** 32.11: 21.1's MLO of record on the application from a one-entry roster (the LE/CD fixtures' Jordan Rivera, NMLSR ID 987654, licensed AZ) — `application.mlo_of_record.assigned`. */
   async assignMlo(): Promise<void> {
@@ -499,6 +563,10 @@ export class Journey {
     const b = await db.query<{ id: string }>(`INSERT INTO borrowers (legal_name, tin_last4, party_id) VALUES ($1, $2, $3) RETURNING id`, [o.legal_name ?? "Alex Borrower", o.tin_last4 ?? "6789", partyId]);
     await db.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [loanId, b[0]!.id]);
     await db.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, remittance_type, maturity_date, remaining_term_months) VALUES ($1, '2024-11-01', 'boarding', 'fixed', 7000, 375875, 68750, true, 'A/A', '2054-10-01', 360)`, [loanId]);
+    // 35.5 rule 9: a boarded loan's loan-local day and servicer block come from its `loan_servicing_configs` row (no default zone) — the fixture's Phoenix property, the seeded FAKE servicer profile (0143), the note's late-charge terms within AZ's bound
+    await db.query(`INSERT INTO loan_servicing_configs (loan_id, effective_from, time_zone, time_zone_source, jurisdiction_state, servicer_profile_id, lockbox_id, channels_enabled, late_charge_terms, nsf_fee_allowed, written_by)
+      SELECT $1, '2025-01-15', 'America/Phoenix', 'state_default', 'AZ', sp.id, 'LBX-1', ARRAY['lockbox', 'ach_debit_origin', 'portal_onetime'], '{"pct": "5.000", "grace_days": 15, "conflict": null}'::jsonb, true, '{"actor": "fixture:journey.adoptPriorLoan", "at": "fixture"}'::jsonb
+        FROM servicer_profiles sp WHERE sp.status = 'active' AND sp.effective_from <= '2025-01-15' ORDER BY sp.version DESC LIMIT 1`, [loanId]);
     await db.query(`UPDATE loans SET principal_residence = true, fdcpa_debt_collector_flag = $2, regx_days_delinquent_at_boarding = $3, default_status_at_boarding = $4 WHERE id = $1`, [loanId, o.fdcpa_debt_collector === true, o.regx_days_delinquent_at_boarding ?? 0, (o.regx_days_delinquent_at_boarding ?? 0) > 0]);
     if (o.first_unpaid_due) {
       const first = new Date(`${o.first_unpaid_due}T12:00:00Z`);

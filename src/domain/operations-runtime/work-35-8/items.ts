@@ -178,7 +178,7 @@ export async function setItemStatus(d: ItemDeps, itemId: string, status: "waitin
 export interface QueuePassReport { readonly opened: number; readonly closed: number; readonly sources: number; readonly cancelled_reopened: number }
 type Source = OpenItemInput;
 /** Every source that should have an open item now, from the console's five kinds and the four new ones. */
-export async function collectSources(rt: Runtime, q: Queryable, now: string, ports: Required<WorkPorts>): Promise<Source[]> {
+export async function collectSources(rt: Runtime, q: Queryable, now: string, ports: Required<WorkPorts>, present: Set<string> = new Set()): Promise<Source[]> {
   const store = new PgConsoleStore(rt.db, rt.registry, rt.agents);
   const out: Source[] = [];
   // SM_SWEEP_HEARTBEAT_DAILY is the running sweep's own clock (35.1 edge case 7, src/runtime/app.ts breach pass): the run that completes satisfies it minutes after this pass sees it breached — never a person's item
@@ -186,7 +186,7 @@ export async function collectSources(rt: Runtime, q: Queryable, now: string, por
   // one source, one item: the breach pass opens an escalation for every breached clock (src/runtime/app.ts) and the console lists both rows — the escalation is the breach's item, the clock's row rides with it (the clock without an escalation, T8's fixture, is its own item)
   const rows = await store.queue({ now });
   const escalatedClocks = new Set(rows.filter((r) => r.kind === "escalation").map((r) => String(obj(r.detail)["timer_id"] ?? "")).filter(Boolean));
-  for (const r of rows) { if (r.kind === "breached_timer" && (/^SM_SWEEP_HEARTBEAT_DAILY breached/.test(r.title) || escalatedClocks.has(r.id))) continue; if (isOwnBookkeeping(r)) continue; out.push(itemOfConsoleRow(rt, r)); }
+  for (const r of rows) { if (r.kind === "breached_timer" && (/^SM_SWEEP_HEARTBEAT_DAILY breached/.test(r.title) || escalatedClocks.has(r.id))) { present.add(`breached_timer:${r.id}`); continue; } if (isOwnBookkeeping(r)) continue; out.push(itemOfConsoleRow(rt, r)); }
   for (const j of await ports.jobs.dead(q)) out.push({ screen_code: j.screen_code ?? (j.loan_id ? "payment_post" : "escalation"), subject_kind: j.loan_id ? "loan" : j.application_id ? "application" : "job", subject_id: j.loan_id ?? j.application_id ?? j.id, loan_id: j.loan_id, application_id: j.application_id, source_kind: "job_dead", source_id: j.id, required_role: j.role, opened_at: j.since, due_at: null });
   for (const h of await ports.orchestration.held(q)) out.push({ screen_code: "funding_release", subject_kind: "application", subject_id: h.application_id, loan_id: null, application_id: h.application_id, source_kind: "orchestration_held", source_id: h.id, required_role: h.role, opened_at: h.since, due_at: null });
   for (const m of await ports.caseMilestones.due(q)) out.push({ screen_code: m.screen_code, subject_kind: m.loan_id ? "loan" : "case", subject_id: m.loan_id ?? m.id, loan_id: m.loan_id, application_id: null, source_kind: "case_milestone", source_id: m.id, required_role: m.role, opened_at: m.since, due_at: null });
@@ -203,14 +203,17 @@ const SWEEP_ACTOR: Actor = { kind: "system", id: "work-35-8" };
 /** The pass: open an item per new source, close the items whose source closed (`source_closed`). One global unit of work per change set. */
 export async function queuePass(rt: Runtime, now: string, o: { ports?: WorkPorts } = {}): Promise<QueuePassReport> {
   const ports = portsOf(o.ports);
-  const sources = await collectSources(rt, rt.db, now, ports);
+  // `present`: a source still open that the pass does not itself open — a breached clock the console lists under its escalation (35.9 rule 7's deferred action opens a `breached_timer` item on that clock; it is the clock's, closed when the clock is) — so the close below never mistakes the console's dedupe for the source's closing
+  const present = new Set<string>();
+  const sources = await collectSources(rt, rt.db, now, ports, present);
   const openRows = (await rt.db.query<Row>(`SELECT ${ITEM_COLS} FROM work_items WHERE status NOT IN ('closed', 'cancelled')`)).map(toItem);
   const key = (k: string, id: string): string => `${k}:${id}`;
   const have = new Set(openRows.map((r) => key(r.source_kind, r.source_id)));
-  const want = new Set(sources.map((x) => key(x.source_kind, x.source_id)));
+  const want = new Set([...sources.map((x) => key(x.source_kind, x.source_id)), ...present]);
   // the item's age is the item's, from the sweep that opened it (timer table rows 2–3 anchor on `opened_at`: "an item needing a person has sat two business days"), never the source's first instant — a clock armed already past due would breach a day late (src/runtime/demo-clock.test.ts); a source re-opened after its item was closed or cancelled (Q4) ages from now the same way. The source's own instant stays its `due_at` / the console row's.
   const toOpen = sources.filter((x) => !have.has(key(x.source_kind, x.source_id)) && x.source_kind !== "manual").map((x) => ({ ...x, opened_at: now }));
-  const toClose = openRows.filter((r) => !want.has(key(r.source_kind, r.source_id)) && r.source_kind !== "manual" && r.source_kind !== "approval_pending" ? true : r.source_kind === "approval_pending" && !want.has(key(r.source_kind, r.source_id)));
+  // an `approval_pending` item of this process names a `work_actions` proposal (a uuid); another process's proposal item (35.9's referral: `<case_id>:refer`) is opened and closed by that process's own port (default-35-9/ports.ts) and is never this pass's to close
+  const toClose = openRows.filter((r) => !want.has(key(r.source_kind, r.source_id)) && r.source_kind !== "manual" && (r.source_kind !== "approval_pending" || isUuid(r.source_id)));
   let opened = 0; let closed = 0;
   const writes: ((q: Queryable) => Promise<void>)[] = [];   // the deferred row writes of this pass (the commit hook drains them)
   if (toOpen.length || toClose.length) {

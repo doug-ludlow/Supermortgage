@@ -31,6 +31,9 @@ The ops-console, partner-facing surfaces, and the portfolio-onboarding path (tra
 | `12-message-copy-library.md` | Every system message keyed to the event that emits it |
 | `13-acceptance-tests.md` | Given/When/Then tests per screen, mapped to build-spec test IDs |
 | `14-claude-code-build-plan.md` | Build order, package layout, prompts, definition of done |
+| `15-entry-sign-up-and-sign-in.md` | Entry, sign-up and sign-in — the doors (deep links, return pages, Google), the partner from configuration, link my loan; process 32.14 |
+| `17-the-conversational-product.md` | The conversational product: an account, then a conversation, with cards only when the rules need one — process 32.16 |
+| `18-the-apply-product.md` | The Apply product: the door, the nine steps and the five tabs on `/app` — the borrower surface on `/app` since 2026-09-16; process 32.19 |
 
 ## 2. Principles (fixed)
 
@@ -52,7 +55,7 @@ The ops-console, partner-facing surfaces, and the portfolio-onboarding path (tra
 - The automation disclosure precedes every AI exchange on every channel (baseline §8; O1.3; state chatbot rules). "Talk to a person" is one action away on every screen and emits `human.transfer.requested`.
 - Co-borrowers have separate authenticated threads; the Record is shared per application/loan. Per-party artifacts (joint intent, credit authorization, demographics, E-SIGN, signatures) are never captured across parties.
 - Money is rendered from `bigint` cents with `Intl.NumberFormat`; rates from `decimal` strings; dates in the borrower's time zone with the calendar named where a business-day definition matters ("3 business days — Sundays and federal holidays don't count").
-- The designed surface is the default (01 §2): light paper and the Super Red accent over the same components; the dark and light token sets sit beneath it, and switching them changes tokens only.
+- The designed surface is the default (01 §2), and since 2026-09-16 the product surface on `/app` is the Apply product (18 §2): `apply.css`'s tokens and chrome over 01 §3's card components (Tasks, Review, Result); the dark and light token sets sit beneath it, selected by `data-theme`, and switching them changes tokens only.
 
 ## 4. Vocabulary map — UX term → build-spec object
 
@@ -114,5 +117,5 @@ First-class parallel flows (common): second borrower · gift funds · letter of 
 | Reg C preapproval program | **Adopted** — DU on TBD property, letter issued; denied preapproval requests reported (O9.3) and noticed (O2.6) | O1.3 Q2 (overridden) |
 | Same-creditor rescission exemption | UI renders rescission from `rescission` state only; when `not_applicable`, no cancel window is shown | O6.3 |
 | Hello-notice / lender branding | Experience is Supermortgage; `partner.legal_name` rendered wherever a disclosure or the SAFE Act requires it | 1.3 Q1, O2.2 |
-| Theme | The designed surface (01 §2); dark and light token sets beneath it | — |
+| Theme | The Apply product's `apply.css` (18 §2) over the designed surface (01 §2); dark and light token sets beneath it | — |
 | Vendors | Stripe Identity · Plaid (assets) · Truv (income/employment) · IRS IVES (transcripts) · carrier connection optional | O3.6, O3.4, O3.3 |

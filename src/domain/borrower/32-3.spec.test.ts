@@ -23,6 +23,8 @@ import { FixedClock } from "../../kernel/events/index.ts";
 import { Runtime } from "../../runtime/app.ts";
 import { createApiServer, listen } from "../../runtime/server.ts";
 import { createLogger } from "../../runtime/log.ts";
+import { PgFakeBlobStore } from "../../infra/blobs/pg-fake-blob-store.ts";
+import { textLayer } from "../../infra/files/pdf.ts";
 import { createBorrowerRouter, type BorrowerRouter } from "../../runtime/borrower/routes.ts";
 import { FakeStripeIdentity } from "../../runtime/borrower/vendors/fake-stripe-identity.ts";
 import { Journey, MST, EDT, MLO, OFFICER } from "../../runtime/borrower/fixtures/journey.ts";
@@ -789,8 +791,11 @@ test("32.3-T27: Given a preapproval letter is issued, then it names `partner.leg
   const l = await lead(casey.leadId); const pq = (l["prequalifications"] as Record<string, unknown>[]).find((x) => x["prequal_id"] === p["prequal_id"])!; assert.equal(pq["kind"], "preapproval"); assert.equal(pq["du_casefile_id"], casey.casefileId); assert.equal(String(pq["approved_amount_cents"]), "42000000"); assert.equal(pq["valid_until"], "2027-02-01"); assert.equal(pq["outcome"], "letter_issued");
   const row = (await db.query<{ kind: string; du_casefile_id: string; approved_amount_cents: string; valid_until: string }>(`SELECT kind, du_casefile_id, approved_amount_cents::text AS approved_amount_cents, valid_until::text AS valid_until FROM prequalifications WHERE lead_id = $1`, [casey.leadId]))[0];
   assert.ok(row, "the prequalifications row (0113 columns)"); assert.equal(row!.kind, "preapproval"); assert.equal(row!.du_casefile_id, casey.casefileId); assert.equal(row!.approved_amount_cents, "42000000"); assert.equal(row!.valid_until, "2027-02-01");
-  const doc = (await db.query<{ metadata: Record<string, unknown> }>(`SELECT metadata FROM documents WHERE id = $1`, [p["letter_document_id"]]))[0]; assert.ok(doc, "the rendered letter as a documents row");
-  const text = String(doc!.metadata["text"]);
+  const doc = (await db.query<{ metadata: Record<string, unknown>; mime_type: string; kind: string }>(`SELECT metadata, mime_type, kind FROM documents WHERE id = $1`, [p["letter_document_id"]]))[0]; assert.ok(doc, "the rendered letter as a documents row");
+  // 35.2: the letter is the rendered PDF stored under letter_document_id (the sink's row; kind rendered_notice); its words are the bytes' own text layer, never a text copy in metadata
+  assert.equal(doc!.mime_type, "application/pdf"); assert.equal(doc!.kind, "rendered_notice"); assert.equal(doc!.metadata["text"], undefined);
+  const letterBytes = await new PgFakeBlobStore(db).get(String(p["letter_document_id"])); assert.ok(letterBytes, "the letter's bytes are in the object store");
+  const text = textLayer(letterBytes.bytes).text.replace(/\s+/g, " ");
   assert.match(text, /PREAPPROVAL LETTER/); assert.match(text, new RegExp(`by Partner Bank ${R} \\(NMLSR ID`), "partner.legal_name"); assert.match(text, /Jordan Rivera, NMLSR ID 987654/, "mlo.name and NMLSR ID"); assert.match(text, /valid through February 1, 2027/, "valid_until"); assert.match(text, /\$420,000\.00/, "the approved amount");
   assert.match(text, /general conditions: .*must appraise.*; no material change/, "the general conditions"); assert.doesNotMatch(text, /guarantee/i, "no occurrence of guarantee");
   const card = (await cardsOf(casey.appId, casey.partyId)).find((c) => c.kind === "DocumentCard" && c.copy_key === "preapproval.letter"); assert.ok(card, "the letter DocumentCard"); assert.equal(card!.props["requires_ack"], false); assert.equal(card!.props["notice_code"], "NTC_SM_PREAPPROVAL_LETTER"); assert.equal(card!.props["valid_until"], "2027-02-01");

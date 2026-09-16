@@ -20,8 +20,8 @@
  *
  * Tokens: `partner_legal_name` (the `parties{servicer}` legal name — the servicer of record), `loan_last4` (the servicer
  * loan number's last four), `sign_in_url` (the app base + /app),
- * `first_name` (the borrower's first name from the tape's legal name), `platform_postal_address` (SERVICER_CONTACT
- * .servicer_address in src/runtime/servicing.ts), `channel`/`sms`. Never a destination (e-mail address or phone number)
+ * `first_name` (the borrower's first name from the tape's legal name), `platform_postal_address` (the FAKE servicer profile's
+ * servicer_address — FAKE_SERVICER_PROFILE_V1 in src/domain/operations-runtime/servicing-config.ts, 35.5 rule 9), `channel`/`sms`. Never a destination (e-mail address or phone number)
  * in the payload or the text — rule 3 / T4: "no destination appears in any event payload, decision rationale or log line".
  */
 import type { ContentRule, NoticeTemplate, VersionInput } from "../registry.ts";

@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
-import "./mobile-shell.css";
 import "./prototype-theme.css";
 import { THEME_DEFAULT } from "@/lib/env";
 
@@ -18,7 +17,7 @@ export const viewport: Viewport = {
   themeColor: "#f4f4f4",
 };
 
-/** Designed prototype surface is the default. */
+/** 32.19: globals.css keeps the non-/app routes (account, deep-link, return, disclosures, document pages); the Apply product's tokens are apply.css's. */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" data-theme={THEME_DEFAULT}>

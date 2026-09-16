@@ -1,0 +1,7585 @@
+{
+ "run_id": "344b4796-f3cb-4387-804f-884ae7015442",
+ "database_name": "supermortgage_test",
+ "migration_head": "0231_seed_inventories.sql",
+ "git_sha": "a6916f930589b431a140016cddd7b8bdb5c0833c",
+ "as_of_date": "2026-09-16",
+ "journeys": [
+  "lifecycle.test.ts",
+  "purchase-lifecycle.test.ts",
+  "35-5.spec.test.ts",
+  "35-6.spec.test.ts",
+  "35-9.spec.test.ts",
+  "35-10.spec.test.ts"
+ ],
+ "journey_databases": [
+  {
+   "name": "lifecycle.test.ts",
+   "database": "supermortgage_t_cf188c56_runtime_lifecycle",
+   "present": true
+  },
+  {
+   "name": "purchase-lifecycle.test.ts",
+   "database": "supermortgage_t_75a96bef_runtime_purchase_lifecycle",
+   "present": true
+  },
+  {
+   "name": "35-5.spec.test.ts",
+   "database": "supermortgage_t_483e4339_operations_runtime_35_5_spec",
+   "present": true
+  },
+  {
+   "name": "35-6.spec.test.ts",
+   "database": "supermortgage_t_26d54c8d_operations_runtime_35_6_spec",
+   "present": false
+  },
+  {
+   "name": "35-9.spec.test.ts",
+   "database": "supermortgage_t_247f5052_operations_runtime_35_9_spec",
+   "present": false
+  },
+  {
+   "name": "35-10.spec.test.ts",
+   "database": "supermortgage_t_42571c4c_operations_runtime_35_10_spec",
+   "present": false
+  }
+ ],
+ "tables_total": 752,
+ "tables_with_rows": 64,
+ "sections_complete": [
+  32
+ ],
+ "sections_measured": [
+  0,
+  1,
+  13,
+  20,
+  21,
+  23,
+  32
+ ],
+ "untouched_expected": [],
+ "projection_gaps": 80,
+ "tables": [
+  {
+   "section": 1,
+   "process": "1.1",
+   "table": "boarding_exceptions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.1",
+   "table": "boarding_staging",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.1",
+   "table": "boarding_tapes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.1",
+   "table": "boarding_validations",
+   "post_migrate": "0",
+   "after": "4021",
+   "delta": "4021",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 1,
+   "process": "1.1",
+   "table": "transfer_batch_loans",
+   "post_migrate": "0",
+   "after": "111",
+   "delta": "111",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 1,
+   "process": "1.1",
+   "table": "transfer_batches",
+   "post_migrate": "0",
+   "after": "12",
+   "delta": "12",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 1,
+   "process": "1.2",
+   "table": "escalations",
+   "post_migrate": "0",
+   "after": "1195",
+   "delta": "1195",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 1,
+   "process": "1.2",
+   "table": "transfer_batch_loan_list_versions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.3",
+   "table": "misdirected_payments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.3",
+   "table": "notice_templates",
+   "post_migrate": "345",
+   "after": "1035",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 1,
+   "process": "1.3",
+   "table": "notices",
+   "post_migrate": "0",
+   "after": "3",
+   "delta": "3",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 1,
+   "process": "1.3",
+   "table": "transfer_notice_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.4",
+   "table": "custody_exceptions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.4",
+   "table": "custody_recerts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.4",
+   "table": "custody_records",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.4",
+   "table": "documents",
+   "post_migrate": "0",
+   "after": "24",
+   "delta": "24",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 1,
+   "process": "1.4",
+   "table": "enotes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.5",
+   "table": "mers_min_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.5",
+   "table": "mers_qa_findings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.5",
+   "table": "mers_transactions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.6",
+   "table": "escrow_analyses",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.6",
+   "table": "ledger_accounts",
+   "post_migrate": "40",
+   "after": "120",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 1,
+   "process": "1.6",
+   "table": "recon_variances",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.6",
+   "table": "reconciliations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.6",
+   "table": "transfer_funds_receipts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.7",
+   "table": "lossmit_carryover_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 1,
+   "process": "1.7",
+   "table": "lossmit_documents",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 2,
+   "process": "2.1",
+   "table": "payment_allocations",
+   "post_migrate": "0",
+   "after": "30",
+   "delta": "30",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 2,
+   "process": "2.1",
+   "table": "payments",
+   "post_migrate": "0",
+   "after": "11",
+   "delta": "11",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 2,
+   "process": "2.2",
+   "table": "partial_payment_evaluations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 2,
+   "process": "2.3",
+   "table": "ach_entries",
+   "post_migrate": "0",
+   "after": "4",
+   "delta": "4",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 2,
+   "process": "2.3",
+   "table": "ach_files",
+   "post_migrate": "0",
+   "after": "3",
+   "delta": "3",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 2,
+   "process": "2.3",
+   "table": "ach_returns",
+   "post_migrate": "0",
+   "after": "3",
+   "delta": "3",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 2,
+   "process": "2.3",
+   "table": "autodraft_enrollments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 2,
+   "process": "2.3",
+   "table": "autodraft_notices",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 2,
+   "process": "2.3",
+   "table": "consents",
+   "post_migrate": "0",
+   "after": "4",
+   "delta": "4",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 2,
+   "process": "2.3",
+   "table": "fraud_monitor_findings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 2,
+   "process": "2.4",
+   "table": "curtailment_reapplications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 2,
+   "process": "2.4",
+   "table": "loan_terms",
+   "post_migrate": "0",
+   "after": "111",
+   "delta": "111",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 2,
+   "process": "2.4",
+   "table": "reamortizations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 2,
+   "process": "2.5",
+   "table": "third_party_payment_arrangements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 2,
+   "process": "2.6",
+   "table": "fees",
+   "post_migrate": "0",
+   "after": "4",
+   "delta": "4",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 2,
+   "process": "2.6",
+   "table": "trial_funds_summary",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 2,
+   "process": "2.6",
+   "table": "trial_payment_schedules",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.1",
+   "table": "escrow_accounts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.1",
+   "table": "escrow_statements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.2",
+   "table": "escrow_analysis_lines",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.2",
+   "table": "escrow_bills",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.2",
+   "table": "escrow_lines",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.3",
+   "table": "escrow_statement_history_lines",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.5",
+   "table": "disbursements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.6",
+   "table": "escrow_repayment_plans",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.7",
+   "table": "escrow_attestations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.7",
+   "table": "investor_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.7",
+   "table": "nonescrow_tax_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.7",
+   "table": "payees",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.8",
+   "table": "escrow_waivers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.9",
+   "table": "escrow_interest_1099",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.9",
+   "table": "escrow_interest_accruals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 3,
+   "process": "3.9",
+   "table": "jurisdiction_rate_observations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.1",
+   "table": "case_assertions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.1",
+   "table": "case_relied_documents",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.1",
+   "table": "cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.1",
+   "table": "credit_reporting_suppressions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.1",
+   "table": "designated_addresses",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.1",
+   "table": "document_copy_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.1",
+   "table": "inbound_communications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.1",
+   "table": "system_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.1",
+   "table": "timer_definitions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.2",
+   "table": "case_request_items",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.2",
+   "table": "records_inventory",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.3",
+   "table": "callback_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.3",
+   "table": "contact_teams",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.3",
+   "table": "contacts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.3",
+   "table": "continuity_episodes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.3",
+   "table": "lossmit_facts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.3",
+   "table": "personnel",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.4",
+   "table": "assumptions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.4",
+   "table": "parties",
+   "post_migrate": "1",
+   "after": "12",
+   "delta": "9",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 4,
+   "process": "4.4",
+   "table": "sii_acknowledgments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.4",
+   "table": "sii_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.4",
+   "table": "sii_document_matrix",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.4",
+   "table": "sii_documents",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.5",
+   "table": "complaint_analytics",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.5",
+   "table": "complaint_taxonomy",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.5",
+   "table": "population_remediations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 4,
+   "process": "4.5",
+   "table": "udaap_monitors",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.1",
+   "table": "investor_event_exceptions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.1",
+   "table": "investor_event_types",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.1",
+   "table": "investor_loan_positions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.1",
+   "table": "investor_loan_sequences",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.1",
+   "table": "investor_reporting_periods",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.1",
+   "table": "investor_submissions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.2",
+   "table": "cash_positions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.2",
+   "table": "crs_batches",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.2",
+   "table": "draft_notifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.2",
+   "table": "remittance_calculations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.2",
+   "table": "remittances",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.2",
+   "table": "servicer_advance_receivable",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.2",
+   "table": "shortage_surplus",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.3",
+   "table": "dra_milestones",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.3",
+   "table": "liquidation_facts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.4",
+   "table": "advances",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.4",
+   "table": "draft_adjustments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.4",
+   "table": "sda_status",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.5",
+   "table": "gfee_calculations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.5",
+   "table": "gfee_relief_status",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.6",
+   "table": "repurchases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.7",
+   "table": "delinquency_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.7",
+   "table": "delinquency_report_lines",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.7",
+   "table": "delinquency_reports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 5,
+   "process": "5.7",
+   "table": "dq_status_code_map",
+   "post_migrate": "31",
+   "after": "93",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 6,
+   "process": "6.1",
+   "table": "custodial_accounts",
+   "post_migrate": "0",
+   "after": "14",
+   "delta": "14",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 6,
+   "process": "6.5",
+   "table": "suspense_actions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 6,
+   "process": "6.5",
+   "table": "suspense_items",
+   "post_migrate": "0",
+   "after": "2",
+   "delta": "2",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 7,
+   "process": "7.1",
+   "table": "notice_batches",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.1",
+   "table": "notice_checklist_results",
+   "post_migrate": "0",
+   "after": "3",
+   "delta": "3",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 7,
+   "process": "7.1",
+   "table": "notice_deliveries",
+   "post_migrate": "0",
+   "after": "3",
+   "delta": "3",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 7,
+   "process": "7.1",
+   "table": "notice_template_versions",
+   "post_migrate": "0",
+   "after": "1",
+   "delta": "1",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 7,
+   "process": "7.1",
+   "table": "statement_cycles",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.1",
+   "table": "statement_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.1",
+   "table": "tax_forms_1098",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.2",
+   "table": "arm_adjustments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.2",
+   "table": "arm_corrections",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.2",
+   "table": "arm_index_captures",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.2",
+   "table": "arm_schedule",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.3",
+   "table": "arm_initial_estimates",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.4",
+   "table": "consent_disclosure_versions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.4",
+   "table": "delivery_addresses",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.4",
+   "table": "edelivery_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.5",
+   "table": "privacy_notice_deliveries",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.5",
+   "table": "privacy_notice_programs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.6",
+   "table": "payoff_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 7,
+   "process": "7.6",
+   "table": "payoff_statements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.1",
+   "table": "credit_reporting_corrections",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.1",
+   "table": "furnisher_config",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.1",
+   "table": "metro2_ack_items",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.1",
+   "table": "metro2_cycles",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.1",
+   "table": "metro2_files",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.1",
+   "table": "metro2_overlay_decisions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.1",
+   "table": "metro2_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.2",
+   "table": "credit_dispute_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.2",
+   "table": "credit_dispute_evidence",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.2",
+   "table": "credit_disputes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.2",
+   "table": "eoscar_messages",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.3",
+   "table": "accuracy_program",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 8,
+   "process": "8.3",
+   "table": "bankruptcy_reporting_state",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.1",
+   "table": "insurance_deficiencies",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.1",
+   "table": "insurance_evidence",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.1",
+   "table": "insurance_policies",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.1",
+   "table": "insurance_requirements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.1",
+   "table": "jurisdiction_rules",
+   "post_migrate": "51",
+   "after": "153",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 9,
+   "process": "9.2",
+   "table": "fpi_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.2",
+   "table": "lpi_charges",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.2",
+   "table": "lpi_placements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.4",
+   "table": "fpi_renewals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.5",
+   "table": "fpi_refunds",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.6",
+   "table": "flood_determinations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.6",
+   "table": "flood_map_changes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.7",
+   "table": "claim_disbursements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.7",
+   "table": "claim_instruments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.7",
+   "table": "insurance_claims",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.7",
+   "table": "repair_inspections",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.8",
+   "table": "inspection_schedules",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.8",
+   "table": "p360_pfpip_submissions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.8",
+   "table": "property_inspections",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.9",
+   "table": "allowable_matrix",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.9",
+   "table": "preservation_bids",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.9",
+   "table": "preservation_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.9",
+   "table": "preservation_work_orders",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 9,
+   "process": "9.9",
+   "table": "property_registrations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 10,
+   "process": "10.1",
+   "table": "mi_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 10,
+   "process": "10.1",
+   "table": "mi_evaluations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 10,
+   "process": "10.1",
+   "table": "mi_ltv_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 10,
+   "process": "10.1",
+   "table": "mi_policies",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 10,
+   "process": "10.1",
+   "table": "mi_schedules",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 10,
+   "process": "10.1",
+   "table": "mi_valuations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 10,
+   "process": "10.2",
+   "table": "mi_terminations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 10,
+   "process": "10.4",
+   "table": "mi_disclosures",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 10,
+   "process": "10.5",
+   "table": "mi_refunds",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 10,
+   "process": "10.6",
+   "table": "mi_denials",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.1",
+   "table": "contact_attempt_plans",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.1",
+   "table": "contact_preferences",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.1",
+   "table": "frequency_counters",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.1",
+   "table": "good_faith_effort_records",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.1",
+   "table": "phone_numbers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.1",
+   "table": "regx_ei_windows",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.2",
+   "table": "ei_notice_cycles",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.2",
+   "table": "solicitation_packages",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.3",
+   "table": "promises",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.3",
+   "table": "qrpc_records",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.4",
+   "table": "fdcpa_disputes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.4",
+   "table": "fdcpa_status",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.4",
+   "table": "validation_notices",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.5",
+   "table": "credit_scores",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 11,
+   "process": "11.5",
+   "table": "imminent_default_evaluations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.1",
+   "table": "foreclosure_holds",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.1",
+   "table": "lossmit_applications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.1",
+   "table": "lossmit_contact_attempts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.1",
+   "table": "lossmit_notices",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.1",
+   "table": "lossmit_requirement_catalog",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.1",
+   "table": "lossmit_requirements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.2",
+   "table": "lossmit_evaluations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.2",
+   "table": "lossmit_offers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.2",
+   "table": "lossmit_option_determinations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.2",
+   "table": "smdu_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.3",
+   "table": "lossmit_appeals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.4",
+   "table": "fnma_exception_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.4",
+   "table": "workout_plan_schedule",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.4",
+   "table": "workout_plan_terms",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.4",
+   "table": "workout_plans",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.6",
+   "table": "payment_deferrals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.8",
+   "table": "modifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.8",
+   "table": "trial_plans",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.9",
+   "table": "dil_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.9",
+   "table": "liquidation_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.9",
+   "table": "shortsale_closings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 12,
+   "process": "12.9",
+   "table": "shortsale_offers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.1",
+   "table": "foreclosure_gate_definitions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.1",
+   "table": "foreclosure_gate_evaluations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.1",
+   "table": "loans",
+   "post_migrate": "0",
+   "after": "117",
+   "delta": "117",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 13,
+   "process": "13.1",
+   "table": "rule_sets",
+   "post_migrate": "2",
+   "after": "6",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 13,
+   "process": "13.2",
+   "table": "attorney_instructions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.2",
+   "table": "lossmit_protection_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.2",
+   "table": "sale_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.3",
+   "table": "assignments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.3",
+   "table": "attorney_referrals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.3",
+   "table": "bid_instructions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.3",
+   "table": "foreclosure_milestones",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.3",
+   "table": "note_custody",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.3",
+   "table": "sale_results",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.4",
+   "table": "disaster_fc_approval_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.4",
+   "table": "prereferral_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.5",
+   "table": "comp_fee_bills",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.5",
+   "table": "comp_fee_delay_rules",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.5",
+   "table": "fc_delay_credits",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.5",
+   "table": "fc_timeframe_tracking",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.6",
+   "table": "attorney_escalations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.6",
+   "table": "attorney_fee_schedules",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.6",
+   "table": "attorney_firms",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.6",
+   "table": "attorney_invoice_lines",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.6",
+   "table": "attorney_invoices",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.6",
+   "table": "attorney_matters",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.6",
+   "table": "attorney_retentions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.6",
+   "table": "attorney_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.6",
+   "table": "dra_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.6",
+   "table": "dra_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.7",
+   "table": "environmental_hazards",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.7",
+   "table": "form20_submissions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.7",
+   "table": "litigation_matters",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.8",
+   "table": "scra_affidavits",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.8",
+   "table": "scra_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.8",
+   "table": "scra_verifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.9",
+   "table": "form_1022_submissions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.9",
+   "table": "scra_overpayment_elections",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.9",
+   "table": "scra_rate_periods",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 13,
+   "process": "13.9",
+   "table": "scra_recalculations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.1",
+   "table": "bankruptcy_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.1",
+   "table": "bankruptcy_claims",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.1",
+   "table": "bankruptcy_docket_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.1",
+   "table": "bankruptcy_filings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.1",
+   "table": "bankruptcy_ledger_views",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.1",
+   "table": "stay_gates",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.2",
+   "table": "bk_payment_change_notices",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.2",
+   "table": "bk_postpetition_fee_items",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.2",
+   "table": "bk_status_responses",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.3",
+   "table": "bk_early_intervention",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.3",
+   "table": "bk_statement_status",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 14,
+   "process": "14.3",
+   "table": "communications_matrix",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.1",
+   "table": "elimination_rescission_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.1",
+   "table": "reo_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.1",
+   "table": "reo_handoff_tasks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.1",
+   "table": "reogram_confirmations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.1",
+   "table": "tps_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.2",
+   "table": "advance_recoveries",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.2",
+   "table": "allowable_fee_schedules",
+   "post_migrate": "41",
+   "after": "123",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 15,
+   "process": "15.2",
+   "table": "claim_credits",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.2",
+   "table": "expense_claim_lines",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.2",
+   "table": "expense_claims",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.2",
+   "table": "irt_inquiries",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.3",
+   "table": "mi_claim_calculations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.3",
+   "table": "mi_claim_documents",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.3",
+   "table": "mi_claim_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.3",
+   "table": "mi_claims",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.3",
+   "table": "mi_curtailment_risk",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.3",
+   "table": "mi_master_policy_terms",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 15,
+   "process": "15.4",
+   "table": "delinquency_advance_positions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.1",
+   "table": "payoff_quotes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.1",
+   "table": "payoff_wire_instructions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.2",
+   "table": "payoff_funds",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.2",
+   "table": "payoff_housekeeping_tasks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.2",
+   "table": "payoff_settlements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.3",
+   "table": "custody_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.3",
+   "table": "lpoas",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.3",
+   "table": "recording_submissions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.3",
+   "table": "release_tasks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.3",
+   "table": "signing_officers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 16,
+   "process": "16.4",
+   "table": "mers_eregistry_transactions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 17,
+   "process": "17.2",
+   "table": "contact_scripts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 17,
+   "process": "17.3",
+   "table": "counterparty_notifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 17,
+   "process": "17.3",
+   "table": "transfer_out_archives",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 17,
+   "process": "17.3",
+   "table": "transfer_out_attestations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 17,
+   "process": "17.3",
+   "table": "transfer_out_deliverables",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 17,
+   "process": "17.3",
+   "table": "transferee_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 17,
+   "process": "17.4",
+   "table": "case_handoffs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 17,
+   "process": "17.4",
+   "table": "lossmit_handoff_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 17,
+   "process": "17.4",
+   "table": "post_transfer_forwardings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.1",
+   "table": "qc_corrective_actions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.1",
+   "table": "qc_cycles",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.1",
+   "table": "qc_findings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.1",
+   "table": "qc_plans",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.1",
+   "table": "qc_reports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.1",
+   "table": "qc_rules",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.1",
+   "table": "qc_samples",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.1",
+   "table": "qc_tests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.2",
+   "table": "evidence_index",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.2",
+   "table": "evidence_taxonomy",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.2",
+   "table": "exam_findings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.2",
+   "table": "exam_productions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.2",
+   "table": "exam_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.2",
+   "table": "exams",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.3",
+   "table": "loan_delinquency_months",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.3",
+   "table": "star_metric_results",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.3",
+   "table": "star_metrics_config",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.3",
+   "table": "star_reconciliations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.3",
+   "table": "star_scorecards",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.4",
+   "table": "fiscal_years",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.4",
+   "table": "org_registry",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.4",
+   "table": "pending_actions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.4",
+   "table": "regulatory_filings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.4",
+   "table": "subservicing_arrangements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.4",
+   "table": "vendor_registry",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.5",
+   "table": "fraud_red_flags",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.5",
+   "table": "fraud_reports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.5",
+   "table": "screening_results",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.6",
+   "table": "attestation_packages",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.6",
+   "table": "control_evidence",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.6",
+   "table": "control_matrix",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.6",
+   "table": "investor_programs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.7",
+   "table": "eligibility_config",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.7",
+   "table": "eligibility_results",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.7",
+   "table": "gl_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 18,
+   "process": "18.7",
+   "table": "upb_positions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.1",
+   "table": "disposal_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.1",
+   "table": "legal_hold_objects",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.1",
+   "table": "legal_holds",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.1",
+   "table": "record_objects",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.1",
+   "table": "record_types",
+   "post_migrate": "79",
+   "after": "237",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 19,
+   "process": "19.1",
+   "table": "records_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.1",
+   "table": "retention_classes",
+   "post_migrate": "20",
+   "after": "60",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 19,
+   "process": "19.1",
+   "table": "servicing_file_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "access_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "assets",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "control_exceptions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "control_test_results",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "control_tests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "identities",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "incident_affected_persons",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "incident_notices",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "pen_tests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "security_controls",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "security_incidents",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "security_logs_5y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.2",
+   "table": "vulnerabilities",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "ai_systems",
+   "post_migrate": "40",
+   "after": "120",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "contract_clauses",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "contract_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "counterparty_contracts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "data_access_authorizations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "fnma_information_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "fnma_notices",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "portfolio_threshold_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "tech_provider_changes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "vendor_assessments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "vendor_incidents",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.3",
+   "table": "vendors",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.4",
+   "table": "ai_bias_tests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.4",
+   "table": "fair_servicing_metric_defs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.4",
+   "table": "fair_servicing_results",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.4",
+   "table": "fair_servicing_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.4",
+   "table": "fair_servicing_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 19,
+   "process": "19.4",
+   "table": "impact_assessments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.1",
+   "table": "partner_programs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.1",
+   "table": "refi_opportunities",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.1",
+   "table": "refi_trigger_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.2",
+   "table": "dnc_scrubs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.2",
+   "table": "marketing_campaigns",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.2",
+   "table": "marketing_creatives",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.2",
+   "table": "marketing_suppressions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.2",
+   "table": "marketing_touches",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.3",
+   "table": "applications",
+   "post_migrate": "0",
+   "after": "6",
+   "delta": "6",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 20,
+   "process": "20.3",
+   "table": "credit_authorizations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.3",
+   "table": "lead_interactions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.3",
+   "table": "leads",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.3",
+   "table": "prequalifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.4",
+   "table": "fee_schedules",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.4",
+   "table": "pricing_exceptions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 20,
+   "process": "20.4",
+   "table": "sm_cost_schedules",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.1",
+   "table": "application_borrowers",
+   "post_migrate": "0",
+   "after": "9",
+   "delta": "9",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 21,
+   "process": "21.2",
+   "table": "disclosures",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.2",
+   "table": "fee_items",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.3",
+   "table": "affiliate_relationships",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.3",
+   "table": "arm_programs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.3",
+   "table": "counseling_lists",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.3",
+   "table": "early_disclosure_packages",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.3",
+   "table": "referrals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.3",
+   "table": "score_disclosures",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.4",
+   "table": "changed_circumstances",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.4",
+   "table": "fee_gate_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.4",
+   "table": "intent_records",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.5",
+   "table": "tolerance_cures",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.5",
+   "table": "tolerance_tests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.6",
+   "table": "adverse_actions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.6",
+   "table": "hmda_records",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.6",
+   "table": "noias",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 21,
+   "process": "21.6",
+   "table": "withdrawals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.1",
+   "table": "document_classes",
+   "post_migrate": "77",
+   "after": "231",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 22,
+   "process": "22.1",
+   "table": "document_extractions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.1",
+   "table": "document_integrity_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.1",
+   "table": "document_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.2",
+   "table": "credit_alerts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.2",
+   "table": "credit_freeze_actions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.2",
+   "table": "credit_reports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.2",
+   "table": "inquiry_explanations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.3",
+   "table": "business_verifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.3",
+   "table": "employment_verifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.3",
+   "table": "income_calculations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.3",
+   "table": "tax_transcript_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.4",
+   "table": "asset_deposits",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.4",
+   "table": "funds_to_close_worksheets",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.4",
+   "table": "gift_records",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.4",
+   "table": "ipc_items",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.4",
+   "table": "reserve_calculations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.4",
+   "table": "verifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.5",
+   "table": "debt_payoff_plans",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.5",
+   "table": "dti_calculations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.5",
+   "table": "qualifying_payments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.6",
+   "table": "fraud_investigations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.6",
+   "table": "legal_presence_records",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.6",
+   "table": "non_arms_length_assessments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.6",
+   "table": "occupancy_assessments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.6",
+   "table": "party_screenings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.6",
+   "table": "red_flag_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.6",
+   "table": "reo_discovery_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 22,
+   "process": "22.6",
+   "table": "sar_candidates",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.1",
+   "table": "du_casefiles",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.1",
+   "table": "du_resubmission_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.2",
+   "table": "conditions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.2",
+   "table": "du_findings_interpretations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.2",
+   "table": "du_message_rules",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.2",
+   "table": "homeownership_education_records",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.2",
+   "table": "homeready_evaluations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.2",
+   "table": "restructure_proposals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.3",
+   "table": "condition_clearances",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.3",
+   "table": "ctc_checklists",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.3",
+   "table": "decisions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.3",
+   "table": "rep_warrant_relief",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.4",
+   "table": "apor_tables",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.4",
+   "table": "high_cost_determinations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.4",
+   "table": "hpml_determinations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.4",
+   "table": "qm_determinations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_asset_parties",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_assets",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_bankruptcy_filings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_declarations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_expense_parties",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_expenses",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_joint_credit_report_links",
+   "post_migrate": "0",
+   "after": "2",
+   "delta": "2",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_liabilities",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_liability_parties",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_owned_properties",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "du_residences",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.5",
+   "table": "employers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 23,
+   "process": "23.6",
+   "table": "du_documents",
+   "post_migrate": "0",
+   "after": "2",
+   "delta": "2",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 23,
+   "process": "23.7",
+   "table": "du_preflight_results",
+   "post_migrate": "0",
+   "after": "2",
+   "delta": "2",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 24,
+   "process": "24.2",
+   "table": "appraisals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.2",
+   "table": "ucdp_submissions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.2",
+   "table": "valuations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.3",
+   "table": "escrow_holdbacks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.3",
+   "table": "holdback_escrow",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.3",
+   "table": "mh_verifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.3",
+   "table": "property_eligibility_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.4",
+   "table": "poa_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.4",
+   "table": "settlement_agents",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.4",
+   "table": "title_curative_items",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.4",
+   "table": "trust_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.4",
+   "table": "wire_verifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.6",
+   "table": "hpa_disclosures",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 24,
+   "process": "24.6",
+   "table": "mi_quotes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.1",
+   "table": "compliance_test_definitions",
+   "post_migrate": "27",
+   "after": "81",
+   "delta": "0",
+   "expected": false,
+   "verdict": "seeded_only"
+  },
+  {
+   "section": 25,
+   "process": "25.1",
+   "table": "compliance_test_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.1",
+   "table": "compliance_tests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.1",
+   "table": "compliance_waivers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.1",
+   "table": "fee_benchmarks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.1",
+   "table": "finance_charge_classifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.1",
+   "table": "license_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.1",
+   "table": "pricing_exception_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.2",
+   "table": "cd_consistency_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.2",
+   "table": "cd_figure_sources",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.2",
+   "table": "cd_receipts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.2",
+   "table": "cd_waivers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.2",
+   "table": "ucd_submissions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.3",
+   "table": "rescission_exercises",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.3",
+   "table": "rescission_periods",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.3",
+   "table": "rescission_waivers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.4",
+   "table": "closing_notice_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.4",
+   "table": "escrow_elections",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.4",
+   "table": "ownership_transfer_notices",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 25,
+   "process": "25.4",
+   "table": "tax_reporting_seeds",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.1",
+   "table": "buydown_agreements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.1",
+   "table": "cema_packages",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.1",
+   "table": "closing_data_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.1",
+   "table": "closing_document_sets",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.1",
+   "table": "closing_instructions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.1",
+   "table": "document_qc_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.1",
+   "table": "document_templates",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.1",
+   "table": "tx_home_equity_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.2",
+   "table": "eclosing_eligibility",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.3",
+   "table": "funding_conditions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.3",
+   "table": "funding_unwinds",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.3",
+   "table": "funding_wires",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.3",
+   "table": "funding_worksheets",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.4",
+   "table": "final_policy_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.4",
+   "table": "lost_note_affidavits",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.4",
+   "table": "mers_registrations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.4",
+   "table": "note_custody_shipments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.4",
+   "table": "note_endorsements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 26,
+   "process": "26.4",
+   "table": "recorded_instrument_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.1",
+   "table": "warehouse_borrowing_base_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.1",
+   "table": "warehouse_collateral_defects",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.1",
+   "table": "warehouse_covenant_tests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.1",
+   "table": "warehouse_curtailments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.1",
+   "table": "warehouse_daily_reports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.1",
+   "table": "warehouse_interest_accruals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.2",
+   "table": "gain_on_sale_computations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.2",
+   "table": "gl_export_batches",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.2",
+   "table": "msr_handoffs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.2",
+   "table": "platform_fee_accruals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.2",
+   "table": "ppa_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.2",
+   "table": "proceeds_matches",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.2",
+   "table": "proceeds_receipts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.2",
+   "table": "rate_passthrough_reconciliations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 27,
+   "process": "27.2",
+   "table": "settlement_waterfalls",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.1",
+   "table": "qc_reverifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.1",
+   "table": "qc_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.1",
+   "table": "qc_sample_plans",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.2",
+   "table": "fnma_qc_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.2",
+   "table": "qc_self_reports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.2",
+   "table": "remedy_ledger",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.3",
+   "table": "hmda_coverage_tests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.3",
+   "table": "hmda_edit_verifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.3",
+   "table": "hmda_lar_files",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.3",
+   "table": "hmda_public_notices",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.3",
+   "table": "hmda_ulis",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.4",
+   "table": "bsa_program",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.4",
+   "table": "bsa_sar_5y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.4",
+   "table": "fnma_fraud_reports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.4",
+   "table": "fraud_cases",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.4",
+   "table": "identity_theft_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.4",
+   "table": "ofac_hits",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.4",
+   "table": "ofac_reports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.4",
+   "table": "sar_decisions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 28,
+   "process": "28.4",
+   "table": "sars",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.2",
+   "table": "fallout_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.2",
+   "table": "hedge_policies",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.2",
+   "table": "hedge_trades",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.2",
+   "table": "margin_calls",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.2",
+   "table": "mark_to_market_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.2",
+   "table": "pipeline_positions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.2",
+   "table": "pull_through_estimates",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.2",
+   "table": "pull_through_models",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.2",
+   "table": "rate_shock_reports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.3",
+   "table": "deliveries",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.3",
+   "table": "delivery_edits",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.3",
+   "table": "delivery_packages",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.3",
+   "table": "earlycheck_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.3",
+   "table": "sfc_assignments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.3",
+   "table": "uldd_data_points",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.4",
+   "table": "bailee_letters",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.4",
+   "table": "custodian_certifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.4",
+   "table": "delivery_operator_tasks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.4",
+   "table": "post_purchase_adjustments",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.4",
+   "table": "purchase_advices",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 29,
+   "process": "29.4",
+   "table": "wire_instructions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 30,
+   "process": "30.1",
+   "table": "custodial_transfers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 30,
+   "process": "30.1",
+   "table": "fnma_establishment_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 30,
+   "process": "30.2",
+   "table": "loan_borrowers",
+   "post_migrate": "0",
+   "after": "117",
+   "delta": "117",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 30,
+   "process": "30.2",
+   "table": "loan_documents_index",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 30,
+   "process": "30.2",
+   "table": "properties",
+   "post_migrate": "0",
+   "after": "117",
+   "delta": "117",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 30,
+   "process": "30.3",
+   "table": "escrow_credit_transfers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 30,
+   "process": "30.4",
+   "table": "epd_flags",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 30,
+   "process": "30.4",
+   "table": "handoff_items",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 30,
+   "process": "30.4",
+   "table": "retention_schedule",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 30,
+   "process": "30.4",
+   "table": "servicing_file_compilations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 30,
+   "process": "30.4",
+   "table": "servicing_handoffs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 30,
+   "process": "30.4",
+   "table": "vendor_activations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.1",
+   "table": "ai_intake_legal_positions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.1",
+   "table": "eligibility_inputs_origination",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.1",
+   "table": "fnma_approvals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.1",
+   "table": "license_requirements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.1",
+   "table": "licenses",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.1",
+   "table": "mlo_roster",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.1",
+   "table": "tpo_program_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.2",
+   "table": "ai_eval_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.2",
+   "table": "consumer_ai_rights_requests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.2",
+   "table": "fair_lending_findings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.2",
+   "table": "fair_lending_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.2",
+   "table": "fair_lending_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.2",
+   "table": "lda_searches",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "esign_consent_life",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "fdpa_life_of_loan",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "fnma_enote_signing_life_plus_7y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "fnma_loan_file_life_plus_4y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "hmda_3y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "ofac_10y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "orig_unfunded_policy_25m",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "pii_access_log",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "regb_25m",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "regb_prescreen_25m",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "regb_selftest_25m",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "regz_atr_3y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "regz_cd_5y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "regz_general_2y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "regz_le_3y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "regz_locomp_3y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "respa_afba_5y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 31,
+   "process": "31.3",
+   "table": "respa_s8_5y",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 32,
+   "process": "32.2",
+   "table": "card_instance_events",
+   "post_migrate": "0",
+   "after": "204",
+   "delta": "204",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 32,
+   "process": "32.2",
+   "table": "card_instances",
+   "post_migrate": "0",
+   "after": "126",
+   "delta": "126",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 32,
+   "process": "32.2",
+   "table": "conversations",
+   "post_migrate": "0",
+   "after": "4",
+   "delta": "4",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 32,
+   "process": "32.2",
+   "table": "deep_links",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 32,
+   "process": "32.2",
+   "table": "messages",
+   "post_migrate": "0",
+   "after": "132",
+   "delta": "132",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 32,
+   "process": "32.2",
+   "table": "sessions",
+   "post_migrate": "0",
+   "after": "2",
+   "delta": "2",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 32,
+   "process": "32.2",
+   "table": "ui_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 32,
+   "process": "32.14",
+   "table": "lead_tokens",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 32,
+   "process": "32.14",
+   "table": "oidc_identities",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 32,
+   "process": "32.16",
+   "table": "agent_turns",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 32,
+   "process": "32.16",
+   "table": "journey_progress",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 32,
+   "process": "32.16",
+   "table": "party_credentials",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 32,
+   "process": "32.17",
+   "table": "video_sessions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 33,
+   "process": "33.1",
+   "table": "partner_book_facts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 33,
+   "process": "33.1",
+   "table": "partner_book_imports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 33,
+   "process": "33.1",
+   "table": "partner_book_invitations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 33,
+   "process": "33.2",
+   "table": "partner_book_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 33,
+   "process": "33.3",
+   "table": "readiness_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 34,
+   "process": "34.1",
+   "table": "staff_access_reviews",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 34,
+   "process": "34.1",
+   "table": "staff_actions",
+   "post_migrate": "0",
+   "after": "327",
+   "delta": "327",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 34,
+   "process": "34.1",
+   "table": "staff_credentials",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 34,
+   "process": "34.1",
+   "table": "staff_sessions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 34,
+   "process": "34.1",
+   "table": "staff_users",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 34,
+   "process": "34.2",
+   "table": "directory_exports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 34,
+   "process": "34.2",
+   "table": "directory_unmasks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 34,
+   "process": "34.3",
+   "table": "partner_book_daily_reports",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 34,
+   "process": "34.4",
+   "table": "evidence_packs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 35,
+   "process": "35.1",
+   "table": "entity_keys",
+   "post_migrate": "0",
+   "after": "19",
+   "delta": "19",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.1",
+   "table": "entity_latest_scoped",
+   "post_migrate": "0",
+   "after": "387",
+   "delta": "387",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.1",
+   "table": "entity_projections",
+   "post_migrate": "0",
+   "after": "36",
+   "delta": "36",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.1",
+   "table": "outbox_dispatches",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 35,
+   "process": "35.1",
+   "table": "projection_gaps",
+   "post_migrate": "0",
+   "after": "80",
+   "delta": "80",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.1",
+   "table": "projection_mismatches",
+   "post_migrate": "0",
+   "after": "12",
+   "delta": "12",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.1",
+   "table": "projection_runs",
+   "post_migrate": "0",
+   "after": "4",
+   "delta": "4",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.1",
+   "table": "service_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 35,
+   "process": "35.1",
+   "table": "sweep_runs",
+   "post_migrate": "0",
+   "after": "4",
+   "delta": "4",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.2",
+   "table": "document_access_log",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.2",
+   "table": "document_blobs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.2",
+   "table": "document_holds",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.2",
+   "table": "document_integrity_findings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.2",
+   "table": "document_integrity_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.2",
+   "table": "esign_envelope_documents",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.2",
+   "table": "esign_envelopes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.2",
+   "table": "esign_signature_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.2",
+   "table": "mail_manifest_pieces",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.2",
+   "table": "mail_manifests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.3",
+   "table": "cycle_receipts",
+   "post_migrate": "0",
+   "after": "35",
+   "delta": "35",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.3",
+   "table": "cycle_registry",
+   "post_migrate": "0",
+   "after": "38",
+   "delta": "38",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.3",
+   "table": "cycle_runs",
+   "post_migrate": "0",
+   "after": "73",
+   "delta": "73",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.3",
+   "table": "job_events",
+   "post_migrate": "0",
+   "after": "3449",
+   "delta": "3449",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.3",
+   "table": "jobs",
+   "post_migrate": "0",
+   "after": "999",
+   "delta": "999",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.4",
+   "table": "close_attestations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.4",
+   "table": "close_period_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.4",
+   "table": "close_period_steps",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.4",
+   "table": "close_periods",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.4",
+   "table": "close_reopens",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.4",
+   "table": "tax_year_closes",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.5",
+   "table": "ach_return_files",
+   "post_migrate": "0",
+   "after": "3",
+   "delta": "3",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.5",
+   "table": "cashiering_unit_runs",
+   "post_migrate": "0",
+   "after": "618",
+   "delta": "618",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.5",
+   "table": "installment_schedule_runs",
+   "post_migrate": "0",
+   "after": "112",
+   "delta": "112",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.5",
+   "table": "loan_installments",
+   "post_migrate": "0",
+   "after": "28525",
+   "delta": "28525",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.5",
+   "table": "loan_servicing_configs",
+   "post_migrate": "0",
+   "after": "110",
+   "delta": "110",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.5",
+   "table": "lockbox_batches",
+   "post_migrate": "0",
+   "after": "3",
+   "delta": "3",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.5",
+   "table": "lockbox_items",
+   "post_migrate": "0",
+   "after": "7",
+   "delta": "7",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.5",
+   "table": "servicer_profiles",
+   "post_migrate": "1",
+   "after": "5",
+   "delta": "2",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.6",
+   "table": "closing_orchestration_steps",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.6",
+   "table": "closing_orchestrations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.6",
+   "table": "funding_snapshots",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.6",
+   "table": "orchestration_daily_receipts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.6",
+   "table": "purchase_reconciliations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.7",
+   "table": "api_principals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 35,
+   "process": "35.7",
+   "table": "breakglass_uses",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 35,
+   "process": "35.7",
+   "table": "role_grants",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 35,
+   "process": "35.7",
+   "table": "role_handovers",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 35,
+   "process": "35.7",
+   "table": "role_queue_snapshots",
+   "post_migrate": "0",
+   "after": "88",
+   "delta": "88",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.8",
+   "table": "work_actions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.8",
+   "table": "work_approvals",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.8",
+   "table": "work_derivations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.8",
+   "table": "work_item_events",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.8",
+   "table": "work_items",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.8",
+   "table": "work_log_recon_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.8",
+   "table": "work_screen_versions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.9",
+   "table": "breach_action_registry",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.9",
+   "table": "breach_actions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.9",
+   "table": "case_milestone_expectations",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.9",
+   "table": "case_timelines",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.9",
+   "table": "claim_candidates",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.9",
+   "table": "default_case_daily_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.9",
+   "table": "docket_reactions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.9",
+   "table": "firm_dispatches",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.10",
+   "table": "partner_retirement_notifications",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.10",
+   "table": "prior_loan_retirements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.10",
+   "table": "refinance_closeout_daily_receipts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.10",
+   "table": "refinance_closeout_steps",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.10",
+   "table": "refinance_closeouts",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.11",
+   "table": "exception_triages",
+   "post_migrate": "0",
+   "after": "220",
+   "delta": "220",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.11",
+   "table": "hosted_probe_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 35,
+   "process": "35.11",
+   "table": "ops_daily_reports",
+   "post_migrate": "0",
+   "after": "4",
+   "delta": "4",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.11",
+   "table": "ops_exceptions",
+   "post_migrate": "0",
+   "after": "83",
+   "delta": "83",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 35,
+   "process": "35.11",
+   "table": "persisted_measurement_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 35,
+   "process": "35.11",
+   "table": "persisted_measurements",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 35,
+   "process": "35.12",
+   "table": "data_scans",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.12",
+   "table": "environment_manifests",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.12",
+   "table": "go_live_checklists",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.12",
+   "table": "integration_switches",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.12",
+   "table": "parallel_run_diffs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.12",
+   "table": "parallel_runs",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.12",
+   "table": "posture_checks",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.12",
+   "table": "posture_controls",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.12",
+   "table": "posture_findings",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 35,
+   "process": "35.12",
+   "table": "restore_drills",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 36,
+   "process": "36.1",
+   "table": "partner_actions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 36,
+   "process": "36.1",
+   "table": "partner_credentials",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 36,
+   "process": "36.1",
+   "table": "partner_sessions",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 36,
+   "process": "36.1",
+   "table": "partner_users",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "missing_ddl"
+  },
+  {
+   "section": 0,
+   "process": "kernel",
+   "table": "borrowers",
+   "post_migrate": "0",
+   "after": "117",
+   "delta": "117",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 0,
+   "process": "kernel",
+   "table": "borrower_fair_lending",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 0,
+   "process": "kernel",
+   "table": "loan_parties",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 0,
+   "process": "kernel",
+   "table": "loan_events",
+   "post_migrate": "0",
+   "after": "13048",
+   "delta": "13048",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 0,
+   "process": "kernel",
+   "table": "timers",
+   "post_migrate": "0",
+   "after": "3204",
+   "delta": "3204",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 0,
+   "process": "kernel",
+   "table": "ledger_entry_sets",
+   "post_migrate": "0",
+   "after": "163",
+   "delta": "163",
+   "expected": false,
+   "verdict": "persisted"
+  },
+  {
+   "section": 0,
+   "process": "kernel",
+   "table": "ledger_lines",
+   "post_migrate": "0",
+   "after": "503",
+   "delta": "503",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 0,
+   "process": "kernel",
+   "table": "agent_decisions",
+   "post_migrate": "0",
+   "after": "2673",
+   "delta": "2673",
+   "expected": true,
+   "verdict": "persisted"
+  },
+  {
+   "section": 0,
+   "process": "kernel",
+   "table": "integration_messages",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  },
+  {
+   "section": 0,
+   "process": "kernel",
+   "table": "access_log",
+   "post_migrate": "0",
+   "after": "0",
+   "delta": "0",
+   "expected": false,
+   "verdict": "untouched"
+  }
+ ]
+}

@@ -275,3 +275,112 @@
   min-height: 42px;
 }
 .sm-fine { font-size: 12px; color: var(--muted); margin-top: 12px; }
+
+/* 32.19: the disclosure footer inside the column (32.16 principle 8), the tasks rows, a card hosted in the column, the badge, the account form on paper. */
+.sm-proto .sm-footer {
+  text-align: center;
+  color: var(--quiet);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: -0.1px;
+  padding: 12px 20px calc(96px + env(safe-area-inset-bottom));
+  border: 0;
+  background: transparent;
+}
+.sm-proto .sm-footer p { margin: 0; }
+.sm-proto .sm-footer a { color: var(--muted); text-decoration: underline; }
+.sm-task { width: 100%; background: none; text-align: left; }
+.sm-task strong { color: var(--accent); font-weight: 600; }
+.sm-tasks-title { font-size: 24px; margin: 0 0 16px; }
+.sm-tasks-purpose { margin: 0 0 8px; }
+.sm-card-host { display: block; }
+.sm-card-host[data-expanded="true"] { border-color: var(--accent); }
+/* 32.16 §2.2 / 32.16-T14: an issue the platform raised (a frozen bureau's lift instructions) is a caution row on its step — the card inside, never a toast or a modal */
+.sm-caution { border-color: var(--accent); background: var(--accent-soft); }
+.sm-caution > h3 { margin: 0 0 8px; font-size: 15px; color: #842128; }
+.sm-caution article { background: var(--surface); border-radius: 16px; padding: 12px 14px; }
+.sm-needed { margin: 0 0 12px; padding-left: 18px; font-size: 15px; color: var(--muted); }
+.sm-badge { display: inline-block; border-radius: 100px; padding: 4px 10px; background: var(--accent-soft); color: #842128; font-size: 13px; font-weight: 600; }
+.sm-proto .sm-signin {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+.sm-proto .sm-signin h2 { font-size: 24px; line-height: 29px; letter-spacing: -0.65px; font-weight: 600; margin: 0 0 14px; }
+.sm-proto .sm-signin .sm-label { display: block; font-size: 15px; color: var(--muted); margin: 14px 0 4px; }
+.sm-proto .sm-signin .sm-input {
+  width: 100%;
+  border: 1px solid #bababc;
+  border-radius: 8px;
+  padding: 0 10px;
+  min-height: 44px;
+  background: var(--surface);
+  color: var(--text);
+}
+.sm-proto .sm-signin .sm-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  width: 100%;
+  border-radius: 100px;
+  padding: 10px 16px;
+  font-weight: 500;
+  border: 0;
+}
+.sm-proto .sm-signin .sm-btn-primary { background: var(--accent); color: #fff; margin-top: 18px; }
+.sm-proto .sm-signin .sm-btn-quiet { background: var(--bubble); color: var(--text); margin-top: 10px; }
+.sm-proto .sm-signin .sm-card-actions { display: grid; gap: 0; }
+.sm-proto .sm-signin .sm-source, .sm-proto .sm-signin .sm-muted { color: var(--muted); font-size: 13px; }
+.sm-proto .sm-signin .sm-account-link { color: var(--muted); font-size: 15px; }
+.sm-proto .sm-signin .sm-error { color: var(--accent); font-size: 15px; }
+.sm-proto .sm-signin .sm-fake { color: #842128; background: var(--accent-soft); border-radius: 6px; padding: 2px 6px; font-size: 13px; }
+/* 32.19 Session 3: a `components/cards` card hosted in the column (a declarations question, the demographics card, Tasks' orphans, Result's status and checklist), the loan record's sections on My Loan, a task link under "Still needed". */
+.sm-proto .sm-card-host { display: block; margin: 12px 0; }
+.sm-proto .sm-card-host > .sm-lead { margin-bottom: 8px; }
+.sm-proto .sm-card-host article.sm-card { background: var(--surface); border: 1px solid #dedede; border-radius: 16px; padding: 14px; margin: 0; max-width: none; color: var(--text); }
+.sm-proto .sm-card-host article.sm-card h3 { font-size: 17px; line-height: 22px; margin: 0 0 10px; font-weight: 600; }
+.sm-proto .sm-card-host .sm-btn { font: inherit; font-size: 15px; font-weight: 500; border-radius: 100px; padding: 10px 16px; min-height: 44px; border: 1px solid var(--line); background: var(--bubble); color: var(--text); }
+.sm-proto .sm-card-host .sm-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sm-proto .sm-card-host .sm-btn:disabled { opacity: 0.42; }
+.sm-proto .sm-card-host .sm-options { display: grid; gap: 8px; }
+.sm-proto .sm-card-host .sm-option { width: 100%; text-align: left; white-space: normal; }
+.sm-proto .sm-card-host .sm-card-actions { display: grid; gap: 8px; margin-top: 12px; }
+.sm-proto .sm-card-host .sm-input, .sm-proto .sm-card-host .sm-select, .sm-proto .sm-card-host .sm-textarea { width: 100%; border: 1px solid #bababc; border-radius: 8px; padding: 8px 10px; min-height: 44px; background: var(--surface); color: var(--text); font: inherit; }
+.sm-proto .sm-card-host .sm-fields { margin: 0; }
+.sm-proto .sm-card-host .sm-fields > div { padding: 8px 0; border-top: 1px solid var(--line); }
+.sm-proto .sm-card-host .sm-fields > div:first-child { border-top: 0; padding-top: 0; }
+.sm-proto .sm-card-host .sm-fields dt { font-size: 15px; color: var(--muted); margin: 0 0 4px; }
+.sm-proto .sm-card-host .sm-fields dd { margin: 0; }
+.sm-proto .sm-card-host .sm-fieldset { border: 0; padding: 0; margin: 12px 0 0; }
+.sm-proto .sm-card-host .sm-fieldset legend { font-weight: 600; margin-bottom: 6px; }
+.sm-proto .sm-card-host .sm-radios label { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 15px; }
+.sm-proto .sm-card-host .sm-sub { padding-left: 24px; }
+.sm-proto .sm-card-host .sm-source, .sm-proto .sm-card-host .sm-muted { color: var(--muted); font-size: 13px; }
+.sm-proto .sm-card-host .sm-checklist { list-style: none; padding: 0; margin: 0; }
+.sm-proto .sm-card-host .sm-checklist li { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.sm-proto .sm-card-host .sm-checklist li:first-child { border-top: 0; }
+.sm-proto .sm-card-host .sm-owner { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.sm-proto .sm-card-host .sm-error { color: var(--accent); }
+.sm-proto .sm-card-host .sm-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sm-proto .sm-card-host .sm-card-kind { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.sm-proto .sm-card-host .sm-receipt { color: var(--muted); font-size: 15px; }
+.sm-proto .sm-record-host { margin-top: 8px; }
+.sm-proto .sm-record-host .sm-record-section { background: var(--surface); border: 1px solid #dedede; border-radius: 16px; padding: 12px 14px; margin: 10px 0; color: var(--text); }
+.sm-proto .sm-record-host .sm-record-section h2 { font-size: 15px; margin: 0; }
+.sm-proto .sm-record-host .sm-rail-h-btn { display: flex; gap: 6px; align-items: center; font: inherit; font-weight: 600; padding: 0; min-height: 32px; }
+.sm-proto .sm-record-host .sm-rail-body { margin-top: 8px; font-size: 15px; }
+.sm-proto .sm-record-host .sm-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; margin: 0; }
+.sm-proto .sm-record-host .sm-kv dt { color: var(--muted); }
+.sm-proto .sm-record-host .sm-kv dd { margin: 0; text-align: right; }
+.sm-proto .sm-record-host .sm-kv .sm-big { font-size: 20px; font-weight: 600; }
+.sm-proto .sm-record-host .sm-list { list-style: none; padding: 0; margin: 0; }
+.sm-proto .sm-record-host .sm-list li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.sm-proto .sm-record-host .sm-list li:first-child { border-top: 0; }
+.sm-proto .sm-record-host .sm-linkbtn, .sm-proto .sm-task-link { font: inherit; color: var(--accent); text-decoration: underline; text-align: left; padding: 0; min-height: 0; }
+.sm-proto .sm-record-host .sm-badge { display: inline-flex; gap: 6px; }
+.sm-proto .sm-loan > h1 { font-size: 24px; line-height: 29px; letter-spacing: -0.65px; font-weight: 600; margin: 0 0 10px; }
+.sm-proto .sm-needed li { margin: 4px 0; }

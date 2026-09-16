@@ -1,25 +1,14 @@
-import Link from "next/link";
-import { FooterDisclosure } from "@/components/shell/FooterDisclosure";
+import { DocumentViewer } from "@/components/viewer/DocumentViewer";
+
+export const dynamic = "force-dynamic";
 
 /**
- * 01 §1.5 document viewer: /doc/{document_id} (authenticated). Documents are served
- * through signed, short-lived URLs bound to the session (02 §6) obtained from
- * GET /v1/borrower/documents/{id}; opens are logged to ui_events{document_opened}.
- * Stub: renders the frame; the signed-URL fetch lands with the API seam.
+ * 01 §1.5 document viewer: /doc/{document_id} (authenticated). The viewer asks the API for the session-bound signed URL
+ * (GET /v1/borrower/documents/{id}: 02 §6 — five minutes, bound to this session; opens are logged to ui_events{document_opened})
+ * and renders the stored bytes through it with the text layer the API returns beside the link (35.2 rule 7: the bytes are the
+ * stored ones, hashed on the way out; a disposed document answers 410 and the `document.unavailable` copy replaces the body).
  */
 export default async function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return (
-    <main style={{ padding: 24, maxWidth: 900 }}>
-      <p>
-        <Link href="/">← Back to your conversation</Link>
-      </p>
-      <h1 style={{ fontSize: "1.375rem" }}>Document</h1>
-      <div className="sm-viewer" style={{ minHeight: 320 }} data-document-id={id}>
-        The document viewer opens here with a text layer. (Document {id})
-      </div>
-      <p className="sm-source">Template version and delivery evidence appear in the footer of every notice.</p>
-      <FooterDisclosure />
-    </main>
-  );
+  return <DocumentViewer id={id} />;
 }

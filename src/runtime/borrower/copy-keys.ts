@@ -97,6 +97,10 @@ export const ERROR_COPY_KEYS: Readonly<Record<string, string>> = {
   DEEP_LINK_UNKNOWN: "deeplink.unknown",
   DOCUMENT_NOT_VISIBLE: "documents.not_available",
   DOCUMENT_CONTENT_UNAVAILABLE: "documents.not_available",
+  NOT_YOUR_DOCUMENT: "error.not_yours",                // 35.2 rule 7: an unknown id and another party's document answer the same 404
+  URL_SIGNATURE: "error.not_yours",                    // 35.2: a signed URL bound to another session
+  DOCUMENT_DISPOSED: "document.unavailable",           // 35.2 edge case: a disposed document answers 410 with its tombstone
+  INTEGRITY_FAILED: "documents.not_available",         // 35.2 rule 7: a served mismatch is refused; the sev 1 is the platform's
   // 32.17 rule 12: the identity card's Confirm (video.identify) — each refusal in the copy library's words, never the generic line
   IDENTITY_NAME_INVALID: "identity.contact.name_invalid",
   IDENTITY_EMAIL_INVALID: "identity.contact.email_invalid",

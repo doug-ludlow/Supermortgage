@@ -101,7 +101,8 @@ export class PgUnitOfWork {
       // 1. hydrate — a loan's record, an application's record, or both (deduplicated: the hand-off events carry both keys), on the transaction's connection
       const loanHistory = loanId ? await events.byLoan(loanId) : [];
       const appHistory = applicationId ? await events.byApplication(applicationId) : [];
-      const sets = loanId ? await ledgerRepo.setsForLoan(loanId) : [];
+      // the loan's listed sets plus the custodial-only sets its own commands posted (a settlement's cash split / investor share — 16.2's reversal reverses them too)
+      const sets = loanId ? [...await ledgerRepo.setsForLoan(loanId), ...await ledgerRepo.setsPostedByLoan(loanId)] : [];
       // a global command (no loan, no application) hydrates the timers armed on global subjects — a transfer batch's clocks are satisfied by the batch-level events 17.x tools emit (32.12 backend delta; additive)
       const loanTimers = loanId ? await timerRepo.open(loanId) : applicationId ? [] : await timerRepo.openGlobal();
       const appTimers = applicationId ? await timerRepo.forApplication(applicationId) : [];
@@ -134,7 +135,7 @@ export class PgUnitOfWork {
       if (opts.before) await opts.before(q, info);
       const persisted = await events.append(newEvents, q);
       await loanRepo.projectStatus(persisted, q);   // `loan.paid_in_full` → loans.status = paid_off (16.2 rule 3); `payoff.reversed` → active
-      for (const s of newSets) await ledgerRepo.post(s, q);
+      for (const s of newSets) await ledgerRepo.post(s, q, loanId || null);
       await timerRepo.save(changedTimers, q);
       const decisions: DecisionRecord[] = [];
       for (const d of queued) decisions.push(await decisionRepo.record(d, q));

@@ -43,7 +43,13 @@ import { BorrowerError, toBorrowerError } from "./errors.ts";
 import { serialize, type ShapeName } from "./serialize.ts";
 import { b64url, sha256, verifyAssertion, verifyRegistration } from "./webauthn.ts";
 import { FakeStripeIdentity, type StripeIdentityPort } from "./vendors/fake-stripe-identity.ts";
-import { FakeBlobStore, type BlobStorePort } from "./vendors/fake-blob-store.ts";
+import type { BlobStorePort } from "./vendors/fake-blob-store.ts";
+import { storeDocumentInUow } from "../documents/store-uow.ts";
+import { UPLOAD_MAX_BYTES, UPLOAD_MIME_TYPES } from "../../domain/operations-runtime/documents/shared.ts";
+import { documentBytes } from "../../domain/operations-runtime/documents/open.ts";
+import { openDocumentInUow, raiseServedMismatch } from "../documents/open-uow.ts";
+import { textLayer as pdfTextLayer } from "../../infra/files/pdf.ts";
+import { sha256Hex as blobSha256 } from "../../infra/blobs/pg-fake-blob-store.ts";
 import { FakeTruv, type IncomeConnectPort } from "./vendors/fake-truv.ts";
 import { FakePlaid, type AssetsConnectPort } from "./vendors/fake-plaid.ts";
 import { BorrowerRecordReader } from "./record.ts";
@@ -174,7 +180,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const rpId = opts.rpId ?? process.env["BORROWER_RP_ID"] ?? "localhost";
   const allowedOrigins = opts.allowedOrigins ?? (process.env["BORROWER_ORIGINS"] ? process.env["BORROWER_ORIGINS"].split(",").map((s) => s.trim()) : []);
   const stripe = opts.stripe ?? new FakeStripeIdentity((line) => logger.info("vendor", line));
-  const blobs = opts.blobs ?? new FakeBlobStore();
+  const blobs = opts.blobs ?? runtime.blobs;   // 35.2: the runtime's object store (document_blobs) — the per-process FakeBlobStore is a unit-test double only
   const urlSecret = opts.urlSecret ?? process.env["BORROWER_URL_SECRET"] ?? randomBytes(32).toString("hex");
   const returnUrlBase = opts.returnUrlBase ?? process.env["BORROWER_APP_URL"] ?? "https://app.supermortgage.example";
   const auth = new BorrowerAuth(runtime.db);
@@ -658,10 +664,13 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const subject = assertSubject(ctx, { application_id: applicationId });
     const declared = fields["document_class"] || null;
     if (declared && !DOCUMENT_CLASSES.some((c) => c.code === declared)) throw new RangeError(`document_class ${declared} is not a 22.1 document class`);
+    // 35.2 edge case: a borrower upload larger than 25 MB or with a MIME type outside {pdf, jpeg, png, tiff} is refused UNSUPPORTED_ARTIFACT before any row is written (application/json is the FAKE contract fixture's format, 32.3 C1 — nonprod only)
+    if (file.bytes.length > UPLOAD_MAX_BYTES || !(UPLOAD_MIME_TYPES.has(file.mime_type) || (opts.environment !== "production" && file.mime_type === "application/json"))) throw new BorrowerError(415, "UNSUPPORTED_ARTIFACT", undefined, `${file.mime_type}, ${file.bytes.length} bytes: uploads are PDF, JPEG, PNG or TIFF up to 25 MB`);
     const documentId = randomUUID(); const digest = sha256(file.bytes).toString("hex");
-    const storageUri = await blobs.put(documentId, { bytes: file.bytes, mime_type: file.mime_type, filename: file.filename, stored_at: at });
-    await runtime.db.query(`INSERT INTO documents (id, kind, sha256, byte_size, storage_uri, mime_type, received_from, application_id, doc_class, source_channel, sender_identity, received_at, subject_borrower_id, page_count, metadata) VALUES ($1, 'origination_document', $2, $3, $4, $5, $6, $7, $8, 'borrower_upload', $9::jsonb, $10, $11, 0, $12::jsonb)`,
-      [documentId, digest, file.bytes.length, storageUri, file.mime_type, ctx.party.id, applicationId, declared, toJson({ party_id: ctx.party.id, session_id: ctx.session.session_id, filename: file.filename }), at, subject.application_borrower_id, toJson({ filename: file.filename, blob_store: blobs.vendorName })]);
+    // 35.2 rule 4: the row and its staged bytes through documents.store in a unit of work (document.staged, the inline drain to the object store, document.stored) — the object store is document_blobs in every nonprod stage
+    const stored = await storeDocumentInUow(runtime, { applicationId }, { id: documentId, kind: "origination_document", bytes: file.bytes, mime_type: file.mime_type, retention_class: "life_of_loan_plus_4y", application_id: applicationId, received_from: ctx.party.id, page_count: null,
+      intake: { doc_class: declared, source_channel: "borrower_upload", sender_identity: { party_id: ctx.party.id, session_id: ctx.session.session_id, filename: file.filename }, received_at: at, subject_borrower_id: subject.application_borrower_id }, metadata: { filename: file.filename, blob_store: blobs.vendorName } }, SYSTEM_ACTOR);
+    void stored;
     // 22.1's intake op through the bus: document.received (+ the needs-list review clock); a duplicate hash links, never re-processes
     const r = await runtime.execute({ process: "22.1", name: "ingestDocument", loanId: "", applicationId, actor: SYSTEM_ACTOR,
       input: { application_id: applicationId, document_id: documentId, source_channel: "borrower_upload", sha256: digest, page_count: 0, declared_class: declared, subject_borrower_id: subject.application_borrower_id, applicant_borrower_ids: await auth.parties.applicationBorrowerIds(applicationId), sender_identity: { party_id: ctx.party.id, session_id: ctx.session.session_id }, received_at: at } });
@@ -669,12 +678,14 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     logger.info("borrower.document.uploaded", { document_id: documentId, application_id: applicationId, bytes: file.bytes.length, status: out["status"], blob_store: blobs.vendorName });
     send(res, 201, "document_uploaded", { document_id: documentId, application_id: applicationId, status: out["status"], integrity_status: out["integrity_status"], quarantined: out["quarantined"], quarantine_reason: out["quarantine_reason"] ?? null, duplicate_of: out["duplicate_of"] ?? null, matched_request_ids: out["matched_request_ids"] ?? [], received_at: at, doc_class: declared, byte_size: file.bytes.length, sha256: digest });
   }
-  interface DocRow { id: string; kind: string; doc_class: string | null; mime_type: string | null; application_id: string | null; loan_id: string | null; subject_borrower_id: string | null; metadata: Record<string, unknown>; }
+  interface DocRow { id: string; kind: string; doc_class: string | null; mime_type: string | null; application_id: string | null; loan_id: string | null; subject_borrower_id: string | null; metadata: Record<string, unknown>; storage_status: string; storage_uri: string; sha256: string; text_layer: boolean | null; template_code: string | null; template_version: string | null; page_count: number | null; }
+  /** 35.2 rule 7: an unknown id and another party's document answer the same 404 NOT_YOUR_DOCUMENT (existence never leaks; never a 403 that confirms it). */
   async function visibleDocument(ctx: BorrowerContext, id: string): Promise<DocRow> {
-    if (!isUuid(id)) throw new RangeError("document id must be a uuid");
-    const rows = await runtime.db.query<DocRow & Record<string, unknown>>(`SELECT id, kind, doc_class, mime_type, application_id, loan_id, subject_borrower_id, metadata FROM documents WHERE id = $1`, [id]);
+    if (!isUuid(id)) throw new BorrowerError(404, "NOT_YOUR_DOCUMENT", undefined, "document id must be a uuid");
+    const rows = await runtime.db.query<DocRow & Record<string, unknown>>(`SELECT id, kind, doc_class, mime_type, application_id, loan_id, subject_borrower_id, metadata, storage_status, storage_uri, sha256, text_layer, template_code, template_version, page_count FROM documents WHERE id = $1`, [id]);
     const d = rows[0];
-    if (!d) throw new BorrowerError(403, "PARTY_SCOPE");                          // never confirm existence outside the party's scope
+    if (!d) throw new BorrowerError(404, "NOT_YOUR_DOCUMENT");
+    if (!ctx.subjects.some((s) => (d.application_id && s.application_id === d.application_id) || (d.loan_id && s.loan_id === d.loan_id))) throw new BorrowerError(404, "NOT_YOUR_DOCUMENT", undefined, "the document is not on this party's record");
     const subject = assertSubject(ctx, { application_id: d.application_id, loan_id: d.loan_id });
     if (RENDERED_KINDS.has(d.kind)) return d;
     const family = DOCUMENT_CLASSES.find((c) => c.code === d.doc_class)?.family;
@@ -688,19 +699,31 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const d = await visibleDocument(ctx, id);
     const exp = String(Date.parse(at) + DOCUMENT_URL_MINUTES * 60_000);
     const url = `/v1/borrower/documents/${d.id}/content?exp=${exp}&sig=${signUrl(ctx.session.session_id, d.id, exp)}`;
-    await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, kind: "document_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { document_id: d.id, doc_class: d.doc_class, kind: d.kind } });
-    send(res, 200, "document_link", { document_id: d.id, title: (d.metadata["title"] as string | undefined) ?? (d.metadata["filename"] as string | undefined) ?? d.doc_class ?? d.kind, doc_class: d.doc_class, mime_type: d.mime_type, url, expires_at: new Date(Number(exp)).toISOString() });
+    if (d.storage_status === "disposed") { await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, kind: "document_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { document_id: d.id, doc_class: d.doc_class, kind: d.kind, route: "link", status: 410 } }); throw new BorrowerError(410, "DOCUMENT_DISPOSED", undefined, "the document was disposed under its retention class; the tombstone remains"); }   // 35.2 edge case: logged, then the tombstone
+    await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, kind: "document_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { document_id: d.id, doc_class: d.doc_class, kind: d.kind, route: "link" } });
+    // 35.2: the viewer's text layer rides with the link (the bytes' own, never a re-render) — the /content serve is the logged access
+    let text: string | null = null;
+    if (d.text_layer && d.mime_type === "application/pdf") { const got = await documentBytes(runtime.db, runtime.blobs, d as unknown as Parameters<typeof documentBytes>[2]); if (got && blobSha256(got.bytes) === d.sha256) { try { text = pdfTextLayer(got.bytes).text; } catch { text = null; } } }
+    send(res, 200, "document_link", { document_id: d.id, title: (d.metadata["title"] as string | undefined) ?? (d.metadata["filename"] as string | undefined) ?? d.doc_class ?? d.kind, doc_class: d.doc_class, mime_type: d.mime_type, url, expires_at: new Date(Number(exp)).toISOString(), sha256: d.sha256, page_count: d.page_count, template_code: d.template_code, template_version: d.template_version, text_layer: text });
   }
   async function documentContent(req: IncomingMessage, res: ServerResponse, url: URL, id: string): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);
     const exp = url.searchParams.get("exp") ?? ""; const sig = url.searchParams.get("sig") ?? "";
-    if (!/^\d+$/.test(exp) || Number(exp) <= Date.parse(at)) throw new BorrowerError(410, "DEEP_LINK_EXPIRED");
-    if (!sameSig(sig, signUrl(ctx.session.session_id, id, exp))) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the signed URL is bound to another session");
+    // 35.2 rule 7, in this order: ownership (404, existence never leaks) → the URL's expiry (401) → its signature, bound to this session (401 — a stolen URL on another session is mis-signed for it)
     const d = await visibleDocument(ctx, id);
-    const blob = await blobs.get(d.id);
-    if (!blob) throw new BorrowerError(404, "DOCUMENT_CONTENT_UNAVAILABLE");
-    res.writeHead(200, { "content-type": blob.mime_type, "content-length": blob.bytes.length, "cache-control": "no-store", "content-disposition": `inline${blob.filename ? `; filename="${blob.filename.replace(/"/g, "")}"` : ""}` });
-    res.end(blob.bytes);
+    if (!/^\d+$/.test(exp) || Number(exp) <= Date.parse(at)) throw new BorrowerError(401, "DEEP_LINK_EXPIRED", undefined, "the signed URL has expired; ask for the document again");
+    if (!sameSig(sig, signUrl(ctx.session.session_id, id, exp))) throw new BorrowerError(401, "URL_SIGNATURE", undefined, "the signed URL is bound to another session");
+    if (d.storage_status === "disposed") { await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, kind: "document_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { document_id: d.id, doc_class: d.doc_class, kind: d.kind, route: "content", status: 410 } }); throw new BorrowerError(410, "DOCUMENT_DISPOSED", undefined, "the document was disposed under its retention class; the tombstone remains"); }
+    const opened = await openDocumentInUow(runtime, { document_id: d.id, purpose: "borrower_view", party_id: ctx.party.id, session_id: ctx.session.session_id, ip: ctx.ip, user_agent: ctx.userAgent }, { kind: "human", id: ctx.party.id, role: "borrower" });
+    if (opened.kind === "unknown") throw new BorrowerError(404, "NOT_YOUR_DOCUMENT");
+    if (opened.kind === "tombstone") throw new BorrowerError(410, "DOCUMENT_DISPOSED");
+    if (opened.kind === "unavailable") throw new BorrowerError(404, "DOCUMENT_CONTENT_UNAVAILABLE");
+    if (opened.kind === "mismatch") { await raiseServedMismatch(runtime, d.id, { kind: "system", id: "borrower-viewer" }).catch((e) => logger.error("borrower.document.integrity_escalation_failed", { document_id: d.id, error: e })); throw new BorrowerError(409, "INTEGRITY_FAILED", undefined, "the stored bytes do not match the recorded hash; a sev 1 is open"); }
+    if (opened.store_missing) await raiseServedMismatch(runtime, d.id, { kind: "system", id: "borrower-viewer" }).catch((e) => logger.error("borrower.document.missing_escalation_failed", { document_id: d.id, error: e }));   // the staged copy is served (its hash matched); the store's missing object is the daily run's finding, raised now
+    await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, kind: "document_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { document_id: d.id, doc_class: d.doc_class, kind: d.kind, route: "content", sha256: opened.sha256, served_from: opened.served_from } });
+    const filename = (d.metadata["filename"] as string | undefined) ?? null;
+    res.writeHead(200, { "content-type": opened.mime_type, "content-length": opened.byte_size, "cache-control": "private, no-store", "x-document-sha256": opened.sha256, "x-served-from": opened.served_from, "content-disposition": `inline${filename ? `; filename="${filename.replace(/"/g, "")}"` : ""}` });
+    res.end(opened.bytes);
   }
 
   // ───────────────────────────── the read models (02 §1) · the stream (02 §3) · commands and cards (02 §2, §7)

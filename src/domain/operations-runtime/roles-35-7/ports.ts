@@ -27,7 +27,7 @@ export const defaultCycleRuns: CycleRunsPort = {
   async openRun(q, i) {
     if (!(await exists(q, "cycle_runs"))) return randomUUID();
     try {
-      const rows = await q.query<{ id: string }>(`INSERT INTO cycle_runs (cycle_code, period_key, as_of_date, planned_by, opened_at, units_total, status) VALUES ('roles.queue_scan', $1, $1::date, $2, now(), 1, 'running') ON CONFLICT (cycle_code, period_key) DO UPDATE SET planned_by = cycle_runs.planned_by RETURNING id::text AS id`, [i.as_of, i.planned_by]);
+      const rows = await q.query<{ id: string }>(`INSERT INTO cycle_runs (cycle_code, period_key, as_of_date, planned_by, opened_at, units_total, status) VALUES ('roles.queue_scan', $1, $2::date, $3, now(), 1, 'running') ON CONFLICT (cycle_code, period_key) DO UPDATE SET planned_by = cycle_runs.planned_by RETURNING id::text AS id`, [i.as_of, i.as_of, i.planned_by]);
       return rows[0]?.id ?? randomUUID();
     } catch { return randomUUID(); }
   },

@@ -27,7 +27,8 @@ import type { Queryable } from "../../infra/db/client.ts";
 import type { Actor } from "../../kernel/events/index.ts";
 import type { EntityStore } from "../../app/tools.ts";
 import type { Runtime } from "../../runtime/app.ts";
-import { loanCashState, recipientsOf, servicingParties, SERVICER_CONTACT } from "../../runtime/servicing.ts";
+import { loanCashState, recipientsOf, servicingParties } from "../../runtime/servicing.ts";
+import { servicerBlockFor } from "./servicing-config.ts";
 import { plainDate as D, addDays, addMonths, type PlainDate } from "../../kernel/calendar/date.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { evaluateFundingConditions, type ConditionFacts } from "../closing/ops-26-3.ts";
@@ -211,9 +212,10 @@ export const deriveLossmitNotify: Deriver = async (c) => {
   const dets = Array.isArray(ev.data["determinations"]) ? (ev.data["determinations"] as Row[]) : [];
   const denied = dets.filter((d) => d["result"] === "denied").map((d) => ({ name: s(d["option"]), reason: (Array.isArray(d["reason_codes"]) ? (d["reason_codes"] as unknown[]).map(String) : []).join(", ") || "not eligible", investor_name: "Fannie Mae", investor_requirement: (Array.isArray(d["reason_codes"]) ? (d["reason_codes"] as unknown[]).map(String) : []).join(", ") || null }));
   const state = s(ev.data["state"]) || null;
-  // the servicer-side lines of the letter are the platform's own servicer block (src/runtime/servicing.ts SERVICER_CONTACT — 7.1's statements and the staff invitation print the same one), the public HUD / HOPE lines and §1024.41(h)'s appeal procedure; never the catalog's sample payload. `other_available` is the record's: the options the evaluation did not deny.
-  const servicerSide: Row = { spoc_name: "Loss Mitigation Team", spoc_phone: SERVICER_CONTACT.servicer_phone, servicer_address: SERVICER_CONTACT.servicer_address, exclusive_address: SERVICER_CONTACT.exclusive_address,
-    hud_phone: REGX_DENIAL_PUBLIC_LINES.hud_phone, hud_counselor_url: SERVICER_CONTACT.counselor_url ?? REGX_DENIAL_PUBLIC_LINES.hud_counselor_url, hope_hotline: REGX_DENIAL_PUBLIC_LINES.hope_hotline,
+  // the servicer-side lines of the letter are the servicer block in force on the decision date (35.5 rule 9: the loan's `servicer_profiles` version — src/domain/operations-runtime/servicing-config.ts servicerBlockFor; 7.1's statements and the 1098 print the same one), the public HUD / HOPE lines and §1024.41(h)'s appeal procedure; never the catalog's sample payload. `other_available` is the record's: the options the evaluation did not deny.
+  const block = await servicerBlockFor(c.rt.db, loanId, today(c.now));
+  const servicerSide: Row = { spoc_name: "Loss Mitigation Team", spoc_phone: block.servicer_phone, servicer_address: block.servicer_address, exclusive_address: block.exclusive_address,
+    hud_phone: REGX_DENIAL_PUBLIC_LINES.hud_phone, hud_counselor_url: block.counselor_url || REGX_DENIAL_PUBLIC_LINES.hud_counselor_url, hope_hotline: REGX_DENIAL_PUBLIC_LINES.hope_hotline,
     appeal_how: REGX_DENIAL_PUBLIC_LINES.appeal_how, next_steps: REGX_DENIAL_PUBLIC_LINES.next_steps, ai_notice: REGX_DENIAL_PUBLIC_LINES.ai_notice,
     other_available: dets.filter((d) => d["result"] !== "denied").map((d) => s(d["option"])).filter(Boolean) };
   const appealDays = state === "CA" ? 30 : 14;

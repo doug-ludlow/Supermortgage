@@ -295,6 +295,8 @@ export type BorrowerRecord = {
   timezone: string; // borrower time zone, e.g. America/Phoenix
   /** 32.6 §1.3 / §1.5: a terminal disposition (denied, withdrawn, closed) leaves the Record read-only. */
   read_only?: boolean;
+  /** 33.1 rule 6: a monitored loan (the partner book) — the partner as the servicer of record and the loan's last four; absent for every other subject (32.19 My Loan reads it). */
+  partner_book?: { partner_party_id: string | null; partner_name: string | null; loan_last4: string | null; as_of_date: string | null; monitored: true };
 };
 
 /** 02 §1.2 `thread_messages` */

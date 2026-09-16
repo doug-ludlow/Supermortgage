@@ -641,7 +641,9 @@ test("35.8-T13: Given a 12.2 loss-mitigation evaluation with outcome `deny`, whe
   assert.ok(denialNotice.some((e) => e.type === "notice.sent"), "12.2's denial notice sent");
   assert.ok([...runtime.noticeMemory.values()].some((n) => n.templateCode === "NTC_REGX_41C1_DENIAL" && n.loanId === l.loanId), "the rendered notice is in the registry's memory");
   assert.equal(await count(`notices WHERE loan_id = $1 AND payload->>'producer' = '35.8'`, [l.loanId]), 0, "no notice row has producer = 35.8");
-  assert.equal(await count(`notices WHERE loan_id = $1`, [l.loanId]), noticesBefore, "the screen wrote no notice row of its own");
+  // 35.2's artifact layer persists every rendered notice on the registry's own deferred write (src/runtime/servicing.ts persistNotice's note): the rows the loan gained are 12.2's denial notice, never a row of this process's
+  const noticeRows = await db.query<{ template_code: string; payload: Json }>(`SELECT template_code, payload FROM notices WHERE loan_id = $1 ORDER BY produced_at`, [l.loanId]);
+  assert.equal(noticeRows.length - noticesBefore, 1, "one notice row: 12.2's denial, persisted by the registry's sink"); assert.equal(noticeRows.at(-1)!.template_code, "NTC_REGX_41C1_DENIAL", "the screen wrote no notice row of its own");
   for (const e of noticeEvents) assert.notEqual(e.payload["producer"], "35.8", "no notice event names 35.8 as its producer");
   const commands = await staffActionsAtLeast(3, `subject_kind = 'work_action' AND subject_id = ANY($1::text[])`, [[deny.body["action_id"], review.body["action_id"], notify.body["action_id"]]]);
   assert.deepEqual(commands.map((x) => x.command).sort(), ["12.2 lossmit.evaluation.*", "12.2 lossmit.evaluation.*", "12.2 notice.render_send"]);

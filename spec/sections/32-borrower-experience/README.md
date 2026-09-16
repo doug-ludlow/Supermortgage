@@ -36,6 +36,7 @@ Stripe Identity, Plaid, Truv, IRS IVES, carrier connection, the RON platform, DU
 | 09-rate-watch-and-re-refinance.md | 32.11 | T-09-01 … T-09-10 | 32.11-T1 … 32.11-T10 |
 | 10-exits.md | 32.12 | T-10-01 … T-10-08 | 32.12-T1 … 32.12-T8 |
 | 15-entry-sign-up-and-sign-in.md | 32.14 | T-15-01 … T-15-20 | 32.14-T1 … 32.14-T20 |
+| 18-the-apply-product.md | 32.19 | T-18-01 … T-18-18 | 32.19-T1 … 32.19-T18 |
 | 13-acceptance-tests.md, 12-message-copy-library.md (rules), 11-side-quests-catalogue.md | 32.13 | T-X-01 … T-X-16 | 32.13-T1 … 32.13-T16 |
 | 12-message-copy-library.md (the strings) | copy-library.md (referenced; not units) | — | — |
 
@@ -61,7 +62,7 @@ The mapping rule: T-NN-kk → 32.k-Tkk with the leading zero dropped (T-03-01 = 
 - The automation disclosure precedes every AI exchange on every channel (baseline §8; 20.3; state chatbot rules). "Talk to a person" is one action away on every screen and emits `human.transfer.requested`.
 - Co-borrowers have separate authenticated threads; the Record is shared per application/loan. Per-party artifacts (joint intent, credit authorization, demographics, E-SIGN, signatures) are never captured across parties.
 - Money is rendered from `bigint` cents with `Intl.NumberFormat`; rates from `decimal` strings; dates in the borrower's time zone with the calendar named where a business-day definition matters ("3 business days — Sundays and federal holidays don't count").
-- Dark theme is the default (32.1 §2). If the theme is switched to light, only tokens change.
+- The designed surface is the default (32.1 §2), and since 2026-09-16 the product surface on `/app` is the Apply product (32.19 §2): `apply.css`'s tokens and chrome over 32.1 §3's card components (Tasks, Review, Result); the dark and light token sets sit beneath it, selected by `data-theme`, and switching them changes tokens only.
 
 ### Vocabulary map — UX term → build-spec object
 
@@ -123,7 +124,7 @@ First-class parallel flows (common): second borrower · gift funds · letter of 
 | Reg C preapproval program | **Adopted** — DU on TBD property, letter issued; denied preapproval requests reported (28.3) and noticed (21.6) | 20.3 Q2 (overridden) |
 | Same-creditor rescission exemption | UI renders rescission from `rescission` state only; when `not_applicable`, no cancel window is shown | 25.3 |
 | Hello-notice / lender branding | Experience is Supermortgage; `partner.legal_name` rendered wherever a disclosure or the SAFE Act requires it | 1.3 Q1, 21.2 |
-| Theme | Dark (32.1 §2); light theme via tokens only | — |
+| Theme | The Apply product's `apply.css` (32.19 §2) over the designed surface (32.1 §2); dark and light token sets beneath it | — |
 | Vendors | Stripe Identity · Plaid (assets) · Truv (income/employment) · IRS IVES (transcripts) · carrier connection optional | 22.6, 22.4, 22.3 |
 
 ### Backend deltas the UX requires (DELTA-01…10)
@@ -166,6 +167,9 @@ The reconciliation this import found (event spellings, consent kinds, the `esign
 | 32.13 | Cross-cutting: acceptance harness, copy library rules, side-quest catalogue | a |
 | 32.14 | Entry, sign-up and sign-in | c |
 | 32.16 | The conversational product: an account, then a conversation, with cards only when the rules need one | b |
+| 32.17 | The video agent: the same conversation, face to face, with the cards on the rail | b |
+| 32.18 | The DU moment: the assets connection, the credit pull and the underwriting run from the conversation | a |
+| 32.19 | The Apply product | c |
 
 ## Closing
 

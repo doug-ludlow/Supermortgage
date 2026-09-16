@@ -557,11 +557,13 @@ test("34.4-T5: Given `compliance` requests the evidence pack for loan 1 of the f
   assert.equal(n("events"), (manifest["parts"] as Json[])[0]!["event_count"]); assert.ok(n("events") > 0); assert.equal(n("events"), (await count(`loan_events WHERE loan_id = $1`, [loan1Id])) - 1, "every event of loan 1 (the pack's own evidence.pack.produced landed after the read)");
   // the counts the engine yields for loan 1 at this point of the fixture's life
   assert.equal(n("decisions"), await count(`agent_decisions WHERE loan_id = $1 AND agent <> $2`, [loan1Id, CONTROLS_AGENT])); assert.ok(n("decisions") >= 10, `the run's, the review's, the offer's and the readiness decisions: ${n("decisions")}`);
-  assert.equal(n("notices"), 2, "the invitation and the reminder"); assert.deepEqual(detail("notices"), { notices: 2, checklist_results: 2, deliveries: 2, rendered_text: 2 });
+  assert.equal(n("notices"), 3, "the invitation, the refinance offer and the reminder (35.2: a notice rendered through the command path is a notices row with its document)"); assert.deepEqual(detail("notices"), { notices: 3, checklist_results: 3, deliveries: 3, rendered_text: 3 });
+  assert.deepEqual((body.sets["notices"] as Json[]).map((x) => x["template_code"]).sort(), ["NTC_REGZ_1026_24_REFI_OFFER", "NTC_SM_PARTNER_BOOK_INVITATION", "NTC_SM_PARTNER_BOOK_INVITATION"], "the invitation, the refinance offer and the reminder");
   for (const notice of body.sets["notices"]!) {
-    assert.equal(notice["template_code"], "NTC_SM_PARTNER_BOOK_INVITATION"); assert.equal(notice["loan_id"], loan1Id);
+    assert.equal(notice["loan_id"], loan1Id);
     assert.equal((notice["checklist_results"] as Json[]).length, 1); assert.equal((notice["checklist_results"] as Json[])[0]!["notice_id"], notice["id"]); assert.equal((notice["deliveries"] as Json[]).length, 1);
-    const rendered = notice["rendered"] as Json; assert.ok(rendered && typeof rendered["text"] === "string", "the rendered text"); assert.ok(String(rendered["text"]).includes(DEMO_PARTNER.legal_name), "the invitation names the partner");
+    const rendered = notice["rendered"] as Json; assert.ok(rendered && typeof rendered["text"] === "string", "the rendered text");
+    if (notice["template_code"] === "NTC_SM_PARTNER_BOOK_INVITATION") assert.ok(String(rendered["text"]).includes(DEMO_PARTNER.legal_name), "the invitation names the partner");
   }
   assert.equal(n("timers"), await count(`timers WHERE loan_id = $1`, [loan1Id])); assert.ok(n("timers") >= 5, `loan 1's clocks: ${n("timers")}`);
   assert.equal(detail("timers")["history_events"], await count(`loan_events WHERE type LIKE 'timer.%' AND (payload->>'timer_id')::uuid IN (SELECT id FROM timers WHERE loan_id = $1)`, [loan1Id]));

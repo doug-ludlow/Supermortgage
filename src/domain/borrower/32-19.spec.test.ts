@@ -794,7 +794,8 @@ test("32.19-T11: Review is a readiness view — Given Review, then it reads `rec
   const pendingAsks = wireCards.filter((c) => c["status"] === "pending" && !INFORMATIONAL.has(String(c["kind"])));
   assert.ok(pendingAsks.length >= 3, `the number cards are pending on the thread: ${pendingAsks.map((c) => c["copy_key"]).join(",")}`);
   assert.deepEqual(pendingAsks.map((c) => c["copy_key"]).sort(), ["refi.loan_amount.confirm", "refi.product.choice", "refi.value.confirm"]);
-  for (const c of pendingAsks) { const li = page.locator(`.sm-needed li[data-testid="apply-card-${String(c["card_instance_id"])}"]`); assert.equal(await li.count(), 1, `${String(c["copy_key"])} listed under Still needed as a task`); assert.equal(await li.getAttribute("data-step"), "review", "its task is Review's own tap"); }
+  // the page's card list follows the thread on its refresh interval: the last-sent number card (refi.product.choice) can trail the API read by a tick, so each row is awaited before it is counted (as T12 awaits the gap card)
+  for (const c of pendingAsks) { const li = page.locator(`.sm-needed li[data-testid="apply-card-${String(c["card_instance_id"])}"]`); await li.waitFor({ timeout: 30_000 }).catch(() => undefined); assert.equal(await li.count(), 1, `${String(c["copy_key"])} listed under Still needed as a task`); assert.equal(await li.getAttribute("data-step"), "review", "its task is Review's own tap"); }
   assert.equal(await page.locator(".sm-needed li").count(), pendingAsks.length, "every pending card, and nothing else");
   assert.match(await page.locator('[data-testid="apply"]').first().innerText(), /Still needed/, "apply.review.needed");
   // no control names a submission; none of the seven words on the screen; the rows and the fine print

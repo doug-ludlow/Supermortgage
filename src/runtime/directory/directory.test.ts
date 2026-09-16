@@ -473,3 +473,17 @@ test("routes: the five routes with their roles run the tools on the bus as the s
     assert.deepEqual(outcomes.map((o) => [o["command"], o["result"], o["refusal_code"] ?? null]), [["directory.search", "ok", null], ["directory.search", "refused", "QUERY_TOO_SHORT"], ["directory.account", "ok", null], ["directory.activity", "ok", null], ["directory.unmask", "refused", "ROLE_REQUIRED"], ["directory.account", "refused", "NOT_FOUND"], ["directory.unmask", "ok", null], ["directory.account", "ok", null], ["directory.export", "ok", null], ["directory.export", "refused", "REASON_REQUIRED"]]);
   } finally { server.closeAllConnections?.(); await new Promise<void>((resolve) => server.close(() => resolve())); }
 });
+
+// 34.2 rule 1's "a party id prefix": a uuid whose first eight characters are all digits classifies as a phone-ish query (≥ 5 digits) — the phone
+// branch must still find the party by id prefix (the CI shard that drew such an id failed "searchable by id once identified" on 82ddc32)
+test("search: a party id whose leading eight characters are all digits is still found by that prefix (the phone branch carries the id-prefix predicate)", { skip }, async () => {
+  const id = "12345678-4c1e-4b8a-9f3e-0d2a5b6c7e01";
+  await db.query(`INSERT INTO parties (id, party_type, legal_name, contact) VALUES ($1::uuid, 'borrower', 'Digit Prefix', $2::jsonb)`, [id, JSON.stringify({ email: "digit.prefix@example.com" })]);
+  try {
+    assert.equal(classifyQuery("12345678").kind, "phone");
+    const r = await directorySearch(db, { q: "12345678", roles: ["ops_analyst"] });
+    assert.ok(r.results.some((x) => x.party_id === id), `found by id prefix: ${JSON.stringify(r.results.map((x) => x.party_id))}`);
+    const none = await directorySearch(db, { q: "87654321", roles: ["ops_analyst"] });
+    assert.ok(!none.results.some((x) => x.party_id === id));
+  } finally { await db.query(`DELETE FROM parties WHERE id = $1::uuid`, [id]); }
+});

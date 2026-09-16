@@ -39,6 +39,7 @@ import type { Queryable } from "../db/client.ts";
 import type { Logger } from "../../runtime/log.ts";
 import { PgConsoleStore } from "../../console/pg-store.ts";
 import { decodeEntityData } from "../db/entities.ts";
+import { storeDocument } from "../../domain/operations-runtime/documents-port-35-6.ts";
 
 export const FAKE_REVIEWER_ROLES: readonly string[] = ["mlo_of_record", "underwriting_reviewer", "qc_officer", "signing_officer", "funding_approver", "human_agent"];
 export const FAKE_REVIEWER_DELAY_S_DEFAULT = 20;
@@ -135,6 +136,7 @@ export class FakeReviewers {
     };
     if (this.fills("mlo_of_record")) await this.termsReviews(rt, nowIso, cutoff, run);
     if (this.fills("qc_officer")) await this.prefundingHolds(rt, nowIso, cutoff, run);
+    if (this.fills("underwriting_reviewer")) await this.pendingConditions(rt, nowIso, cutoff, run);
     await this.escalations(rt, nowIso, cutoff, run, actions);
     const approved = actions.filter((a) => a.outcome === "approved").length;
     const line = `FAKE reviewers ${nowIso}: pending=${pending} approved=${approved} left_open=${actions.filter((a) => a.outcome === "left_open").length} failed=${actions.filter((a) => a.outcome === "failed").length} delay_s=${this.delaySeconds}${approved ? ` [${actions.filter((a) => a.outcome === "approved").map((a) => `${a.kind}:${a.ref.slice(0, 24)}`).join(" ")}]` : ""}`;
@@ -171,6 +173,20 @@ export class FakeReviewers {
   }
 
   // ---- open escalations a FAKE role owns
+  // ---- 23.3's reviewer-only clearances (35.6 rule 4): a condition that sits `satisfied_pending_review` (23.3 evaluateClearance found the evidence but a reviewer must clear — requires_role, an age finding, a DU close-by) is cleared by the FAKE underwriting_reviewer after the delay with the latest clearance_evaluations row; the orchestration pass never performs the reviewer's act — it folds `condition.cleared`
+  private async pendingConditions(rt: Runtime, nowIso: string, cutoff: string, run: (a: Omit<FakeReviewerAction, "outcome" | "detail">, fn: () => Promise<string | undefined>) => Promise<void>): Promise<void> {
+    const rows = await rt.db.query<Row>(`SELECT id, data, updated_at FROM entity_current WHERE kind = 'conditions' AND data->>'status' = 'satisfied_pending_review' AND updated_at <= $1::timestamptz ORDER BY updated_at`, [cutoff]);
+    for (const r of rows) {
+      const d = decodeEntityData(r["data"]) as Row; const appId = s(d["application_id"]); const conditionId = String(d["condition_id"] ?? r["id"]); if (!appId) continue;
+      const evals = await rt.db.query<Row>(`SELECT id, data FROM entity_current WHERE kind = 'clearance_evaluations' AND data->>'condition_id' = $1 ORDER BY updated_at DESC LIMIT 1`, [conditionId]);
+      if (!evals[0]) continue;
+      const evaluation = decodeEntityData(evals[0]["data"]) as Row;
+      await run({ kind: "condition_review", role: "underwriting_reviewer", ref: conditionId, tool: "23.3 clearCondition", scope: { loan_id: null, application_id: appId } }, async () => {
+        await rt.execute({ process: "23.3", name: "clearCondition", loanId: "", applicationId: appId, actor: this.actor("underwriting_reviewer"), input: { condition_id: conditionId, evaluation, notes: fakeReviewNote(this.delaySeconds) } });
+        return `condition ${conditionId.slice(0, 40)} cleared (reviewer-only item, FAKE underwriting_reviewer)`;
+      });
+    }
+  }
   private async escalations(rt: Runtime, nowIso: string, cutoff: string, run: (a: Omit<FakeReviewerAction, "outcome" | "detail">, fn: () => Promise<string | undefined>) => Promise<void>, actions: FakeReviewerAction[]): Promise<void> {
     const rows = await rt.db.query<Row>(`SELECT id, kind, owner_role, loan_id, application_id, payload, opened_at FROM escalations WHERE completed_at IS NULL AND owner_role = ANY($1::text[]) AND opened_at <= $2::timestamptz ORDER BY opened_at`, [[...this.roles], cutoff]);
     for (const r of rows) {
@@ -199,6 +215,15 @@ export class FakeReviewers {
         });
         continue;
       }
+      if (role === "funding_approver" && p["package"] && typeof p["package"] === "object" && s((p["package"] as Row)["advance_id"]) && scope.application_id) {
+        // 27.1's dual control: the warehouse wire package handed to the funding_approver → `27.1 funding_approver{advance_id}` (the approval record and the bank release; the tool completes its own escalation)
+        const advanceId = s((p["package"] as Row)["advance_id"])!;
+        await run({ kind: "warehouse_wire_release", role, ref: id, tool: "27.1 funding_approver", scope }, async () => {
+          await exec("27.1", "funding_approver", { advance_id: advanceId });
+          return `warehouse advance ${advanceId.slice(0, 40)} released (dual control, FAKE approver)`;
+        });
+        continue;
+      }
       if (role === "funding_approver" && s(p["wire_id"]) && s(p["funding_id"]) && scope.application_id) {
         const wire = await rt.db.query<Row>(`SELECT data FROM entity_current WHERE kind = 'funding_wires' AND id = $1`, [s(p["wire_id"])!]);
         const status = wire[0] ? String((decodeEntityData(wire[0]["data"]) as Row)["status"] ?? "") : "";
@@ -207,6 +232,17 @@ export class FakeReviewers {
           await exec("26.3", "prepareWire", { funding_id: s(p["funding_id"]), op: "release", wire_id: s(p["wire_id"]), bank_ref: `FAKE-${String(s(p["wire_id"])).slice(0, 40)}`, released_at: nowIso });
           await this.closeViaConsole(rt, nowIso, id, actor, actions, { kind: "wire_release", role, ref: id, tool: "console completion (after release)", scope });
           return "wire released (dual control, FAKE approver)";
+        });
+        continue;
+      }
+      if (role === "signing_officer" && p["reason"] === "endorsement_cure" && p["note"] && typeof p["note"] === "object" && s(p["closing_document_id"]) && scope.application_id) {
+        // 26.4 B8-3-04 / E-2-01 (35.6's paper delivery): the partner's FAKE signing officer endorses the original note in blank, without recourse, by a pre-executed allonge — `26.4 registerMin{op=ensure_endorsement}` as this human actor; the desk's queue item completes from the queue
+        const note = p["note"] as Row; const docId = s(p["closing_document_id"])!; const partner = String(note["partner_legal_name"] ?? ""); const appId = scope.application_id; const endorsementId = `END-${appId.slice(0, 8)}`;
+        await run({ kind: "note_endorsement", role, ref: id, tool: "26.4 registerMin{op=ensure_endorsement}", scope }, async () => {
+          const allongeDoc = await storeDocument(rt.db, { kind: "allonge", application_id: appId, loan_id: scope.loan_id, text: JSON.stringify({ closing_document_id: docId, endorsement: "in blank, without recourse", endorser: partner, signing_officer: actor.id, identifiers: note }), retention_class: "life_of_loan_plus_4y", source: `${actor.id} pre-executed allonge (FAKE signing officer)`, now: nowIso, source_channel: "vendor_delivery" });
+          await exec("26.4", "registerMin", { op: "ensure_endorsement", closing_document_id: docId, note, endorsement: { id: endorsementId, closing_document_id: docId, method: "allonge_pre_executed", endorsement_text: `PAY TO THE ORDER OF ______ WITHOUT RECOURSE ${partner} By: ______ Name: ______ Title: ______`, endorsee: "blank", signing_officer_party_id: actor.id, signed_at: nowIso, signature_kind: "wet", facsimile_authority: null, allonge_document_id: allongeDoc, allonge_identifiers: { borrower_names: note["borrower_names"], note_date: note["note_date"], note_amount_cents: note["note_amount_cents"], property_address: note["property_address"] }, note_references_allonge: true, affixed_by_party_id: actor.id, affixed_at: nowIso, chain: [{ endorser: partner, endorsee: "blank", at: nowIso }], partner_legal_name: partner } });
+          await this.closeViaConsole(rt, nowIso, id, actor, actions, { kind: "note_endorsement", role, ref: id, tool: "console completion (after the endorsement)", scope });
+          return `note ${docId.slice(0, 40)} endorsed in blank by a pre-executed allonge (FAKE signing officer)`;
         });
         continue;
       }

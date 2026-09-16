@@ -52,6 +52,8 @@ export type PartnerBookImportInput = {
   readonly profile: "m3-v1";
   readonly tape: { readonly filename: string; readonly content: Uint8Array };
   readonly supplement?: { readonly filename: string; readonly content: Uint8Array };
+  /** 35.12 rule 6: `true` from a fixture or seed writer (seedPartnerBookDemo, the fixture books) — every party the import creates is synthetic; a real partner tape (the 33.1 tool, the ops door) leaves it unset. */
+  readonly synthetic?: boolean;
 };
 export type PartnerBookImportResult = {
   readonly import_id: string;
@@ -108,9 +110,9 @@ export async function planPartner(rt: Runtime, partner: PartnerBookImportInput["
   return { id, legal_name: legal, exists: !!existing, entity: store.versionsSince(mark).length ? store : null, entity_mark: mark, program_id: hasProgram ? null : `prog-refi-${id.slice(0, 8)}` };
 }
 /** The import's `before` hook: the parties{servicer} row the loans reference. */
-async function writePartnerParty(q: Queryable, plan: PartnerPlan, partner: PartnerBookImportInput["partner"]): Promise<void> {
+async function writePartnerParty(q: Queryable, plan: PartnerPlan, partner: PartnerBookImportInput["partner"], synthetic = false): Promise<void> {
   if (plan.exists) return;
-  await q.query(`INSERT INTO parties (id, party_type, legal_name, servicer_number, mers_org_id, contact) VALUES ($1, 'servicer', $2, $3, $4, $5::jsonb)`, [plan.id, plan.legal_name, partner.servicer_number ?? null, partner.mers_org_id ?? null, toJson({ nmlsr_id: partner.nmlsr_id })]);
+  await q.query(`INSERT INTO parties (id, party_type, legal_name, servicer_number, mers_org_id, contact, synthetic) VALUES ($1, 'servicer', $2, $3, $4, $5::jsonb, $6)`, [plan.id, plan.legal_name, partner.servicer_number ?? null, partner.mers_org_id ?? null, toJson({ nmlsr_id: partner.nmlsr_id }), synthetic]);
 }
 /** The import's `commit` hook: the partners/<id> entity version, in the same transaction. */
 async function writePartnerEntity(rt: Runtime, q: Queryable, plan: PartnerPlan): Promise<void> {
@@ -122,10 +124,10 @@ async function registerPartnerProgram(rt: Runtime, plan: PartnerPlan, actor: Act
   await rt.execute({ process: "20.1", name: "loadUniverse", loanId: "", actor: SYSTEM_PARTNER_BOOK, input: { op: "register_program", program: { program_id: plan.program_id, partner_id: plan.id, effective_from: rt.clock.now().slice(0, 10), approved_by: `${actor.kind}:${actor.id}` } } });
 }
 
-export async function ensurePartner(rt: Runtime, partner: PartnerBookImportInput["partner"], actor: Actor): Promise<{ id: string; legal_name: string; written: string[] }> {
+export async function ensurePartner(rt: Runtime, partner: PartnerBookImportInput["partner"], actor: Actor, synthetic = false): Promise<{ id: string; legal_name: string; written: string[] }> {
   const plan = await planPartner(rt, partner, actor);
   const written: string[] = [];
-  if (!plan.exists || plan.entity) await rt.uow.run({}, async () => undefined, { clock: rt.clock, before: async (q) => { await writePartnerParty(q, plan, partner); }, commit: async (q) => { await writePartnerEntity(rt, q, plan); } });
+  if (!plan.exists || plan.entity) await rt.uow.run({}, async () => undefined, { clock: rt.clock, before: async (q) => { await writePartnerParty(q, plan, partner, synthetic); }, commit: async (q) => { await writePartnerEntity(rt, q, plan); } });
   if (!plan.exists) written.push(`parties/${plan.id}`);
   if (plan.entity) written.push(`partners/${plan.id}`);
   await registerPartnerProgram(rt, plan, actor);
@@ -254,7 +256,7 @@ export async function importPartnerBook(rt: Runtime, input: PartnerBookImportInp
       payload: { import_id: importId, partner_id: partner.id, actor_id: actorId, as_of_date: asOf, status: "loaded", rows_total: parsed.rows_total, rows_loaded: plan.loans.length, rows_exception: rowsWithExceptions(plan.exceptions), loans_created: created, loans_updated: updated, parties_created: plan.parties_created, parties_linked: plan.parties_linked, invitations_sent: invitationsSent, gaps: plan.gaps, origination: true } });
     return { invitationsSent };
   }, { clock: rt.clock,
-    before: async (q) => { await writePartnerParty(q, partner, input.partner); await writeBaselineRows(q, plan, partner.id, realParty, asOf); },
+    before: async (q) => { await writePartnerParty(q, partner, input.partner, input.synthetic === true); await writeBaselineRows(q, plan, partner.id, realParty, asOf, input.synthetic === true); },
     commit: async (q) => {
       await writePartnerEntity(rt, q, partner);
       await q.query(`INSERT INTO partner_book_imports (id, partner_party_id, as_of_date, profile, status, tape_sha256, supplement_sha256, rows_total, rows_loaded, rows_exception, loans_created, loans_updated, parties_created, parties_linked, invitations_sent, report, actor_id, created_at) VALUES ($1, $2, $3, $4, 'loaded', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17)`,
@@ -272,7 +274,7 @@ export async function importPartnerBook(rt: Runtime, input: PartnerBookImportInp
 }
 
 /** The baseline rows, written the way src/runtime/transfers.ts writes them (the brief's "Rules that bind every write"), before the events that reference them. */
-async function writeBaselineRows(q: Queryable, plan: BookPlan, partnerPartyId: string, realParty: (id: string) => string, asOf: PlainDate): Promise<void> {
+async function writeBaselineRows(q: Queryable, plan: BookPlan, partnerPartyId: string, realParty: (id: string) => string, asOf: PlainDate, synthetic = false): Promise<void> {
   const partiesWritten = new Set<string>();
   for (const l of plan.loans) {
     const d = l.derivation; const partyId = realParty(l.party.party_id);
@@ -289,7 +291,7 @@ async function writeBaselineRows(q: Queryable, plan: BookPlan, partnerPartyId: s
       const res = l.party.resolution;
       if (res.kind === "create" && l.party.party_id.startsWith("plan:") && !partiesWritten.has(partyId)) {
         const tapeName = typeof l.row.facts["borrower_name"] === "string" && l.row.facts["borrower_name"].trim() ? l.row.facts["borrower_name"].trim() : "(unknown)";
-        await q.query(`INSERT INTO parties (id, party_type, legal_name, contact) VALUES ($1, 'borrower', $2, $3::jsonb)`, [partyId, tapeName, toJson({ ...(res.email ? { email: res.email } : {}), ...(res.phone ? { phone: res.phone } : {}) })]);
+        await q.query(`INSERT INTO parties (id, party_type, legal_name, contact, synthetic) VALUES ($1, 'borrower', $2, $3::jsonb, $4)`, [partyId, tapeName, toJson({ ...(res.email ? { email: res.email } : {}), ...(res.phone ? { phone: res.phone } : {}) }), synthetic]);
         partiesWritten.add(partyId);
       } else if (res.kind === "link" && res.add_phone && !partiesWritten.has(partyId)) { await q.query(`UPDATE parties SET contact = contact || $2::jsonb WHERE id = $1`, [partyId, toJson({ phone: res.add_phone })]); partiesWritten.add(partyId); }
       if (!l.existing) {
@@ -348,7 +350,7 @@ export async function seedPartnerBookDemo(runtime: Runtime, opts: { partner_id?:
     partner = { legal_name: party.legal_name, nmlsr_id: nmlsr, ...(row?.servicer_number ? { servicer_number: row.servicer_number.trim() } : {}), ...(row?.mers_org_id ? { mers_org_id: row.mers_org_id.trim() } : {}) };
   }
   const book = demoBook();
-  return importPartnerBook(runtime, { partner, as_of_date: DEMO_AS_OF, profile: "m3-v1", tape: { filename: "partner-book-demo.xlsx", content: book.tape }, supplement: { filename: "partner-book-demo-supplement.csv", content: new Uint8Array(Buffer.from(book.supplement, "utf8")) } }, SEED_ACTOR);
+  return importPartnerBook(runtime, { partner, as_of_date: DEMO_AS_OF, profile: "m3-v1", tape: { filename: "partner-book-demo.xlsx", content: book.tape }, supplement: { filename: "partner-book-demo-supplement.csv", content: new Uint8Array(Buffer.from(book.supplement, "utf8")) }, synthetic: true }, SEED_ACTOR);
 }
 
 /**

@@ -1,0 +1,9315 @@
+{
+ "run_id": "0ebbf492-e797-4a4b-a730-704aec5469c7",
+ "target": "probe",
+ "database_name": "sm_s3512_int2_probe",
+ "migration_head": "0242_staff_oidc_append_only.sql",
+ "git_sha": "0c836ca3c5eb7cd3d290ad80905261f1f7b3c9f4",
+ "as_of_date": "2026-09-16",
+ "tools_total": 1550,
+ "executed": 363,
+ "refused_typed": 1187,
+ "not_wired": 0,
+ "errored": 0,
+ "results": [
+  {
+   "process": "1.1",
+   "name": "applyCorrection",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.1",
+   "name": "boardLoan",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.1",
+   "name": "mapField",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.1",
+   "name": "proposeCorrection",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.1",
+   "name": "queryFnmaPosition",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.1",
+   "name": "queryMers",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.1",
+   "name": "raiseException",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.1",
+   "name": "readTape",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.1",
+   "name": "runValidation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.1",
+   "name": "sendTransferorQuery",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.2",
+   "name": "buildCustodianMatrix",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.2",
+   "name": "buildForm629",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.2",
+   "name": "computeDeadlines",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.2",
+   "name": "createPortalTask",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.2",
+   "name": "notifyPartner",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.2",
+   "name": "parseConsentNotice",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.2",
+   "name": "validateLoanList",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.2",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.3",
+   "name": "ingestMailReturns",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.3",
+   "name": "orderSkipTrace",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.3",
+   "name": "planNoticeRun",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.3",
+   "name": "releaseToVendor",
+   "status": "refused_typed",
+   "code": "CHECKLIST_FIRST"
+  },
+  {
+   "process": "1.3",
+   "name": "renderNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.3",
+   "name": "runContentChecklist",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.3",
+   "name": "validateAddress",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.3",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.4",
+   "name": "buildTrialBalance",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.4",
+   "name": "draftExtensionRequest",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.4",
+   "name": "draftTransferorQuery",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.4",
+   "name": "forecastRecertRisk",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.4",
+   "name": "ingestCustodianFeed",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.4",
+   "name": "matchHoldings",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.4",
+   "name": "openException",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.4",
+   "name": "sendToCustodian",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.4",
+   "name": "verifyERegistry",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.4",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.5",
+   "name": "buildMersBatch",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.5",
+   "name": "createPartnerTask",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.5",
+   "name": "draftViolationResponse",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.5",
+   "name": "ingestMersAck",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.5",
+   "name": "planMersTransactions",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.5",
+   "name": "reconcileMre",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.5",
+   "name": "snapshotMins",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.5",
+   "name": "submitMersBatch",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.5",
+   "name": "validateMin",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.5",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.6",
+   "name": "classifyVariance",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.6",
+   "name": "draftTransferorQuery",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.6",
+   "name": "loadBankFeed",
+   "status": "refused_typed",
+   "code": "PORT_REJECTED:NO_STATEMENT"
+  },
+  {
+   "process": "1.6",
+   "name": "loadTapeBalances",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.6",
+   "name": "loadTrialBalance",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.6",
+   "name": "matchWires",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.6",
+   "name": "postOpeningEntries",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.6",
+   "name": "queryFnmaPosition",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.6",
+   "name": "raiseVariance",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.6",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.7",
+   "name": "classifyCompleteness",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.7",
+   "name": "computeDeemedDates",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.7",
+   "name": "draftNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.7",
+   "name": "evaluateOptions",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.7",
+   "name": "honorTransferorOffer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.7",
+   "name": "loadTransferorFile",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.7",
+   "name": "requestFromTransferor",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "1.7",
+   "name": "runCarryoverChecks",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.7",
+   "name": "setForeclosureHold",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "1.7",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.1",
+   "name": "borrower_comms.request_contact",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.1",
+   "name": "cases.get_overlays",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.1",
+   "name": "escalation.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.1",
+   "name": "ledger.post",
+   "status": "refused_typed",
+   "code": "LEDGER_VIA_COMMANDS"
+  },
+  {
+   "process": "2.1",
+   "name": "loan_terms.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.1",
+   "name": "lockbox.image_ocr",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.1",
+   "name": "notice.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.1",
+   "name": "payments.read/write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.1",
+   "name": "suspense.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.1",
+   "name": "timer.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.2",
+   "name": "borrower_comms.request_contact",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.2",
+   "name": "cases.get_overlays",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.2",
+   "name": "escalation.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.2",
+   "name": "ledger.apply_via_cashiering",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.2",
+   "name": "loan_terms.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.2",
+   "name": "lockbox.image_ocr",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.2",
+   "name": "notice.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.2",
+   "name": "payments.history",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.2",
+   "name": "suspense.read/write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.2",
+   "name": "timer.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.3",
+   "name": "account_validation.verify",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.3",
+   "name": "autodraft.read/write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.3",
+   "name": "consent.capture",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.3",
+   "name": "contacts.log",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.3",
+   "name": "escalation.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.3",
+   "name": "fraud_monitor.score",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.3",
+   "name": "nacha.build_entry",
+   "status": "refused_typed",
+   "code": "ENROLLMENT_ACTIVE"
+  },
+  {
+   "process": "2.3",
+   "name": "nacha.cancel_entry",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.3",
+   "name": "notice.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.3",
+   "name": "timer.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.4",
+   "name": "amortization.compute",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.4",
+   "name": "ledger.apply_via_cashiering",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.4",
+   "name": "payments.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.5",
+   "name": "arrangements.read/write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.5",
+   "name": "borrower_comms.request_contact",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.5",
+   "name": "ledger.apply_via_cashiering",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.5",
+   "name": "lockbox.image_ocr",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.5",
+   "name": "nacha.parse_addenda",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.5",
+   "name": "notice.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.5",
+   "name": "payments.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.6",
+   "name": "fees.suspend/waive",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.6",
+   "name": "ledger.apply_via_cashiering",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.6",
+   "name": "smdu.submit_trial_payment",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.6",
+   "name": "suspense.read/write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.6",
+   "name": "trial_schedule.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.7",
+   "name": "cases.get_overlays",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.7",
+   "name": "escalation.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.7",
+   "name": "fees.assess",
+   "status": "refused_typed",
+   "code": "GRACE_GATE"
+  },
+  {
+   "process": "2.7",
+   "name": "fees.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.7",
+   "name": "fees.reverse",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.7",
+   "name": "fees.waive",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "2.7",
+   "name": "notice.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "2.7",
+   "name": "payments.history",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.1",
+   "name": "approveAnalysis",
+   "status": "refused_typed",
+   "code": "ENGINE_ANALYSIS_REQUIRED"
+  },
+  {
+   "process": "3.1",
+   "name": "emitEscrowEvent",
+   "status": "refused_typed",
+   "code": "ESCROW_EVENT_SHAPE"
+  },
+  {
+   "process": "3.1",
+   "name": "escalate",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.1",
+   "name": "openCase",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.1",
+   "name": "readBoardingFile",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.1",
+   "name": "renderStatement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.1",
+   "name": "runEscrowAnalysis",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.1",
+   "name": "sendNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.2",
+   "name": "compareBillToPriorYear",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.2",
+   "name": "lookupParcel",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.2",
+   "name": "readPolicyDeclarations",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.3",
+   "name": "renderStatement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.3",
+   "name": "sendNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.3",
+   "name": "validateChecklist",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.4",
+   "name": "validateCushion",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.5",
+   "name": "emitEscrowEvent",
+   "status": "refused_typed",
+   "code": "ESCROW_EVENT_SHAPE"
+  },
+  {
+   "process": "3.5",
+   "name": "escalate",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.5",
+   "name": "issueRefund",
+   "status": "refused_typed",
+   "code": "ENGINE_AMOUNT"
+  },
+  {
+   "process": "3.5",
+   "name": "recordConsent",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.5",
+   "name": "reissueDisbursement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.5",
+   "name": "stopCheck",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.5",
+   "name": "verifyAddress",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.6",
+   "name": "createRepaymentPlan",
+   "status": "refused_typed",
+   "code": "ANALYSIS_REQUIRED"
+  },
+  {
+   "process": "3.6",
+   "name": "postEscrowLumpSum",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.6",
+   "name": "recordBorrowerElection",
+   "status": "refused_typed",
+   "code": "EVIDENCED"
+  },
+  {
+   "process": "3.7",
+   "name": "postAdvance",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.7",
+   "name": "releaseDisbursement",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "3.7",
+   "name": "scheduleDisbursement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.8",
+   "name": "approveWaiver",
+   "status": "refused_typed",
+   "code": "RULE_OUTCOMES_BINDING"
+  },
+  {
+   "process": "3.8",
+   "name": "evaluateWaiver",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.9",
+   "name": "evaluateInterestEligibility",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "3.9",
+   "name": "postInterestCredit",
+   "status": "refused_typed",
+   "code": "ELIGIBLE"
+  },
+  {
+   "process": "3.9",
+   "name": "prorateInterest",
+   "status": "refused_typed",
+   "code": "ELIGIBLE"
+  },
+  {
+   "process": "3.9",
+   "name": "verifyRate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "4.1",
+   "name": "contacts.list",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.1",
+   "name": "documents.search",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.1",
+   "name": "jurisdiction_rules.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.1",
+   "name": "timer.list",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.3",
+   "name": "callback.schedule",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.3",
+   "name": "contact.log",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.3",
+   "name": "foreclosure.gates.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.3",
+   "name": "human.transfer",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.3",
+   "name": "lossmit_facts.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.3",
+   "name": "lossmit.application.status",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.3",
+   "name": "lossmit.documents.list",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.3",
+   "name": "lossmit.intake.start",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.3",
+   "name": "payments.history",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "4.3",
+   "name": "timer.list",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "5.1",
+   "name": "projectEvent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.1",
+   "name": "validateLar80",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.1",
+   "name": "validateSeJson",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.2",
+   "name": "buildCrsBatch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.2",
+   "name": "explainVariance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.2",
+   "name": "matchBankDebits",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.2",
+   "name": "openPortalTask",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "5.2",
+   "name": "postLedger",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.2",
+   "name": "pullDraftNotifications",
+   "status": "refused_typed",
+   "code": "PORT_TRANSIENT"
+  },
+  {
+   "process": "5.2",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "5.3",
+   "name": "buildCrsBatch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.3",
+   "name": "computeRemovalAmounts",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.3",
+   "name": "draftCpmNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.3",
+   "name": "prepareReogramPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.3",
+   "name": "projectEvent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.3",
+   "name": "reconcileDra",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.3",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "5.3",
+   "name": "selectLiquidationCode",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.4",
+   "name": "buildForm496Line12",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.4",
+   "name": "matchAdjustments",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.4",
+   "name": "openPortalTask",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "5.4",
+   "name": "parseRemittanceDetail",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.4",
+   "name": "predictSdaEntry",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.4",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "5.4",
+   "name": "rollForwardReceivables",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.5",
+   "name": "computeGfeeCheckFigures",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.5",
+   "name": "fundDraft",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.5",
+   "name": "matchDebit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.5",
+   "name": "parseGfeeBill",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.5",
+   "name": "reconcileRelief",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.5",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "5.6",
+   "name": "buildCrsBatch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.6",
+   "name": "draftLetter",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.6",
+   "name": "openPortalTask",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "5.6",
+   "name": "projectEvent",
+   "status": "refused_typed",
+   "code": "LAR65_NEEDS_APPROVAL_DOC"
+  },
+  {
+   "process": "5.6",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "5.7",
+   "name": "buildDqSnapshot",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.7",
+   "name": "checkConsistency",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.7",
+   "name": "deriveStatusCode",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.7",
+   "name": "parseExceptionReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.7",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "5.7",
+   "name": "submitAmnFile",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.7",
+   "name": "submitDqEvent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "5.7",
+   "name": "validateF121Layout",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.1",
+   "name": "cbam.prepare_package",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.1",
+   "name": "custodial.plan_accounts",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.1",
+   "name": "depository.evaluate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.1",
+   "name": "documents.write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.1",
+   "name": "email.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.1",
+   "name": "escalation.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.1",
+   "name": "fdic.lookup",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.1",
+   "name": "ratings.read",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.1",
+   "name": "timer.start/satisfy",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.2",
+   "name": "escrow.read_balances",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.2",
+   "name": "jurisdiction.read",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.2",
+   "name": "ledger.post",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.3",
+   "name": "bank.read_statement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.3",
+   "name": "crs.prepare_batch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.3",
+   "name": "documents.write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.3",
+   "name": "escalation.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.3",
+   "name": "fnma.read_cash_position",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.3",
+   "name": "fnma.read_draft_notifications",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.3",
+   "name": "form496.generate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.3",
+   "name": "ledger.post_reclass",
+   "status": "refused_typed",
+   "code": "NO_PLUG"
+  },
+  {
+   "process": "6.3",
+   "name": "ledger.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.3",
+   "name": "partner.notify",
+   "status": "refused_typed",
+   "code": "PARTNER_NOTICE_SCOPE"
+  },
+  {
+   "process": "6.3",
+   "name": "timer.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.5",
+   "name": "borrowers.search",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.5",
+   "name": "check.issue",
+   "status": "refused_typed",
+   "code": "REMITTER_ONLY"
+  },
+  {
+   "process": "6.5",
+   "name": "contact.request",
+   "status": "refused_typed",
+   "code": "TCPA_CONSENT_QUIET_HOURS"
+  },
+  {
+   "process": "6.5",
+   "name": "escalation.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.5",
+   "name": "ledger.apply_via_cashiering",
+   "status": "refused_typed",
+   "code": "APPLY_CONFIDENCE_097"
+  },
+  {
+   "process": "6.5",
+   "name": "lockbox.image_ocr",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "6.5",
+   "name": "nacha.originate_credit",
+   "status": "refused_typed",
+   "code": "RETURN_TO_ORIGINATOR_ONLY"
+  },
+  {
+   "process": "6.5",
+   "name": "naupa.generate",
+   "status": "refused_typed",
+   "code": "OFFICER_VERIFICATION"
+  },
+  {
+   "process": "6.5",
+   "name": "payments.history",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.5",
+   "name": "suspense.read/write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.5",
+   "name": "timer.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "6.5",
+   "name": "unclaimed_property.compute",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "7.2",
+   "name": "computeArmAdjustment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "7.2",
+   "name": "verifyArmAdjustment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "8.2",
+   "name": "eoscar.acdv.find/view/validate/submit",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "8.2",
+   "name": "eoscar.aud.validate/submit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "8.2",
+   "name": "eoscar.notification.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "8.3",
+   "name": "accuracy.control.run",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "8.3",
+   "name": "bankruptcy.state.get",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "8.3",
+   "name": "borrowers.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "8.3",
+   "name": "credit.suppression.create/release",
+   "status": "refused_typed",
+   "code": "SUPPRESSION_NEEDS_EVENT_AND_EVIDENCE"
+  },
+  {
+   "process": "8.3",
+   "name": "disaster.case.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "8.3",
+   "name": "documents.search",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "8.3",
+   "name": "eoscar.aud.submit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "8.3",
+   "name": "eoscar.notification.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "8.3",
+   "name": "escalation.file",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "8.3",
+   "name": "scra.case.get",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.1",
+   "name": "openCase",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.1",
+   "name": "recordDeficiency",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.1",
+   "name": "requestEscrowLineUpdate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.2",
+   "name": "assessReasonableBasis",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.2",
+   "name": "checkEscrowGuard",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "9.3",
+   "name": "quoteLpi",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.3",
+   "name": "selectReminderVariant",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.4",
+   "name": "quoteLpiRenewal",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.4",
+   "name": "reviewLpiCoverage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.5",
+   "name": "computeOverlapRefund",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.5",
+   "name": "evaluateEvidence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.5",
+   "name": "notifyBorrower",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.5",
+   "name": "payRefund",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.5",
+   "name": "postRefund",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.5",
+   "name": "requestLpiCancel",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.6",
+   "name": "computeFloodRequirement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.6",
+   "name": "evaluatePrivateFloodPolicy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.6",
+   "name": "evaluateStructures",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.6",
+   "name": "orderDetermination",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.7",
+   "name": "applyToUpb",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.7",
+   "name": "computeReleaseSchedule",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.7",
+   "name": "depositInstrument",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.7",
+   "name": "escalate",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "9.7",
+   "name": "openClaim",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "9.7",
+   "name": "openWorkoutEvaluation",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "9.7",
+   "name": "orderRepairInspection",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "9.7",
+   "name": "prepareForm176",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.7",
+   "name": "releaseFunds",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.7",
+   "name": "remitProceeds332",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.7",
+   "name": "requestEndorsement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.7",
+   "name": "verifyRemoteInspection",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.8",
+   "name": "computeInspectionSchedule",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.8",
+   "name": "evaluateInspectionResult",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.8",
+   "name": "notifyCarrierVacancy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.8",
+   "name": "openClaim",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "9.8",
+   "name": "openPreservation",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "9.8",
+   "name": "orderInspection",
+   "status": "refused_typed",
+   "code": "NO_ORDER_BEFORE_DAY90"
+  },
+  {
+   "process": "9.8",
+   "name": "reconcilePfpip",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.8",
+   "name": "sendNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.8",
+   "name": "submitPfpip",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.8",
+   "name": "updateOccupancy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.8",
+   "name": "updatePfpip",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.9",
+   "name": "buildInitialScope",
+   "status": "refused_typed",
+   "code": "NO_ENTRY_WITHOUT_VACANCY"
+  },
+  {
+   "process": "9.9",
+   "name": "checkAllowables",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.9",
+   "name": "fileRegistration",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.9",
+   "name": "notifyCarrierVacancy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.9",
+   "name": "openClaim",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "9.9",
+   "name": "orderWork",
+   "status": "refused_typed",
+   "code": "NO_ENTRY_WITHOUT_VACANCY"
+  },
+  {
+   "process": "9.9",
+   "name": "prepareBid",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "9.9",
+   "name": "reviewCompletion",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.1",
+   "name": "case.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "10.1",
+   "name": "contacts.log",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "10.1",
+   "name": "documents.store",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "10.1",
+   "name": "escrow.interim_analysis.request",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.1",
+   "name": "investor_events.emit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.1",
+   "name": "ledger.post",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.1",
+   "name": "mi_insurer.cancel",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.1",
+   "name": "notices.render/send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.1",
+   "name": "pmi.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "10.1",
+   "name": "smdu.*",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.2",
+   "name": "escrow.interim_analysis.request",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.2",
+   "name": "investor_events.emit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.2",
+   "name": "ledger.post",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.2",
+   "name": "mi_insurer.cancel",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.2",
+   "name": "notices.*",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.2",
+   "name": "pmi.schedule.rebuild",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.2",
+   "name": "pmi.terminate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.4",
+   "name": "consents.check",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.4",
+   "name": "documents.store",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "10.4",
+   "name": "notices.compose/send",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "10.4",
+   "name": "pmi.projection",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.5",
+   "name": "custodial.match",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.5",
+   "name": "disbursements.issue",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.5",
+   "name": "escrow.interim_analysis.request",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.5",
+   "name": "ledger.post",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.5",
+   "name": "mi_insurer.refund_status",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.5",
+   "name": "notices.*",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.5",
+   "name": "pmi.refund.estimate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.6",
+   "name": "case.noe.open",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.6",
+   "name": "documents.deliver",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.6",
+   "name": "notices.*",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "10.6",
+   "name": "pmi.evaluation.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "10.6",
+   "name": "smdu.valuation.appeal",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.2",
+   "name": "bk.status",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.2",
+   "name": "checklist.verify",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.2",
+   "name": "continuity.assignment.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.2",
+   "name": "cycle.compute",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.2",
+   "name": "decision.record",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.2",
+   "name": "edeliver.send",
+   "status": "refused_typed",
+   "code": "ESIGN_CONSENT_REQUIRED"
+  },
+  {
+   "process": "11.2",
+   "name": "escalate",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.2",
+   "name": "fdcpa.status",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.2",
+   "name": "fnma.action.emit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.2",
+   "name": "lossmit.options.list",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.2",
+   "name": "notice.render",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.2",
+   "name": "print.request",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.2",
+   "name": "windows.list",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.3",
+   "name": "authorization.record",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.3",
+   "name": "contact.log",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.3",
+   "name": "decision.record",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.3",
+   "name": "disclosure.play",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.3",
+   "name": "dispute.intake",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.3",
+   "name": "human.transfer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.3",
+   "name": "identity.verify",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.3",
+   "name": "ledger.balances",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.3",
+   "name": "lossmit_facts.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.3",
+   "name": "lossmit.request.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.3",
+   "name": "lossmit.streamlined.evaluate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.3",
+   "name": "payment.schedule",
+   "status": "refused_typed",
+   "code": "REG_E_AUTHORIZATION"
+  },
+  {
+   "process": "11.3",
+   "name": "payments.history",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "11.3",
+   "name": "preference.set",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.3",
+   "name": "promise.record",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "11.3",
+   "name": "qrpc.capture",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.1",
+   "name": "calendar.federal_bd",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.1",
+   "name": "contacts.log",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.1",
+   "name": "documents.classify_extract",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.1",
+   "name": "fnma.status_code.report",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.1",
+   "name": "foreclosure_holds.set",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.1",
+   "name": "lossmit.application.open/update",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.1",
+   "name": "notice.render_send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.1",
+   "name": "requirements.compute",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.1",
+   "name": "sii.lookup",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.1",
+   "name": "timers.start",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.1",
+   "name": "transfer.lossmit_file.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.2",
+   "name": "attorney.instruct",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.2",
+   "name": "credit.report.pull",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.2",
+   "name": "escalation.file",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.2",
+   "name": "foreclosure_holds.set/release",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.2",
+   "name": "hierarchy.walk",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.2",
+   "name": "lossmit.evaluation.*",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.2",
+   "name": "mi.decision.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.2",
+   "name": "notice.render_send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.2",
+   "name": "smdu.case.submit/poll",
+   "status": "refused_typed",
+   "code": "SERVICER_NUMBER_REQUIRED"
+  },
+  {
+   "process": "12.2",
+   "name": "timers.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.2",
+   "name": "valuation.order",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.4",
+   "name": "calendar.months",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.4",
+   "name": "contacts.*",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.4",
+   "name": "delinquency.project",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.4",
+   "name": "exception_request.prepare",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.4",
+   "name": "fees.suppress",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.4",
+   "name": "fnma.status_code.report",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.4",
+   "name": "notice.render_send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.4",
+   "name": "timers.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.4",
+   "name": "workout_plan.*",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.5",
+   "name": "calc.repayment_schedule",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.5",
+   "name": "fees.suppress/waive",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.5",
+   "name": "fnma.f116_package.prepare",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.5",
+   "name": "fnma.status_code.report",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.5",
+   "name": "ledger.arrears",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.5",
+   "name": "notice.render_send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.5",
+   "name": "timers.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.5",
+   "name": "workout_plan.*",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.6",
+   "name": "custodian.deliver",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.6",
+   "name": "deferral.screen",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.6",
+   "name": "erecording.submit",
+   "status": "refused_typed",
+   "code": "SIGNING_OFFICER_EXECUTES"
+  },
+  {
+   "process": "12.6",
+   "name": "escrow.analysis.run",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.6",
+   "name": "esign.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.6",
+   "name": "investor.report_contractual_payments",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.6",
+   "name": "ledger.arrears_breakdown",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.6",
+   "name": "notice.render_send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.6",
+   "name": "smdu.case.submit",
+   "status": "refused_typed",
+   "code": "SERVICER_NUMBER_REQUIRED"
+  },
+  {
+   "process": "12.6",
+   "name": "timers.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.7",
+   "name": "disaster.registry.lookup",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.7",
+   "name": "insurance.claim.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.8",
+   "name": "flexmod.waterfall",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.8",
+   "name": "valuation.order/get",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.9",
+   "name": "attorney.instruct",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.9",
+   "name": "closing.instructions.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.9",
+   "name": "contribution.compute",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "erecording.submit",
+   "status": "refused_typed",
+   "code": "SIGNING_OFFICER_EXECUTES"
+  },
+  {
+   "process": "12.9",
+   "name": "inspection.order/get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "lien_release.request",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "liquidation.case.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "mi.claim.prepare",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "notice.render_send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "12.9",
+   "name": "offer.evaluate",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "ratio.compute",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "reogram.watch",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "settlement.review",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "smdu.case.submit/poll",
+   "status": "refused_typed",
+   "code": "SERVICER_NUMBER_REQUIRED"
+  },
+  {
+   "process": "12.9",
+   "name": "timers.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "title.order/get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "12.9",
+   "name": "valuation.order/get",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.1",
+   "name": "contacts.search",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.1",
+   "name": "delinquency.counters.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.1",
+   "name": "escalation.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.1",
+   "name": "foreclosure.gates.evaluate",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.1",
+   "name": "inspection.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.1",
+   "name": "loan.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.1",
+   "name": "lossmit.case.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.2",
+   "name": "attorney.instruction.send",
+   "status": "refused_typed",
+   "code": "GUIDE_MANDATED_ONLY"
+  },
+  {
+   "process": "13.2",
+   "name": "attorney.instruction.status",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.2",
+   "name": "dra.snapshot.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.2",
+   "name": "escalation.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.2",
+   "name": "foreclosure.case.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.2",
+   "name": "lossmit.case.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.2",
+   "name": "timer.create",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.4",
+   "name": "bk.scrub",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.4",
+   "name": "contacts.search",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.4",
+   "name": "custodian.request",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.4",
+   "name": "disaster.lookup",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.4",
+   "name": "dmdc.verify",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.4",
+   "name": "inspection.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.4",
+   "name": "insurance.status.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.4",
+   "name": "lossmit.case.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.4",
+   "name": "mi.status.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.4",
+   "name": "notices.search",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.4",
+   "name": "title.status.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.5",
+   "name": "attorney.instruction.send",
+   "status": "refused_typed",
+   "code": "GUIDE_MANDATED_ONLY"
+  },
+  {
+   "process": "13.5",
+   "name": "documents.bundle",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.5",
+   "name": "dra.snapshot.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.5",
+   "name": "fc.timeframe.get",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.5",
+   "name": "fnma_connect.report.pull",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.5",
+   "name": "status.history.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.6",
+   "name": "attorney.message.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.6",
+   "name": "documents.extract",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.6",
+   "name": "dra.snapshot.import",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.6",
+   "name": "fee_schedule.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.6",
+   "name": "firm.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.6",
+   "name": "invoice.review",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.7",
+   "name": "attorney.message.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.7",
+   "name": "documents.extract",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.7",
+   "name": "foreclosure.case.get",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "13.7",
+   "name": "litigation.classify",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.8",
+   "name": "dmdc.batch.prepare",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.8",
+   "name": "dmdc.results.import",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "13.8",
+   "name": "scra.case.get/open/close",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.1",
+   "name": "attorney.send_package/request",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.1",
+   "name": "bk.case.read/write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.1",
+   "name": "bk.claim.compute",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.1",
+   "name": "bk.ledger.apply_postpetition",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.1",
+   "name": "bk.ledger.apply_trustee",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.1",
+   "name": "bkvendor.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.1",
+   "name": "docket.classify",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.1",
+   "name": "documents.render/search",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.1",
+   "name": "ebn.inbox.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.1",
+   "name": "escalation.file",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.1",
+   "name": "fnma.form20.prepare",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.1",
+   "name": "ledger.snapshot",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.1",
+   "name": "notice.send",
+   "status": "refused_typed",
+   "code": "INFORMATIONAL_TEMPLATES_ONLY"
+  },
+  {
+   "process": "14.1",
+   "name": "p360.claim.prepare",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.1",
+   "name": "pcl.search",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.1",
+   "name": "smdu.package.prepare",
+   "status": "refused_typed",
+   "code": "SMDU_ONLY_AFTER_CONFIRMATION"
+  },
+  {
+   "process": "14.1",
+   "name": "timer.*",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.2",
+   "name": "attorney.send_package",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.2",
+   "name": "bk.change.detect",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.2",
+   "name": "bk.fee_items.read/batch",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.2",
+   "name": "bk.notice.render",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.2",
+   "name": "bk.status_response.compute",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.2",
+   "name": "documents.render",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.2",
+   "name": "escalation.file",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.2",
+   "name": "notice.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.2",
+   "name": "timer.compute_frbp",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.3",
+   "name": "bk.ledger_views.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.3",
+   "name": "bk.statement_mode.set",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.3",
+   "name": "docket.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.3",
+   "name": "escalation.file",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.3",
+   "name": "requests.classify",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "14.4",
+   "name": "bk.case.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "14.4",
+   "name": "bk.reporting_state.write",
+   "status": "refused_typed",
+   "code": "NO_ROW_WITHOUT_VERIFIED_CASE"
+  },
+  {
+   "process": "14.4",
+   "name": "escalation.file",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "15.1",
+   "name": "buildCrsBatch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.1",
+   "name": "buildReogramPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.1",
+   "name": "computeTpsSplit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.1",
+   "name": "draftClosingStatement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.1",
+   "name": "draftEliminationTemplate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.1",
+   "name": "openPortalTask",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.1",
+   "name": "openReoCase",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.1",
+   "name": "parseP360Notification",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.1",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "15.1",
+   "name": "requestInsuranceCancellation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.1",
+   "name": "scheduleHandoffTasks",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.2",
+   "name": "assembleClaim",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.2",
+   "name": "buildBulkPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.2",
+   "name": "sweepClaimCandidates",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "15.2",
+   "name": "validateLine",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.3",
+   "name": "assembleMiPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.3",
+   "name": "attributeShortfall",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.3",
+   "name": "computeShadowClaim",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.3",
+   "name": "draftAppeal",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.3",
+   "name": "fileDirectClaim",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.3",
+   "name": "openPortalTask",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.3",
+   "name": "reconcileEob",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.3",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "15.3",
+   "name": "routeMiClaim",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.3",
+   "name": "scoreCurtailmentRisk",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.3",
+   "name": "trackDocRequests",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.4",
+   "name": "agingReport",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "15.4",
+   "name": "buildIrrPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.4",
+   "name": "matchRecoveries",
+   "status": "refused_typed",
+   "code": "RECOVERY_NEEDS_REPORT_LINE"
+  },
+  {
+   "process": "15.4",
+   "name": "parseCashAdjustments",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.4",
+   "name": "postRecoveryEntries",
+   "status": "refused_typed",
+   "code": "RECOVERY_NEEDS_REPORT_LINE"
+  },
+  {
+   "process": "15.4",
+   "name": "recomputeAdvancePosition",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "15.4",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "15.4",
+   "name": "setRecoveryExpectation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.1",
+   "name": "assertAccuracyGate",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "16.1",
+   "name": "computePayoffQuote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.1",
+   "name": "escalate",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "16.1",
+   "name": "mintVerificationToken",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.1",
+   "name": "openShortagePath",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.1",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "16.1",
+   "name": "renderStatement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.1",
+   "name": "scheduleRecompute",
+   "status": "refused_typed",
+   "code": "RECOMPUTE_DELTA_EXPLAINED"
+  },
+  {
+   "process": "16.1",
+   "name": "sendNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.2",
+   "name": "buildCrsBatch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.2",
+   "name": "computeFnmaPayoffShare",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.2",
+   "name": "createHousekeepingTasks",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.2",
+   "name": "disposeVariance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.2",
+   "name": "matchPayoffFunds",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.2",
+   "name": "postPayoff",
+   "status": "refused_typed",
+   "code": "NO_POST_BEFORE_CLEARED"
+  },
+  {
+   "process": "16.2",
+   "name": "projectRemovalPayoff",
+   "status": "refused_typed",
+   "code": "NO_REMOVAL_WITHOUT_CLEARED_FUNDS"
+  },
+  {
+   "process": "16.3",
+   "name": "computePenaltyExposure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.3",
+   "name": "draftReleaseInstrument",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.3",
+   "name": "handleRecorderReject",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.3",
+   "name": "notifyBorrower",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.3",
+   "name": "recordDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.3",
+   "name": "requestCustodyDocuments",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.3",
+   "name": "routeForExecution",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.3",
+   "name": "runReleaseChecklist",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.3",
+   "name": "scheduleNotarySession",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.3",
+   "name": "selectReleaseInstrument",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.3",
+   "name": "submitRecording",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.4",
+   "name": "checkDeactivationEligibility",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "16.4",
+   "name": "validateMinIntegrity",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "buildCustodianMatrix",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "buildForm629",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "buildTransferPlan",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "computeDeadlines",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "createPortalTask",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "draftFnmaResponse",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "draftForm101Termination",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "notifyPartner",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "parseApprovalLetter",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "reconcileQxDownload",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "validateLoanList",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.1",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.2",
+   "name": "ingestMailReturns",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.2",
+   "name": "orderSkipTrace",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.2",
+   "name": "planNoticeRun",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.2",
+   "name": "releaseToVendor",
+   "status": "refused_typed",
+   "code": "RELEASE_NEEDS_OFFICER"
+  },
+  {
+   "process": "17.2",
+   "name": "renderNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.2",
+   "name": "runContentChecklist",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.2",
+   "name": "validateAddress",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.2",
+   "name": "verifyTransfereeBlock",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.2",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "answerTransfereeRequest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "buildDebrief",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "buildImageIndex",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "buildTrialBalance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "generateDeliverable",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "ingestTransfereeAck",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "notifyCounterparty",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "planDeliverables",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "runOutboundDqGate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "sendDeliverable",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "verifyERegistry",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "verifyMersSnapshot",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.3",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "17.4",
+   "name": "completePreTransferAction",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.4",
+   "name": "draftDetermination",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.4",
+   "name": "exportDeadlineTable",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.4",
+   "name": "forwardPostTransfer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.4",
+   "name": "inventoryOpenCases",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.4",
+   "name": "lossmit_reviewer",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "17.4",
+   "name": "packageCase",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.4",
+   "name": "runHandoffChecks",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "17.4",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "18.1",
+   "name": "arm.second_engine",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "18.1",
+   "name": "escrow.recompute_analysis",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "18.1",
+   "name": "investor_events.replay",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "18.1",
+   "name": "ledger.recompute",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "18.1",
+   "name": "notice.checklist",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "18.1",
+   "name": "timers.history",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.1",
+   "name": "records.classify",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.1",
+   "name": "records.compileServicingFile",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.2",
+   "name": "cloud.isolateHost",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.2",
+   "name": "controls.runTest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.2",
+   "name": "exceptions.propose",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.2",
+   "name": "idp.disableIdentity",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.2",
+   "name": "incident.scope",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.2",
+   "name": "incident.setSeverity",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.2",
+   "name": "network.blockEgress",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.2",
+   "name": "notices.draft",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.2",
+   "name": "portal_task.create",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.2",
+   "name": "siem.query",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "19.2",
+   "name": "timers.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "19.2",
+   "name": "vault.rotateSecret",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.3",
+   "name": "ai_systems.upsert",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.3",
+   "name": "contracts.checklist",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.3",
+   "name": "contracts.extractClauses",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.3",
+   "name": "fnma_notices.recordSent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.3",
+   "name": "notices.draft",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.3",
+   "name": "portal_task.create",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.3",
+   "name": "portfolio.count",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.3",
+   "name": "timers.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "19.3",
+   "name": "vendors.assess",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "19.3",
+   "name": "vendors.setStatus",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.1",
+   "name": "assertGateOpen",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.1",
+   "name": "buildCandidate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.1",
+   "name": "checkGates",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.1",
+   "name": "checkStateRule",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.1",
+   "name": "computeBenefit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.1",
+   "name": "emitOfferReady",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.1",
+   "name": "loadUniverse",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.1",
+   "name": "priceCandidate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "20.1",
+   "name": "writeFairLendingExtract",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.2",
+   "name": "assertGateOpen",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.2",
+   "name": "checkGates",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.2",
+   "name": "placeCall",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.2",
+   "name": "planChannels",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.2",
+   "name": "renderCreative",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.2",
+   "name": "runContentChecklist",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.2",
+   "name": "scheduleTouch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.3",
+   "name": "authenticate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.3",
+   "name": "captureConsent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.3",
+   "name": "deliverDisclosure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.3",
+   "name": "explainProgram",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "20.3",
+   "name": "getBenefit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.3",
+   "name": "orderSoftPull",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.3",
+   "name": "requestQuote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "buildFeeItems",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "computeLlpa",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "computePayment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "estimateApr",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "explainQuote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "fetchPeWlPrices",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "loadLlpaTable",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "publishRateSheet",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "renderQuote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "requestException",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "solvePassThrough",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "20.4",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "21.1",
+   "name": "affirmJointIntent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "askDemographics",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "assignMLO",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "captureField",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "confirmPrefill",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "detectSixItems",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "discloseAI",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "logSafeActivity",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "openEscalation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "presentSCIF",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "renderForm1003",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "requestESign",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "startInterview",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "validateULAD",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "21.2",
+   "name": "assembleFees",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.2",
+   "name": "buildProviderList",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.2",
+   "name": "computeAPR",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.2",
+   "name": "deriveTolerance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.2",
+   "name": "getPricingScenario",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.2",
+   "name": "renderH24",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "assertConsent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "deliver",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "evaluateAfBA",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "evaluateExemptions",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "21.3",
+   "name": "evaluateStateMatrix",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "21.3",
+   "name": "generateCounselingList",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "markSatisfiedByLE",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "planCompanionPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "recordAcknowledgment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "recordReceipt",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "renderArmProgramDisclosure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "renderNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "renderScoreDisclosure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.3",
+   "name": "selectBookletEdition",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "21.3",
+   "name": "setTimers",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "21.3",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "21.4",
+   "name": "applyFloatDown",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "checkFeeGate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "executeLock",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "expireLock",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "extendLock",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "getQuote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "openMloEscalation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "quoteExtension",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "recordChangedCircumstance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "recordIntent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "relock",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "renderLockConfirmation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "requestCommitment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "requestLock",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "sendNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.4",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "21.5",
+   "name": "applyCure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "checkFourDayRule",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "classifyFeeChange",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "computeRevisedLEDueDate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "deliverDisclosure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "evaluateChangedCircumstance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "issueRefund",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "reflectOnCD",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "renderRevisedLE",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "resetBaseline",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "runToleranceTest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.5",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "21.6",
+   "name": "assembleFcraBlock",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "assembleStateOverlays",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "cancelLock",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "computeCompletion",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "deliverNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "openReviewerEscalation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "recommendDisposition",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "recordHmdaAction",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "renderNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "selectPrincipalReasons",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "trackDecisionClock",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "21.6",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "classifyDocument",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "computeFreshness",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "deriveNeedsList",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "escalate",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "22.1",
+   "name": "extractFields",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "ingestDocument",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "matchToRequests",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "openRequest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "orderForensicScan",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "proposeConditionClear",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "renderNeedsListNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "runIntegrityBattery",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "sendNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "waiveRequest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.1",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "computeScores",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "detectFraudAlerts",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "detectFreezes",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "emitScoreDisclosureData",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "escalate",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "22.2",
+   "name": "mapDuCreditMessages",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "openInquiryItems",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "orderCreditReport",
+   "status": "refused_typed",
+   "code": "NO_PULL_WITHOUT_PURPOSE_AND_AUTHORIZATION"
+  },
+  {
+   "process": "22.2",
+   "name": "orderRefresh",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "parseCreditReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "scheduleRepull",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "triageUdmAlert",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.2",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.3",
+   "name": "buildDocumentationMatrix",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.3",
+   "name": "orderVerificationReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.3",
+   "name": "submitIncomeCalculator",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "buildFundsToCloseWorksheet",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "checkDonorInterestedParty",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "22.4",
+   "name": "computeReserves",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "declareAssets",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "evaluateDeposits",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "finalizeAssets",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "orderAssetReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "parseStatement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "proposeCure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "reconcileToCd",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "recordIpc",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "requestSource",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "testIpcLimits",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "testLcorCashBack",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "verifyGift",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.4",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "buildLiabilitySet",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "checkDuCap",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "computeDti",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "computeQualifyingPayment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "evaluateExclusion",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "evidencePayoff",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "finalizeLiabilities",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "matchTradelines",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "notifyTolerance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "planPayoff",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "selectPaymentBasis",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.5",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "assessLegalPresence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "assessNonArmsLength",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "concludeInvestigation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "contactForFraudAlert",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "discoverReo",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "gatherEvidence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "logRedFlag",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "openInvestigation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "orderCbsv",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "placeHold",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "prepareOfacReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "prepareSarPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "prepareSelfReportPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "releaseHold",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "resolveAddressDiscrepancy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "resolveOfacMatch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "resolveSsn",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "runFraudTool",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "22.6",
+   "name": "scoreOccupancy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "screenParty",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "verifyIdentity",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "22.6",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.1",
+   "name": "assertFinalSubmissionMatches",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.1",
+   "name": "associateCredit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.1",
+   "name": "buildDuRequest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.1",
+   "name": "evaluateResubmission",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.1",
+   "name": "fetchFindings",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.1",
+   "name": "openEscalation",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.1",
+   "name": "snapshotClosedLoan",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.1",
+   "name": "submitCasefile",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.2",
+   "name": "computeRestructure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.2",
+   "name": "evaluateHomeReady",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.2",
+   "name": "mapMessages",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.2",
+   "name": "openCondition",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.2",
+   "name": "openEscalation",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.2",
+   "name": "openInvestigation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.2",
+   "name": "parseFindings",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.2",
+   "name": "proposeRestructure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.2",
+   "name": "quote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.2",
+   "name": "verifyEducationCertificate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.2",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.3",
+   "name": "assessRisk",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.3",
+   "name": "clearCondition",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.3",
+   "name": "evaluateClearance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.3",
+   "name": "evaluateReliefLedger",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.3",
+   "name": "issueClearToClose",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.3",
+   "name": "issueConditionalApproval",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.3",
+   "name": "openEscalation",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.3",
+   "name": "prepareAdverseDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.3",
+   "name": "renderApprovalLetter",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.3",
+   "name": "reopenCondition",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.3",
+   "name": "runCtcChecklist",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.3",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.4",
+   "name": "assembleAtrEvidence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.4",
+   "name": "classifyFeeItems",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.4",
+   "name": "computeTotalLoanAmount",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.4",
+   "name": "evaluateBonaFideDiscount",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.4",
+   "name": "getApor",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.4",
+   "name": "openEscalation",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.4",
+   "name": "runHoepaTests",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.4",
+   "name": "runHpmlTests",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.4",
+   "name": "runQmTests",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.4",
+   "name": "runStateHighCostTests",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.4",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.5",
+   "name": "appendBorrower",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.5",
+   "name": "assertDeclarations",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "23.5",
+   "name": "linkJointCreditReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.5",
+   "name": "linkOwner",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.5",
+   "name": "readDuGraph",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "23.5",
+   "name": "unlinkOwner",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.5",
+   "name": "writeDuAsset",
+   "status": "refused_typed",
+   "code": "DU_GRAPH_ORPHAN"
+  },
+  {
+   "process": "23.5",
+   "name": "writeDuExpense",
+   "status": "refused_typed",
+   "code": "DU_GRAPH_ORPHAN"
+  },
+  {
+   "process": "23.5",
+   "name": "writeDuLiability",
+   "status": "refused_typed",
+   "code": "DU_GRAPH_ORPHAN"
+  },
+  {
+   "process": "23.5",
+   "name": "writeDuOwnedProperty",
+   "status": "refused_typed",
+   "code": "DU_GRAPH_ORPHAN"
+  },
+  {
+   "process": "23.5",
+   "name": "writeResidence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.6",
+   "name": "assembleDuDocument",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.6",
+   "name": "diffDuDocumentAgainstSample",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.6",
+   "name": "readDuDocument",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.6",
+   "name": "validateDuDocumentAgainstSchema",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.7",
+   "name": "explainDuRefusal",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.7",
+   "name": "readDuPreflight",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "23.7",
+   "name": "runDuPreflight",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "assertFeeGate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "benchmarkFee",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "fileEscalation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "logContact",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "orderAppraisalUpdate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "placeOrder",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "readDuOffer",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "24.1",
+   "name": "scheduleInspection",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "selectMethod",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "selectVendor",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "submitPropertyData",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "trackOrder",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "verifyAmcRegistration",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "verifyAppraiserLicense",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.1",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "applyReviewChecklist",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "buildCopyPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "closeRov",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "deliverNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "fileEscalation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "forwardRov",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "ingestReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "pollFindings",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "prepareOverride",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "prepareRovAnalysis",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "recordWaiver",
+   "status": "refused_typed",
+   "code": "WAIVER_NEEDS_DATED_STATEMENT"
+  },
+  {
+   "process": "24.2",
+   "name": "requestCorrection",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "runHpmlTests",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "runUadCompliance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "scanLanguage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "screenRov",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "setValueUsed",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "submitUcdp",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.2",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "24.3",
+   "name": "classifyProperty",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "computeHoldback",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "extractProjectData",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "fileEscalation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "planRepairs",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "prepareCpmSheet",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "recordCpmResult",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "24.3",
+   "name": "requestProjectDocs",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "routeCondition",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "runProjectEligibility",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "runPropertyEligibility",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "verifyMh",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.3",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "24.4",
+   "name": "checkSubordinateTerms",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "classifyException",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "computePayoffAtDate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "computeRequiredEndorsements",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "decideEscrowTreatment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "evaluateGates",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "lookupAltaRegistry",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "openCurative",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "orderTitle",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "parseCommitment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "parsePayoffStatement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "placeCallback",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "requestCPL",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "requestDateDown",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "requestPayoff",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "requestSubordination",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "requestUnderwriterDeletion",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "reviewPOA",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "reviewTrust",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "verifyWireInstructions",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "vetSettlementAgent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.4",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "checkMortgageeClause",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "computeFloodAmount",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "computeInsuranceRequirements",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "confirmWithCarrier",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "deliverNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "evaluateAdequacy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "evaluateGates",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "24.5",
+   "name": "extractEvidence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "lookupCarrierRating",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "openDeficiency",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "orderFloodDetermination",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "parseSFHDF",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "renderFloodNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "requestEvidence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.5",
+   "name": "seedEscrowLines",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "24.5",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "24.6",
+   "name": "buildInitialAmortizationSchedule",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "compareMiPlans",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "computeHpaDates",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "computeLtvRounded",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "evaluateGates",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "24.6",
+   "name": "lookupCoverage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "lookupMinCoverageLlpa",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "parseCommitment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "recordPlanElection",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "remitPremium",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "renderHpaDisclosure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "renderLpmiDisclosure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "requestActivation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "requestMiQuotes",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "seedMiPolicy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "submitMiOrder",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "verifyCertificateMatchesTerms",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "24.6",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "assertGateOpen",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "checkEsignConsent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "checkLicenses",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "checkRespa8",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "checkTcpaConsent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "classifyFinanceCharges",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "computeApr",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "determineHoepa",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "determineHpml",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "determineQm",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "evaluateStateHighCost",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "openEscalation",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "25.1",
+   "name": "reviewPricingException",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "runToleranceTest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "25.2",
+   "name": "assembleCdFigures",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "25.2",
+   "name": "assertGateOpen",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "computeEarliestConsummation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "deliverDisclosure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "evaluateRedisclosure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "generateUcd",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "openEscalation",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "25.2",
+   "name": "reconcileFigureSources",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "recordReceipt",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "renderCd",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "runCdConsistencyChecks",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "runToleranceTest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "scheduleCorrectedCd",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "submitUcd",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.2",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "25.3",
+   "name": "classifyInboundDocument",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.3",
+   "name": "computeRescissionPeriod",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.3",
+   "name": "deliverRescissionNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.3",
+   "name": "determineRescindability",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.3",
+   "name": "renderRescissionNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.3",
+   "name": "sweepInboundForRescission",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.3",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "25.4",
+   "name": "checkPrivacyNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.4",
+   "name": "composeClosingPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.4",
+   "name": "deliverPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.4",
+   "name": "evaluateEscrowWaiver",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.4",
+   "name": "evaluateOwnershipTransfer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.4",
+   "name": "recordPackageEvidence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.4",
+   "name": "renderOwnershipNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.4",
+   "name": "renderStateEscrowNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.4",
+   "name": "runCdEscrowConsistency",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.4",
+   "name": "schedulePostClosingRun",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "25.4",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "26.1",
+   "name": "buildCemaPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "buildSmartDocENote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "computeNoteTerms",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "draftBuydownAgreement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "draftClosingInstructions",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "evaluateDocGenGates",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "26.1",
+   "name": "generateMIN",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "releaseToPlatform",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "releaseToSettlementAgent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "renderDocument",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "requestAcknowledgment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "runDocumentQc",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "runTxHomeEquityReview",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "scheduleRedraw",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "selectDocumentSet",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "takeClosingSnapshot",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "26.2",
+   "name": "assignNotary",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "checkRonEligibility",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "decideClosingType",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "dispatchPaperRecording",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "handleRecordingReject",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "ingestAuditTrail",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "monitorSession",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "openSigningSession",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "registerENote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "reverseRegistration",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "reviewExecution",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "runPreSessionChecks",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "seedCustodyRecord",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "setSecuredParty",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "submitERecording",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "trackPaperNote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "validateAuthoritativeCopy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "verifyEsignConsent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.2",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "26.3",
+   "name": "buildFundingWorksheet",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "computeDates",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "computePerDiem",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "confirmDisbursement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "decideInterestMode",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "evaluateFundingConditions",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "notifySettlementAgent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "openUnwind",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "postLedger",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "prepareWire",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "reconcileToSettlementStatement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "requestWarehouseAdvance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "runFourEyesChecks",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "scoreBecIndicators",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.3",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.4",
+   "name": "computeMersAnchor",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "26.4",
+   "name": "registerMin",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "accrueInterest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "ageAdvances",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "approveAdvance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "assessFee",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "capitalizeInterest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "computeBorrowingBase",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "confirmTransferOfControl",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "demandRepurchase",
+   "status": "refused_typed",
+   "code": "REPURCHASE_NEEDS_OFFICER_ACK"
+  },
+  {
+   "process": "27.1",
+   "name": "evaluateEligibility",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "funding_approver",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "27.1",
+   "name": "issueBaileeLetter",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "issueCurtailment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "issueKickout",
+   "status": "refused_typed",
+   "code": "KICKOUT_NEEDS_OFFICER_ACK"
+  },
+  {
+   "process": "27.1",
+   "name": "prepareWire",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "recordDefect",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "renderDailyReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "testCovenants",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "trackCollateral",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "27.2",
+   "name": "accruePlatformFee",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "computeGainOnSale",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "explainVariance",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "exportGl",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "27.2",
+   "name": "fnma_portal_operator",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "27.2",
+   "name": "forecastProceeds",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "funding_approver",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "27.2",
+   "name": "ingestReceipts",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "27.2",
+   "name": "issueMsrHandoff",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "matchProceeds",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "pollPurchaseAdvices",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "27.2",
+   "name": "postWaterfall",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "preparePpa",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "reconcilePassthrough",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "releaseCollateral",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "schedulePartnerResidual",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "27.2",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "28.1",
+   "name": "assessOccupancy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "buildPopulation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "checkCollateral",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "checkMi",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "closeReview",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "computeMetrics",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "draftFinding",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "draftMonthlyReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "evaluateRebuttal",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "openReview",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "orderReverification",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "planSample",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "recomputeAssets",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "recomputeDuInputs",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "recomputeIncome",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "releaseFindings",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "routeToOfficer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "runComplianceSnapshot",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "selectLoans",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "28.2",
+   "name": "assessCollateral",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "assessOccupancy",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "buildCyclePopulation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "buildLqcPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "computeDefectRates",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "computeRepurchasePrice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "computeScope",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "draftAppeal",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "draftArrearsNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "draftCycleReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "draftFinding",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "draftNopdResponse",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "draftSelfReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "drawRandomSample",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "evaluateRebuttal",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "matchDuFinalData",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "openOfficerEscalation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "openOperatorEscalation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "orderReverification",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "parseLqcNotification",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "reconcileLiabilities",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "reviewClosingDocuments",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "selectDiscretionary",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "shadowReunderwrite",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "trackRelief",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.2",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "28.3",
+   "name": "assignUli",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.3",
+   "name": "createRecord",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.3",
+   "name": "geocode",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.3",
+   "name": "validateUliFfiec",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "aggregateSignals",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "analyzeOfacMatch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "applyHold",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "assessScheme",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "buildTimeline",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "computeAmount",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "draftFnmaReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "draftNarrative",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "draftOfacReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "draftSarPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "draftVictimRecordsPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "interviewBorrower",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "openCase",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "openOfficerEscalation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "orderIndependentVerification",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "recommendTriage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "reexamineDocuments",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "scheduleContinuingReview",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "screenParty",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "28.4",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "captureMarketPrice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "commitBestEfforts",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "computeNetPriceForecast",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "modifyCommitment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "moveToFallout",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "openEscalation",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "29.1",
+   "name": "prepareMandatoryPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "preparePairOffPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "priceForCommitment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "reconcileFeeDrafts",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "reconcilePewlStatus",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "requestExtension",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "setClosedStatus",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "29.2",
+   "name": "analyzeFallout",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "computeCoverage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "computeLiquidityNeed",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "29.2",
+   "name": "estimateDurationFactor",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "29.2",
+   "name": "estimatePullThrough",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "openEscalation",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "29.2",
+   "name": "prepareTradePackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "publishPartnerReport",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "recalibratePullThrough",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "recommendRebalance",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "29.2",
+   "name": "recordMarginCall",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "recordTradeConfirmation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "requestMandatoryCommitment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "runMarkToMarket",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "runRateShock",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "scheduleRoll",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.2",
+   "name": "takePipelineSnapshot",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "29.2",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "29.3",
+   "name": "applyDerivedFix",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "assembleUlddDataPoints",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "assignSfcs",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "buildUlddXml",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "collectPrerequisites",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "evaluateConditionality",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "freezePackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "mapEditToOwner",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "reconcileIdentifiers",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "runEarlyCheck",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "validateSchema",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.3",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "29.4",
+   "name": "approveWarehouseWire",
+   "status": "refused_typed",
+   "code": "WAREHOUSE_WIRE_HUMAN_OPERATOR"
+  },
+  {
+   "process": "29.4",
+   "name": "computeExpectedDates",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "evaluateRelief",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "ingestPurchaseAdvice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "observeStatus",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "openOperatorTask",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "parseOperatorEvidence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "prepareCustodianPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "preparePpa",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "prepareRemedyPackage",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "reconcileProceeds",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "renderInstructionSheet",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "requestEnoteTransfer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "scheduleShipment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "trackShipment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "29.4",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "30.1",
+   "name": "checkFnmaEstablishment",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.1",
+   "name": "createCorrection",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.1",
+   "name": "matchPurchaseAdvice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.1",
+   "name": "openPortalTask",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "30.1",
+   "name": "pollFeedback",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.1",
+   "name": "projectEvent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.1",
+   "name": "recordDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "30.1",
+   "name": "seedInvestorPosition",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.1",
+   "name": "submitBatch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "allocateServicingLoanNumber",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "boardConsents",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "boardLoan",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "indexDocuments",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "mapField",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "postOpeningEntries",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "proposeCorrection",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "routeToOwner",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "runValidation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "seedTimers",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "sendNotice",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.2",
+   "name": "snapshotOrigination",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "30.2",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "30.3",
+   "name": "buildEscrowLines",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.3",
+   "name": "lookupParcel",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.3",
+   "name": "readPolicyDeclarations",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "classifyRetention",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "closeHandoff",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "compileServicingFile",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "confirmVendorActivation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "evaluateEpd",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "explainFnmaLetter",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "30.4",
+   "name": "openHandoff",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "reconcileFirstStatement",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "repairTimer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "requestOfficerOverride",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "requestVendorActivation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "30.4",
+   "name": "verifyTimerSeeding",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "31.1",
+   "name": "license_requirements",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "31.1",
+   "name": "licenses.upsert",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "31.1",
+   "name": "matrix.propose",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "31.1",
+   "name": "nmls.sync",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "31.1",
+   "name": "verified",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "31.2",
+   "name": "assess.draft",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "31.2",
+   "name": "inventory.upsert",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "31.3",
+   "name": "records.anchor",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "31.3",
+   "name": "records.classify",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.1",
+   "name": "create_deep_link",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.1",
+   "name": "resolve_card_by_evidence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.1",
+   "name": "send_card",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "application.affirmJointIntent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "application.answerDeclarations",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "32.2",
+   "name": "application.answerDemographics",
+   "status": "refused_typed",
+   "code": "NO_DEMOGRAPHIC_AT_LEAD"
+  },
+  {
+   "process": "32.2",
+   "name": "application.confirmField",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "application.inviteParty",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "application.setGoal",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "application.withdraw",
+   "status": "refused_typed",
+   "code": "APPLICATION_TERMINAL"
+  },
+  {
+   "process": "32.2",
+   "name": "autodraft.change",
+   "status": "refused_typed",
+   "code": "FRESH_L1_REQUIRED"
+  },
+  {
+   "process": "32.2",
+   "name": "autodraft.enroll",
+   "status": "refused_typed",
+   "code": "FRESH_L1_REQUIRED"
+  },
+  {
+   "process": "32.2",
+   "name": "autodraft.pause",
+   "status": "refused_typed",
+   "code": "FRESH_L1_REQUIRED"
+  },
+  {
+   "process": "32.2",
+   "name": "autodraft.revoke",
+   "status": "refused_typed",
+   "code": "FRESH_L1_REQUIRED"
+  },
+  {
+   "process": "32.2",
+   "name": "case.open",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "closing.captureEsignConsent",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "closing.selectSlot",
+   "status": "refused_typed",
+   "code": "SM_UW_CTC_GATE"
+  },
+  {
+   "process": "32.2",
+   "name": "consent.capture",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "counteroffer.respond",
+   "status": "refused_typed",
+   "code": "REGB_1002_9_COUNTEROFFER_90"
+  },
+  {
+   "process": "32.2",
+   "name": "credit.authorize",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "disclosure.acknowledgeReceipt",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "document.upload",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "escrow.electShortage",
+   "status": "refused_typed",
+   "code": "FRESH_L1_REQUIRED"
+  },
+  {
+   "process": "32.2",
+   "name": "escrow.requestWaiver",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "32.2",
+   "name": "explanation.submit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "human.request",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "32.2",
+   "name": "insurance.submitEvidence",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "intent.record",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "lead.acknowledgeAiDisclosure",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "lead.start",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "lock.request",
+   "status": "refused_typed",
+   "code": "REGZ_1026_19E2_INTENT_FEE_GATE"
+  },
+  {
+   "process": "32.2",
+   "name": "lock.requestExtension",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "lossmit.appeal",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "lossmit.requestAssistance",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "32.2",
+   "name": "lossmit.respondToOffer",
+   "status": "refused_typed",
+   "code": "REGX_1024_41E1_ACCEPT_14"
+  },
+  {
+   "process": "32.2",
+   "name": "mi.selectPlan",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "offer.respond",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "party.authenticate",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "party.startIdentity",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "party.updateContact",
+   "status": "refused_typed",
+   "code": "FRESH_L1_REQUIRED"
+  },
+  {
+   "process": "32.2",
+   "name": "payment.extraPrincipal",
+   "status": "refused_typed",
+   "code": "FRESH_L1_REQUIRED"
+  },
+  {
+   "process": "32.2",
+   "name": "payment.makeOneTime",
+   "status": "refused_typed",
+   "code": "FRESH_L1_REQUIRED"
+  },
+  {
+   "process": "32.2",
+   "name": "pmi.requestCancellation",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "refi.request",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "rescission.exercise",
+   "status": "refused_typed",
+   "code": "REGZ_1026_23_RESCISSION_3SBD_GATE"
+  },
+  {
+   "process": "32.2",
+   "name": "rov.request",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "valuation.scheduleAccess",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.2",
+   "name": "verification.connect",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.14",
+   "name": "lead.answer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.14",
+   "name": "lead.proceed",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.14",
+   "name": "lead.requestRange",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.14",
+   "name": "party.linkLoan",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.16",
+   "name": "card.propose",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.16",
+   "name": "card.request",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.16",
+   "name": "command.run",
+   "status": "refused_typed",
+   "code": "COMMAND_OUTSIDE_CONTRACT"
+  },
+  {
+   "process": "32.16",
+   "name": "document.describe",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.16",
+   "name": "explain",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.16",
+   "name": "human.transfer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.16",
+   "name": "journey.get",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.16",
+   "name": "record.get",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.16",
+   "name": "session.next",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.16",
+   "name": "timer.due",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.17",
+   "name": "video.callback",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.17",
+   "name": "video.end",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.17",
+   "name": "video.identify",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.17",
+   "name": "video.open",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.17",
+   "name": "video.turn",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "32.18",
+   "name": "underwriting.run",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "33.1",
+   "name": "account.invite",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "33.1",
+   "name": "account.provision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "33.1",
+   "name": "book.import",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "33.1",
+   "name": "book.report",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "33.1",
+   "name": "book.resolve",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "33.2",
+   "name": "offer.deliver",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "33.2",
+   "name": "offer.expire",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "33.2",
+   "name": "review.facts",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "33.2",
+   "name": "review.run",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "33.2",
+   "name": "review.write",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "33.3",
+   "name": "readiness.check",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "33.3",
+   "name": "readiness.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "33.3",
+   "name": "readiness.run",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "33.3",
+   "name": "refi.open",
+   "status": "refused_typed",
+   "code": "YES_REQUIRED"
+  },
+  {
+   "process": "34.1",
+   "name": "staff.access.review",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.1",
+   "name": "staff.disable",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.1",
+   "name": "staff.invite",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.1",
+   "name": "staff.role.set",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.1",
+   "name": "staff.signin",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.2",
+   "name": "directory.account",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.2",
+   "name": "directory.activity",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.2",
+   "name": "directory.export",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.2",
+   "name": "directory.search",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.2",
+   "name": "directory.unmask",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.3",
+   "name": "book.daily_report",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.3",
+   "name": "book.day",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.3",
+   "name": "book.history",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.3",
+   "name": "book.loan",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.3",
+   "name": "book.loans",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.4",
+   "name": "controls.ai.kill",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.4",
+   "name": "controls.escalation.complete",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.4",
+   "name": "controls.evidence.pack",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.4",
+   "name": "controls.outbox.requeue",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.4",
+   "name": "controls.timers",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.5",
+   "name": "directory.list",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "34.5",
+   "name": "portal.home",
+   "status": "refused_typed",
+   "code": "STAFF_TOOLS_ARE_SESSION_ONLY"
+  },
+  {
+   "process": "35.1",
+   "name": "outbox.dispatch",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.1",
+   "name": "record.gaps",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.1",
+   "name": "record.lease",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.1",
+   "name": "record.project",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.1",
+   "name": "record.replay",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.1",
+   "name": "record.snapshot",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.1",
+   "name": "record.verify",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.2",
+   "name": "documents.dispose",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "documents.hold",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "documents.open",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "documents.render",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "documents.store",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "documents.verify",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "esign.envelope.create",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "esign.envelope.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "esign.envelope.sign",
+   "status": "refused_typed",
+   "code": "NO_AGENT_SIGNS"
+  },
+  {
+   "process": "35.2",
+   "name": "esign.envelope.void",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "mail.batch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "mail.fallback",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "mail.manifest.ingest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.escalate",
+   "status": "refused_typed",
+   "code": "REASON_REQUIRED"
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.plan",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.receipt",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.registry",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.retry",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.run_unit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.3",
+   "name": "jobs.list",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.3",
+   "name": "jobs.requeue",
+   "status": "refused_typed",
+   "code": "ROLE_REQUIRED"
+  },
+  {
+   "process": "35.3",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.4",
+   "name": "close.attest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "close.board",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.4",
+   "name": "close.open",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "close.plan",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.4",
+   "name": "close.reopen",
+   "status": "refused_typed",
+   "code": "OFFICER_REOPEN_ONLY"
+  },
+  {
+   "process": "35.4",
+   "name": "close.review",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "close.step.complete",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "close.step.skip",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.4",
+   "name": "close.step.start",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "close.tax_year",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "ach.file.build",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "ach.return.action",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "ach.returns.ingest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "cashiering.run_unit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "installments.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.5",
+   "name": "installments.reproject",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.5",
+   "name": "installments.write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.5",
+   "name": "lockbox.ingest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "lockbox.item.resolve",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.5",
+   "name": "servicer_profile.write",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "servicing_config.write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.5",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.7",
+   "name": "handover.board",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.7",
+   "name": "handover.enable",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.7",
+   "name": "handover.plan",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.7",
+   "name": "principals.issue",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.7",
+   "name": "principals.revoke",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.7",
+   "name": "roles.approve",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.7",
+   "name": "roles.breakglass",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.7",
+   "name": "roles.grant",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.7",
+   "name": "roles.queue",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.7",
+   "name": "roles.revoke",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.7",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.9",
+   "name": "breach.execute",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "breach.recon",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.9",
+   "name": "case.milestone.expect",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "case.milestone.record",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "case.progress",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.9",
+   "name": "case.refer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "case.timeline",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.9",
+   "name": "claims.package",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "claims.sweep",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.9",
+   "name": "docket.react",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "docket.sync",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "firm.dispatch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "firm.inbound",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.board",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.confirm_partner",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.escrow",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.hold",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.lien_release",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.notify_partner",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.open",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.pass",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.quote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.resume",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.retire",
+   "status": "refused_typed",
+   "code": "NO_SETTLEMENT"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.settle",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.11",
+   "name": "audit.hosted.report",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.11",
+   "name": "audit.hosted.run",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.11",
+   "name": "audit.persisted.count",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.11",
+   "name": "ops.cycles.watch",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.11",
+   "name": "ops.exceptions.assign",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.11",
+   "name": "ops.exceptions.classify",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.11",
+   "name": "ops.exceptions.list",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.11",
+   "name": "ops.exceptions.requeue",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.11",
+   "name": "ops.exceptions.resolve",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.11",
+   "name": "ops.report",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.11",
+   "name": "ops.runbook.read",
+   "status": "refused_typed",
+   "code": "UNKNOWN_CODE"
+  },
+  {
+   "process": "35.11",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.12",
+   "name": "backup.drill",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "data.scan",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.12",
+   "name": "go_live.attest",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "go_live.check",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.12",
+   "name": "integrations.status",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.12",
+   "name": "integrations.switch",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "parallel_run.close",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "parallel_run.disposition",
+   "status": "refused_typed",
+   "code": "DIFF_NOT_FOUND"
+  },
+  {
+   "process": "35.12",
+   "name": "parallel_run.open",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "parallel_run.reconcile",
+   "status": "refused_typed",
+   "code": "RUN_NOT_OPEN"
+  },
+  {
+   "process": "35.12",
+   "name": "posture.check",
+   "status": "refused_typed",
+   "code": "MANIFEST_NOT_FOUND"
+  },
+  {
+   "process": "35.12",
+   "name": "posture.drift.resolve",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "posture.record",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.12",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  }
+ ]
+}

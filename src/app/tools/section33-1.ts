@@ -315,7 +315,8 @@ export const TOOLS_33_1: readonly ToolDef[] = defineTools(PROCESS_33_1, PORTFOLI
       const gaps: GapKind[] = channels.length ? [] : ["contact"];
       const defer = rt.services["deferWrite"] as ((fn: (q: Queryable) => Promise<void>) => void) | undefined; if (!defer) throw new PortUnavailable("service:deferWrite");
       defer(async (q) => {
-        if (resolution.kind === "create") await q.query(`INSERT INTO parties (id, party_type, legal_name, contact) VALUES ($1, 'borrower', $2, $3::jsonb)`, [partyId, legalName, toJson({ ...(email ? { email } : {}), ...(phone ? { phone } : {}) })]);
+        // 35.12 rule 6: the provisioned party carries its partner's marker (a fixture book's partner is synthetic; a real partner never marks)
+        if (resolution.kind === "create") await q.query(`INSERT INTO parties (id, party_type, legal_name, contact, synthetic) VALUES ($1, 'borrower', $2, $3::jsonb, coalesce((SELECT p.synthetic FROM loans l JOIN parties p ON p.id = l.partner_party_id WHERE l.id = $4), false))`, [partyId, legalName, toJson({ ...(email ? { email } : {}), ...(phone ? { phone } : {}) }), loanId]);
         else if (resolution.add_phone) await q.query(`UPDATE parties SET contact = contact || $2::jsonb WHERE id = $1`, [partyId, toJson({ phone: resolution.add_phone })]);
         await q.query(`UPDATE borrowers SET party_id = $2 WHERE id = $1 AND party_id IS NULL`, [b.id, partyId]);
       });

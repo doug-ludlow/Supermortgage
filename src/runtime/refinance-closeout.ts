@@ -37,6 +37,7 @@ import { finalDisbursementHold } from "../domain/escrow/ops-3-5.ts";
 import { prepaidInterest, type LoanFundedPayload } from "../domain/orig-boarding/ops-30-2.ts";
 import { demoSnapshot, fundApplication, fundedFromLog, snapshotOverridesFromRecord, type DemoOverrides } from "./origination.ts";
 import type { Runtime } from "./app.ts";
+import { orchestrationByApplication } from "../domain/operations-runtime/orchestration-35-6.ts";
 import type { Logger } from "./log.ts";
 
 export const ET = "America/New_York";
@@ -58,6 +59,10 @@ export const defaultHandoff: HandoffPort = {
     const app = await rt.applications.get(c.application_id);
     if (!app) return { ran: false, loan_id: null, reason: "no application" };
     if (app.loan_id) return { ran: false, loan_id: app.loan_id, reason: "already staged (35.6 or an earlier hand-off)" };
+    // 35.6 rule 6: an orchestrated application is handed off by `orchestration.pass` (the snapshot from the record, one `loans` row) earlier in the same sweep — rule 10: closeout.pass runs after it — and the closeout links on `loan.staged` (edge case: `open{waiting_on: 35.6}` until then); in production no fixture ever fills a gap, so a row the pass does not own waits for 35.6's discovery instead of `demoSnapshot`
+    const orch = await orchestrationByApplication(rt.db, c.application_id);
+    if (orch !== null) return { ran: false, loan_id: null, reason: `35.6 owns the hand-off (orchestration ${orch.id} at ${orch.step}/${orch.status}); the closeout links on loan.staged` };
+    if (rt.environment === "production") return { ran: false, loan_id: null, reason: "FIXTURE_REFUSED: production hands off from the record through 35.6's orchestration.pass, never from demoSnapshot (35.6 rule 6)" };
     const funded = await fundedFromLog(rt, c.application_id);
     if (!funded) return { ran: false, loan_id: null, reason: "no loan.funded on the application" };
     const store = new EntityStore(); store.seed(await rt.entities.load({ applicationId: c.application_id }));

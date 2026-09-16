@@ -29,6 +29,7 @@
  *   synthesized delinquency. `oncePerDay` (35.3 rule 3, the targeted by-hand run) skips a loan whose `delinquency.counters.updated{on}`
  *   for its civil day is already on its log, so a second run of the day's unit adds no event.
  */
+import { mapLimit, UNIT_CONCURRENCY } from "../kernel/concurrency.ts";
 import { EntityStore, PortUnavailable, type ToolRuntime } from "../app/tools.ts";
 import { EscalationService } from "../app/escalations.ts";
 import { CommandRefused, type CommandContext } from "../app/commands.ts";
@@ -163,10 +164,11 @@ export async function delinquencyDailySweep(rt: Runtime, nowIso: string = rt.clo
   const rows = await rt.db.query<Row>(LOAN_ROWS, [nowIso, filter, etToday]);
   const unconfigured = await rt.db.query<{ loan_id: string }>(UNCONFIGURED, [etToday, filter]);
   for (const u of unconfigured) report.skipped.push({ loan_id: u.loan_id, reason: "CONFIG_REQUIRED" });
-  for (const row of rows) {
+  // one unit of work per loan, a few loans in flight (src/kernel/concurrency.ts) — the report keeps the rows' order
+  const outcomes = await mapLimit(rows, UNIT_CONCURRENCY, async (row): Promise<{ skipped?: DelinquencySweepReport["skipped"][number]; out?: DelinquencyLoanOutcome }> => {
     const loanId = row.loan_id;
     const spine = await rt.uow.events.byLoan(loanId);
-    if (opts.oncePerDay && ranToday(spine, D(row.local_date))) { report.skipped.push({ loan_id: loanId, reason: "already_ran_today" }); continue; }
+    if (opts.oncePerDay && ranToday(spine, D(row.local_date))) return { skipped: { loan_id: loanId, reason: "already_ran_today" } };
     const store = new EntityStore(); store.seed(await rt.entities.load({ loanId })); const mark = store.versionCount();
     let escalations: EscalationService | undefined;
     let out: DelinquencyLoanOutcome | undefined; let windows: WindowProjectionInput | undefined;
@@ -179,7 +181,8 @@ export async function delinquencyDailySweep(rt: Runtime, nowIso: string = rt.clo
       // 11.1's `regx_ei_windows` rows: the windows the job opened and the closing facts folded onto the open ones
       if (windows) await projectWindows(q, windows);
     } });
-    if (out) report.loans.push(out);
-  }
+    return out ? { out } : {};
+  });
+  for (const o of outcomes) { if (o.skipped) report.skipped.push(o.skipped); if (o.out) report.loans.push(o.out); }
   return report;
 }

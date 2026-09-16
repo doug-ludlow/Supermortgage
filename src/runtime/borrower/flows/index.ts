@@ -145,7 +145,9 @@ export class BorrowerFlows {
   async settle(): Promise<void> { while (this.inflight > 0) await this.queue; }
   /** The scheduled pass: every flow's tick, then whatever it queued. */
   async tick(nowIso: string = this.deps.runtime.clock.now()): Promise<void> {
-    for (const f of this.flows) if (f.tick) { try { await this.within({ source: "tick", flow: f.id, triggers: [TICK_TRIGGER] }, () => f.tick!(this.deps, nowIso)); } catch (e) { this.deps.logger?.error("borrower.flow.tick.failed", { flow: f.id, error: e instanceof Error ? e.message : String(e) }); } }
-    await this.settle();
+    const t0 = Date.now(); const timings: Record<string, number> = {};
+    for (const f of this.flows) if (f.tick) { const t = Date.now(); try { await this.within({ source: "tick", flow: f.id, triggers: [TICK_TRIGGER] }, () => f.tick!(this.deps, nowIso)); } catch (e) { this.deps.logger?.error("borrower.flow.tick.failed", { flow: f.id, error: e instanceof Error ? e.message : String(e) }); }  timings[f.id] = Date.now() - t; }
+    const ts = Date.now(); await this.settle();
+    this.deps.logger?.info("borrower.flows.ticked", { at: nowIso, ms: Date.now() - t0, settle_ms: Date.now() - ts, flows: timings });
   }
 }

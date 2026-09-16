@@ -126,7 +126,7 @@ export function purchaseUpdate(store: EventStore, i: { readonly loan: PurchaseLo
     remittance_type: advice.remittance_type, pass_through_rate: advice.pass_through_rate, servicing_fee_bps: advice.servicing_fee_bps, participation_pct: "100.000000", servicing_option: advice.remittance_type === "SS" ? "regular" : null,
     investor_setup_status: "purchased" as InvestorSetupStatus, fnma_first_reporting_period: periodOf(advice.purchase_date) };
   const event = store.append({ type: "loan.investor_updated", ...ctx(loan), actor, occurredAt: i.now,
-    payload: { ...loan_patch, ...withApp(loan), loan_terms: loan_terms_v2, investor_loan_position: { ...position }, idempotency_key: key, advice_date: advice.advice_date } });
+    payload: { ...loan_patch, ...withApp(loan), loan_terms: loan_terms_v2, investor_loan_position: { ...position }, idempotency_key: key, advice_date: advice.advice_date, net_proceeds_cents: String(advice.net_proceeds_cents), interest_adjustment_cents: String(advice.interest_adjustment_cents) } });   // the advice figures the update was made from (35.6 rule 8 reads them as 30.1's side of the purchase reconciliation)
   return { ok: true, replayed: false, variance: null, event, loan_patch, loan_terms_v2, position, idempotency_key: key };
 }
 /** The seed as a row event (`seedInvestorPosition` tool): 5.1 owns the table; 30.1 writes the first row with `source='purchase_advice'`. */

@@ -104,6 +104,7 @@ export type TimerOverride = Partial<Pick<TimerDef, "trigger" | "satisfied" | "an
 
 export class TimerRegistry {
   private readonly byCode = new Map<string, TimerDef>();
+  private triggerIndex: { literal: Map<string, TimerDef[]>; wildcard: { prefix: string; def: TimerDef }[] } | null = null;
   private readonly list: TimerDef[] = [];
   constructor(rows: readonly RawTimer[]) {
     for (const r of rows) this.list.push(toTimerDef(r));
@@ -141,16 +142,30 @@ export class TimerRegistry {
     const anchorField = o.anchorField !== undefined ? o.anchorField : o.anchor === undefined ? cur.anchorField : merged.anchorField;
     const anchorFields = o.anchorFields !== undefined ? o.anchorFields : cur.anchorFields;
     const next: TimerDef = { ...merged, anchorField, ...(anchorFields !== undefined ? { anchorFields } : {}), ...(o.why !== undefined ? { overrideWhy: o.why } : {}), ...(o.subject !== undefined ? { subjectOverride: o.subject } : cur.subjectOverride !== undefined ? { subjectOverride: cur.subjectOverride } : {}) };
-    this.byCode.set(code, next);
+    this.byCode.set(code, next); this.triggerIndex = null;
     return next;
   }
   get(code: string): TimerDef | undefined { return this.byCode.get(code); }
   all(): readonly TimerDef[] { return this.list; }
   unique(): readonly TimerDef[] { return [...this.byCode.values()]; }
   forProcess(id: string): readonly TimerDef[] { return this.list.filter((t) => t.process === id); }
-  /** Timers whose trigger pattern matches an event type (fast path by literal type). */
+  /** Timers whose trigger pattern matches an event type (fast path by literal type; an index over `unique()`, rebuilt after an override — every event of every loan-day asks this). */
   triggeredBy(eventType: string): readonly TimerDef[] {
-    return this.unique().filter((t) => t.triggerPattern && (t.triggerPattern.type === eventType || (t.triggerPattern.type.endsWith("*") && eventType.startsWith(t.triggerPattern.type.slice(0, -1)))));
+    if (!this.triggerIndex) {
+      const literal = new Map<string, TimerDef[]>(); const wildcard: { prefix: string; def: TimerDef }[] = [];
+      for (const t of this.unique()) {
+        if (!t.triggerPattern) continue;
+        if (t.triggerPattern.type.endsWith("*")) wildcard.push({ prefix: t.triggerPattern.type.slice(0, -1), def: t });
+        else { const l = literal.get(t.triggerPattern.type); if (l) l.push(t); else literal.set(t.triggerPattern.type, [t]); }
+      }
+      this.triggerIndex = { literal, wildcard };
+    }
+    const hits = this.triggerIndex.literal.get(eventType);
+    const wild = this.triggerIndex.wildcard.filter((w) => eventType.startsWith(w.prefix)).map((w) => w.def);
+    if (!wild.length) return hits ?? [];
+    // unique() order: rebuild the union in registry order so callers see the same order as the unindexed filter did
+    const set = new Set<TimerDef>([...(hits ?? []), ...wild]);
+    return this.unique().filter((t) => set.has(t));
   }
 }
 

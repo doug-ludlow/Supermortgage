@@ -50,7 +50,7 @@ export async function openRefiBook(o: RefiBookOptions): Promise<RefiBook> {
   const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock: o.clock, rateFeed: o.rateFeed ?? null, reviewers: o.reviewers ?? null, logger });
   const token = "ops-" + randomUUID();
   const partnerName = `Partner Bank ${randomUUID().slice(0, 8)}`;
-  const partnerPartyId = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, '123456789', '1000123') RETURNING id`, [partnerName]))[0]!.id;
+  const partnerPartyId = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id, synthetic) VALUES ('servicer', $1, '123456789', '1000123', true) RETURNING id`, [partnerName]))[0]!.id;
   const router = createBorrowerRouter({ runtime, logger, environment: "test", rpId: "localhost", allowedOrigins: ["http://localhost"], urlSecret: "test-secret", defaultPartnerId: partnerPartyId });
   const server = createApiServer({ runtime, apiToken: token, logger, console: false, borrowerRouter: router });
   const base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;

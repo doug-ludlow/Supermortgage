@@ -55,6 +55,7 @@
  * `last_receipt_at` bind `wallClockOf(rt)`; `opened_at`, `dead_at`, `as_of` and every event's `occurredAt` are the runtime clock's
  * (the demo clock in a rehearsal) — the instants the registry-driven clocks measure.
  */
+import { mapLimit, UNIT_CONCURRENCY } from "../../kernel/concurrency.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { Queryable } from "../../infra/db/client.ts";
 import { toJson } from "../../infra/db/client.ts";
@@ -768,7 +769,10 @@ export async function runExecutor(rt: Runtime, opts: ExecutorOptions = {}): Prom
     claimed += batch.length;
     await rt.uow.run({}, (ctx) => { for (const j of batch) ctx.events.append({ type: EVT.CLAIMED, aggregate: { kind: "job", id: j.id }, actor: OPS_STEWARD, payload: { job_id: j.id, run_id: j.run_id, cycle_code: j.cycle_code, period_key: j.period_key, unit_id: j.unit_id, holder, lease_until: j.lease_until, attempt: j.attempts } }); },
       { clock: rt.clock, commit: async (q) => { for (const j of batch) { await appendJobEvent(q, { job_id: j.id, kind: "claimed", attempt: j.attempts, holder, actor: OPS_STEWARD, at: wall, detail: { lease_until: j.lease_until, unit_id: j.unit_id } }); } await q.query(`UPDATE cycle_runs SET status = 'running' WHERE status = 'planned' AND id = ANY($1::uuid[])`, [[...new Set(batch.map((j) => j.run_id))]]); } });
-    for (const j of batch) tally(await runClaimed(rt, j, holder, unitOpts));
+    // the batch's units a few at a time (src/kernel/concurrency.ts), cycle by cycle in claim order: units of one cycle are independent (one loan, one case,
+    // one period each); a later cycle in the same batch may depend on an earlier one, so cycles never interleave
+    const cycles: JobRow[][] = []; for (const j of batch) { const g = cycles.find((c) => c[0]!.cycle_code === j.cycle_code); if (g) g.push(j); else cycles.push([j]); }
+    for (const group of cycles) for (const r of await mapLimit(group, UNIT_CONCURRENCY, (j) => runClaimed(rt, j, holder, unitOpts))) tally(r);
   }
   return { holder, claimed, done, failed, dead, lost, receipts, budget_spent: budgetSpent, ms: Date.now() - started };
 }

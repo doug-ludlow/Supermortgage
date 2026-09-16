@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8468/8787 (96.4%): tids 2348/2480, tables 814/852, timers 2078/2097, notices 308/309, tools 1513/1579, figures 1407/1470; processes at 100%: 199/212; retired 27",
+ "brief": "spec units built 8729/8787 (99.3%): tids 2435/2480, tables 848/852, timers 2097/2097, notices 308/309, tools 1574/1579, figures 1467/1470; processes at 100%: 204/212; retired 27; hosted 1550/1579, persisted 128/852",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2348
+   "built": 2435
   },
   "tables": {
    "spec": 852,
-   "built": 814
+   "built": 848
   },
   "timers": {
    "spec": 2097,
-   "built": 2078
+   "built": 2097
   },
   "notices": {
    "spec": 309,
@@ -19,17 +19,73 @@
   },
   "tools": {
    "spec": 1579,
-   "built": 1513
+   "built": 1574
   },
   "figures": {
    "spec": 1470,
-   "built": 1407
+   "built": 1467
   },
   "units": {
    "spec": 8787,
-   "built": 8468
+   "built": 8729
   }
  },
+ "exec_totals": {
+  "hosted": {
+   "spec": 1579,
+   "built": 1550
+  },
+  "persisted": {
+   "spec": 852,
+   "built": 128
+  }
+ },
+ "exec_measured": {
+  "hosted": true,
+  "persisted": true
+ },
+ "exec_notes": [],
+ "exec_done": [
+  "2.1",
+  "2.7",
+  "3.4",
+  "6.1",
+  "6.2",
+  "6.4",
+  "9.3",
+  "10.3",
+  "12.7",
+  "21.1",
+  "23.6",
+  "23.7",
+  "24.1",
+  "29.1",
+  "32.1",
+  "32.3",
+  "32.4",
+  "32.5",
+  "32.6",
+  "32.7",
+  "32.8",
+  "32.9",
+  "32.10",
+  "32.11",
+  "32.12",
+  "32.13",
+  "32.18",
+  "32.19",
+  "33.1",
+  "33.3",
+  "34.3",
+  "35.3",
+  "35.5",
+  "35.10",
+  "36.2",
+  "36.3",
+  "36.4",
+  "36.5",
+  "36.6"
+ ],
  "retired": {
   "count": 27,
   "by_kind": {
@@ -412,9 +468,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 454,
+   "built": 715,
    "processes": 12,
-   "done": 7
+   "done": 12
   },
   "36": {
    "spec": 40,
@@ -619,10 +675,15 @@
   "35.1",
   "35.2",
   "35.3",
+  "35.4",
   "35.5",
+  "35.6",
   "35.7",
+  "35.8",
   "35.9",
-  "35.10"
+  "35.10",
+  "35.11",
+  "35.12"
  ],
  "processes": [
   {
@@ -659,6 +720,16 @@
     "spec": 6,
     "built": 6,
     "missing": []
+   },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 3,
+    "measured": true
    },
    "units": {
     "spec": 41,
@@ -702,6 +773,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 28,
     "built": 28
@@ -743,6 +824,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 33,
@@ -786,6 +877,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 38,
     "built": 38
@@ -827,6 +928,16 @@
     "spec": 1,
     "built": 1,
     "missing": []
+   },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 32,
@@ -870,6 +981,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 37,
     "built": 37
@@ -911,6 +1032,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 41,
@@ -954,6 +1085,16 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 37,
     "built": 37
@@ -995,6 +1136,16 @@
     "spec": 4,
     "built": 4,
     "missing": []
+   },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 32,
@@ -1038,6 +1189,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 4,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
@@ -1079,6 +1240,16 @@
     "spec": 6,
     "built": 6,
     "missing": []
+   },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 30,
@@ -1122,6 +1293,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 23,
     "built": 23
@@ -1163,6 +1344,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 24,
@@ -1206,6 +1397,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 38,
     "built": 38
@@ -1247,6 +1448,16 @@
     "spec": 2,
     "built": 2,
     "missing": []
+   },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 26,
@@ -1290,6 +1501,16 @@
     "built": 34,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 65,
     "built": 65
@@ -1331,6 +1552,16 @@
     "spec": 15,
     "built": 15,
     "missing": []
+   },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 45,
@@ -1374,6 +1605,16 @@
     "built": 8,
     "missing": []
    },
+   "hosted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 19,
     "built": 19
@@ -1415,6 +1656,16 @@
     "spec": 8,
     "built": 8,
     "missing": []
+   },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 31,
@@ -1458,6 +1709,16 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 37,
     "built": 37
@@ -1499,6 +1760,16 @@
     "spec": 7,
     "built": 7,
     "missing": []
+   },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 46,
@@ -1542,6 +1813,16 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 32,
     "built": 32
@@ -1583,6 +1864,16 @@
     "spec": 12,
     "built": 12,
     "missing": []
+   },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 35,
@@ -1626,6 +1917,16 @@
     "built": 4,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 59,
     "built": 59
@@ -1667,6 +1968,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 35,
@@ -1710,6 +2021,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
@@ -1751,6 +2072,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 35,
@@ -1794,6 +2125,16 @@
     "built": 2,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
@@ -1835,6 +2176,16 @@
     "spec": 8,
     "built": 8,
     "missing": []
+   },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 47,
@@ -1878,6 +2229,16 @@
     "built": 35,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 82,
     "built": 82
@@ -1919,6 +2280,16 @@
     "spec": 5,
     "built": 5,
     "missing": []
+   },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 35,
@@ -1962,6 +2333,16 @@
     "built": 15,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 42,
     "built": 42
@@ -2003,6 +2384,16 @@
     "spec": 6,
     "built": 6,
     "missing": []
+   },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 27,
@@ -2046,6 +2437,16 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 30,
     "built": 30
@@ -2087,6 +2488,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 31,
@@ -2130,6 +2541,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 28,
     "built": 28
@@ -2171,6 +2592,16 @@
     "spec": 4,
     "built": 4,
     "missing": []
+   },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 18,
@@ -2214,6 +2645,16 @@
     "built": 14,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 55,
     "built": 55
@@ -2255,6 +2696,16 @@
     "spec": 12,
     "built": 12,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 29,
@@ -2298,6 +2749,16 @@
     "built": 2,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 40,
     "built": 40
@@ -2339,6 +2800,16 @@
     "spec": 11,
     "built": 11,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 4,
+    "measured": true
    },
    "units": {
     "spec": 56,
@@ -2382,6 +2853,16 @@
     "built": 9,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 46,
     "built": 46
@@ -2423,6 +2904,16 @@
     "spec": 3,
     "built": 3,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 20,
@@ -2466,6 +2957,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 31,
     "built": 31
@@ -2507,6 +3008,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 22,
@@ -2550,6 +3061,16 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 31,
     "built": 31
@@ -2591,6 +3112,16 @@
     "spec": 9,
     "built": 9,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 49,
@@ -2634,6 +3165,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
@@ -2675,6 +3216,16 @@
     "spec": 7,
     "built": 7,
     "missing": []
+   },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 47,
@@ -2718,6 +3269,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 32,
     "built": 32
@@ -2759,6 +3320,16 @@
     "spec": 3,
     "built": 3,
     "missing": []
+   },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 32,
@@ -2802,6 +3373,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 15,
     "built": 15
@@ -2843,6 +3424,16 @@
     "spec": 1,
     "built": 1,
     "missing": []
+   },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 13,
@@ -2886,6 +3477,16 @@
     "built": 9,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 28,
     "built": 28
@@ -2927,6 +3528,16 @@
     "spec": 2,
     "built": 2,
     "missing": []
+   },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 34,
@@ -2970,6 +3581,16 @@
     "built": 8,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 50,
     "built": 50
@@ -3011,6 +3632,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 34,
@@ -3054,6 +3685,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
@@ -3095,6 +3736,16 @@
     "spec": 7,
     "built": 7,
     "missing": []
+   },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 51,
@@ -3138,6 +3789,16 @@
     "built": 6,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 39,
     "built": 39
@@ -3179,6 +3840,16 @@
     "spec": 2,
     "built": 2,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 14,
@@ -3222,6 +3893,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 26,
     "built": 26
@@ -3263,6 +3944,16 @@
     "spec": 11,
     "built": 11,
     "missing": []
+   },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 37,
@@ -3306,6 +3997,16 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 31,
     "built": 31
@@ -3347,6 +4048,16 @@
     "spec": 9,
     "built": 9,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 2,
+    "measured": true
    },
    "units": {
     "spec": 60,
@@ -3390,6 +4101,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 50,
     "built": 50
@@ -3431,6 +4152,16 @@
     "spec": 3,
     "built": 3,
     "missing": []
+   },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 48,
@@ -3474,6 +4205,16 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 51,
     "built": 51
@@ -3515,6 +4256,16 @@
     "spec": 9,
     "built": 9,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 43,
@@ -3558,6 +4309,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 52,
     "built": 52
@@ -3599,6 +4360,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 49,
@@ -3642,6 +4413,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 27,
     "built": 27
@@ -3683,6 +4464,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 44,
@@ -3726,6 +4517,16 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 52,
     "built": 52
@@ -3767,6 +4568,16 @@
     "spec": 9,
     "built": 9,
     "missing": []
+   },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 50,
@@ -3810,6 +4621,16 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 26,
     "built": 26
@@ -3851,6 +4672,16 @@
     "spec": 20,
     "built": 20,
     "missing": []
+   },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 65,
@@ -3894,6 +4725,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 17,
+    "built": 17,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 64,
     "built": 64
@@ -3935,6 +4776,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 29,
@@ -3978,6 +4829,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
@@ -4019,6 +4880,16 @@
     "spec": 16,
     "built": 16,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 68,
@@ -4062,6 +4933,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
@@ -4103,6 +4984,16 @@
     "spec": 3,
     "built": 3,
     "missing": []
+   },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 29,
@@ -4146,6 +5037,16 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 10,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 48,
     "built": 48
@@ -4187,6 +5088,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 30,
@@ -4230,6 +5141,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 35,
     "built": 35
@@ -4271,6 +5192,16 @@
     "spec": 13,
     "built": 13,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 44,
@@ -4314,6 +5245,16 @@
     "built": 28,
     "missing": []
    },
+   "hosted": {
+    "spec": 17,
+    "built": 17,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 107,
     "built": 107
@@ -4355,6 +5296,16 @@
     "spec": 12,
     "built": 12,
     "missing": []
+   },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 52,
@@ -4398,6 +5349,16 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 47,
     "built": 47
@@ -4439,6 +5400,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 18,
@@ -4482,6 +5453,16 @@
     "built": 20,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 69,
     "built": 69
@@ -4523,6 +5504,16 @@
     "spec": 22,
     "built": 22,
     "missing": []
+   },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 63,
@@ -4566,6 +5557,16 @@
     "built": 21,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 67,
     "built": 67
@@ -4607,6 +5608,16 @@
     "spec": 10,
     "built": 10,
     "missing": []
+   },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 42,
@@ -4650,6 +5661,16 @@
     "built": 21,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 62,
     "built": 62
@@ -4691,6 +5712,16 @@
     "spec": 14,
     "built": 14,
     "missing": []
+   },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 59,
@@ -4734,6 +5765,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 51,
     "built": 51
@@ -4775,6 +5816,16 @@
     "spec": 1,
     "built": 1,
     "missing": []
+   },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 25,
@@ -4818,6 +5869,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 42,
     "built": 42
@@ -4859,6 +5920,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 40,
@@ -4902,6 +5973,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 75,
     "built": 75
@@ -4943,6 +6024,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 47,
@@ -4986,6 +6077,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 43,
     "built": 43
@@ -5027,6 +6128,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 24,
@@ -5070,6 +6181,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 19,
     "built": 19
@@ -5111,6 +6232,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 28,
@@ -5154,6 +6285,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 24,
     "built": 24
@@ -5195,6 +6336,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 18,
@@ -5238,6 +6389,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 25,
     "built": 25
@@ -5279,6 +6440,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 47,
@@ -5322,6 +6493,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 13,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 84,
     "built": 84
@@ -5363,6 +6544,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 12,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 58,
@@ -5406,6 +6597,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 36,
     "built": 36
@@ -5447,6 +6648,16 @@
     "spec": 23,
     "built": 23,
     "missing": []
+   },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 58,
@@ -5490,6 +6701,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 45,
     "built": 45
@@ -5531,6 +6752,16 @@
     "spec": 3,
     "built": 3,
     "missing": []
+   },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 41,
@@ -5574,6 +6805,16 @@
     "built": 10,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 47,
     "built": 47
@@ -5615,6 +6856,16 @@
     "spec": 2,
     "built": 2,
     "missing": []
+   },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
    },
    "units": {
     "spec": 38,
@@ -5658,6 +6909,16 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 6,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 36,
     "built": 36
@@ -5699,6 +6960,16 @@
     "spec": 1,
     "built": 1,
     "missing": []
+   },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 75,
@@ -5742,6 +7013,16 @@
     "built": 4,
     "missing": []
    },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 47,
     "built": 47
@@ -5783,6 +7064,16 @@
     "spec": 11,
     "built": 11,
     "missing": []
+   },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 43,
@@ -5826,6 +7117,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 43,
     "built": 43
@@ -5867,6 +7168,16 @@
     "spec": 4,
     "built": 4,
     "missing": []
+   },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 45,
@@ -5910,6 +7221,16 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
@@ -5951,6 +7272,16 @@
     "spec": 24,
     "built": 24,
     "missing": []
+   },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 55,
@@ -5994,6 +7325,16 @@
     "built": 65,
     "missing": []
    },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 110,
     "built": 110
@@ -6035,6 +7376,16 @@
     "spec": 17,
     "built": 17,
     "missing": []
+   },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 54,
@@ -6078,6 +7429,16 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 22,
+    "built": 22,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 64,
     "built": 64
@@ -6119,6 +7480,16 @@
     "spec": 16,
     "built": 16,
     "missing": []
+   },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 51,
@@ -6162,6 +7533,16 @@
     "built": 24,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 58,
     "built": 58
@@ -6203,6 +7584,16 @@
     "spec": 6,
     "built": 6,
     "missing": []
+   },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 44,
@@ -6246,6 +7637,16 @@
     "built": 29,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 66,
     "built": 66
@@ -6287,6 +7688,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 12,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 37,
@@ -6330,6 +7741,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 17,
     "built": 17
@@ -6371,6 +7792,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 17,
@@ -6414,6 +7845,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 41,
     "built": 41
@@ -6455,6 +7896,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 19,
+    "built": 19,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 51,
@@ -6498,6 +7949,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 40,
     "built": 40
@@ -6539,6 +8000,16 @@
     "spec": 13,
     "built": 13,
     "missing": []
+   },
+   "hosted": {
+    "spec": 22,
+    "built": 22,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 67,
@@ -6582,6 +8053,16 @@
     "built": 11,
     "missing": []
    },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 52,
     "built": 52
@@ -6623,6 +8104,16 @@
     "spec": 18,
     "built": 18,
     "missing": []
+   },
+   "hosted": {
+    "spec": 18,
+    "built": 18,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 63,
@@ -6666,6 +8157,16 @@
     "built": 26,
     "missing": []
    },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 75,
     "built": 75
@@ -6707,6 +8208,16 @@
     "spec": 6,
     "built": 6,
     "missing": []
+   },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 52,
@@ -6750,6 +8261,16 @@
     "built": 13,
     "missing": []
    },
+   "hosted": {
+    "spec": 7,
+    "built": 7,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 44,
     "built": 44
@@ -6791,6 +8312,16 @@
     "spec": 16,
     "built": 16,
     "missing": []
+   },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 63,
@@ -6834,6 +8365,16 @@
     "built": 19,
     "missing": []
    },
+   "hosted": {
+    "spec": 17,
+    "built": 17,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 74,
     "built": 74
@@ -6875,6 +8416,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 19,
+    "built": 19,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 51,
@@ -6918,6 +8469,16 @@
     "built": 30,
     "missing": []
    },
+   "hosted": {
+    "spec": 15,
+    "built": 15,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 77,
     "built": 77
@@ -6959,6 +8520,16 @@
     "spec": 1,
     "built": 1,
     "missing": []
+   },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 46,
@@ -7002,6 +8573,16 @@
     "built": 28,
     "missing": []
    },
+   "hosted": {
+    "spec": 19,
+    "built": 19,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 87,
     "built": 87
@@ -7043,6 +8624,16 @@
     "spec": 57,
     "built": 57,
     "missing": []
+   },
+   "hosted": {
+    "spec": 17,
+    "built": 17,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 110,
@@ -7086,6 +8677,16 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 20,
+    "built": 20,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 53,
     "built": 53
@@ -7127,6 +8728,16 @@
     "spec": 1,
     "built": 1,
     "missing": []
+   },
+   "hosted": {
+    "spec": 26,
+    "built": 26,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 68,
@@ -7170,6 +8781,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 39,
     "built": 39
@@ -7211,6 +8832,16 @@
     "spec": 1,
     "built": 1,
     "missing": []
+   },
+   "hosted": {
+    "spec": 20,
+    "built": 20,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 65,
@@ -7254,6 +8885,16 @@
     "built": 16,
     "missing": []
    },
+   "hosted": {
+    "spec": 14,
+    "built": 14,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 61,
     "built": 61
@@ -7295,6 +8936,16 @@
     "spec": 7,
     "built": 7,
     "missing": []
+   },
+   "hosted": {
+    "spec": 18,
+    "built": 18,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 59,
@@ -7338,6 +8989,16 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 44,
     "built": 44
@@ -7379,6 +9040,16 @@
     "spec": 6,
     "built": 6,
     "missing": []
+   },
+   "hosted": {
+    "spec": 16,
+    "built": 16,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 67,
@@ -7422,6 +9093,16 @@
     "built": 9,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 51,
     "built": 51
@@ -7463,6 +9144,16 @@
     "spec": 14,
     "built": 14,
     "missing": []
+   },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 6,
+    "measured": true
    },
    "units": {
     "spec": 59,
@@ -7506,6 +9197,16 @@
     "built": 20,
     "missing": []
    },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 55,
     "built": 55
@@ -7547,6 +9248,16 @@
     "spec": 10,
     "built": 10,
     "missing": []
+   },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 53,
@@ -7590,6 +9301,16 @@
     "built": 1,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 43,
     "built": 43
@@ -7631,6 +9352,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 42,
@@ -7674,6 +9405,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 2,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 21,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 55,
     "built": 55
@@ -7715,6 +9456,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 3,
@@ -7758,6 +9509,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 45,
+    "built": 45,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 5,
+    "measured": true
+   },
    "units": {
     "spec": 94,
     "built": 94
@@ -7799,6 +9560,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 32,
@@ -7842,6 +9613,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 10,
     "built": 10
@@ -7883,6 +9664,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 13,
@@ -7926,6 +9717,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 12,
     "built": 12
@@ -7967,6 +9768,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 13,
@@ -8010,6 +9821,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 11,
     "built": 11
@@ -8051,6 +9872,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 10,
@@ -8096,6 +9927,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 11,
     "built": 11
@@ -8137,6 +9978,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 10,
@@ -8180,6 +10031,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 8,
     "built": 8
@@ -8222,6 +10083,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 16,
     "built": 16
@@ -8263,6 +10134,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 19,
@@ -8314,6 +10195,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 10,
+    "built": 10,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 40,
     "built": 40
@@ -8361,6 +10252,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 18,
@@ -8419,6 +10320,16 @@
     "built": 3,
     "missing": []
    },
+   "hosted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 12,
     "built": 12
@@ -8463,6 +10374,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 18,
     "built": 17
@@ -8504,6 +10425,16 @@
     "spec": 6,
     "built": 6,
     "missing": []
+   },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 3,
+    "built": 3,
+    "measured": true
    },
    "units": {
     "spec": 30,
@@ -8547,6 +10478,16 @@
     "built": 13,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 27,
     "built": 27
@@ -8588,6 +10529,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 4,
+    "built": 4,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
    },
    "units": {
     "spec": 12,
@@ -8631,6 +10582,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 21,
     "built": 21
@@ -8672,6 +10633,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 2,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 13,
@@ -8715,6 +10686,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 1,
+    "measured": true
+   },
    "units": {
     "spec": 12,
     "built": 12
@@ -8756,6 +10737,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 12,
@@ -8818,6 +10809,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 6,
+    "built": 2,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 22,
     "built": 5
@@ -8859,6 +10860,16 @@
     "spec": 7,
     "built": 7,
     "missing": []
+   },
+   "hosted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 9,
+    "built": 8,
+    "measured": true
    },
    "units": {
     "spec": 42,
@@ -8902,6 +10913,16 @@
     "built": 11,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 12,
+    "built": 4,
+    "measured": true
+   },
    "units": {
     "spec": 58,
     "built": 58
@@ -8944,6 +10965,16 @@
     "built": 7,
     "missing": []
    },
+   "hosted": {
+    "spec": 9,
+    "built": 9,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
    "units": {
     "spec": 40,
     "built": 40
@@ -8956,48 +10987,20 @@
    "title": "Month-end and year-end close: close periods, the dependency-ordered chain, the balance attestation, reopen, and the tax-year close that drives 1098 and 1099",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "close_attestations",
-     "close_period_events",
-     "close_period_steps",
-     "close_periods",
-     "close_reopens",
-     "tax_year_closes"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "SM_CLOSE_ATTEST_BD5",
-     "SM_CLOSE_PERIOD_OPEN_BD1",
-     "SM_CLOSE_STEP_STALLED_2BD",
-     "SM_TAX_YEAR_CLOSE_3BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9006,50 +11009,29 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "close.open",
-     "close.plan",
-     "close.step.start",
-     "close.step.complete",
-     "close.step.skip",
-     "close.board",
-     "close.attest",
-     "close.review",
-     "close.reopen",
-     "close.tax_year",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 19,
-    "built": 1,
-    "missing": [
-     "$1,233,000.00",
-     "$1,250.00",
-     "$1,253,050.55",
-     "$1,254,300.55",
-     "$1,265,500.55",
-     "$1,266,750.55",
-     "$10.00",
-     "$12,450.00",
-     "$22,580.00",
-     "$23,412.55",
-     "$3,210.15",
-     "$33,695.07",
-     "$412.40",
-     "$45,000.00",
-     "$6,870.40",
-     "$600.00",
-     "$8,120.40",
-     "$9,870.12"
-    ]
+    "built": 19,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 3,
+    "measured": true
    },
    "units": {
     "spec": 55,
-    "built": 1
+    "built": 55
    },
-   "pct": 1.8,
+   "pct": 100.0,
    "retired": []
   },
   {
@@ -9087,6 +11069,16 @@
     "built": 53,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 8,
+    "measured": true
+   },
    "units": {
     "spec": 97,
     "built": 97
@@ -9099,49 +11091,20 @@
    "title": "Closing, funding and delivery orchestration: the state machine from clear-to-close through the CD, consummation, funding, the hand-off from the record, delivery, purchase-advice reconciliation and the warehouse paydown",
    "tids": {
     "spec": 19,
-    "built": 0,
-    "todo": 19,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18,
-     19
-    ]
+    "built": 19,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "closing_orchestration_steps",
-     "closing_orchestrations",
-     "funding_snapshots",
-     "orchestration_daily_receipts",
-     "purchase_reconciliations"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 3,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_ORCH_PURCHASE_RECON_1BD",
-     "SM_ORCH_STEP_STALLED_2BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9150,63 +11113,29 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "orchestration.open",
-     "orchestration.pass",
-     "orchestration.step",
-     "orchestration.snapshot",
-     "orchestration.fund",
-     "orchestration.reconcile",
-     "orchestration.hold",
-     "orchestration.release",
-     "orchestration.unwind",
-     "orchestration.board",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 40,
-    "built": 9,
-    "missing": [
-     "$1,067.72",
-     "$1,096.67",
-     "$1,240.00",
-     "$1,375.00",
-     "$1,415.00",
-     "$1,665.00",
-     "$10,052.69",
-     "$2,774.00",
-     "$3,485.00",
-     "$403,760.00",
-     "$404,852.72",
-     "$410,339.52",
-     "$412,000.00",
-     "$416,120.00",
-     "$416,190.10",
-     "$515.00",
-     "$548,800.00",
-     "$549,550.64",
-     "$556,852.07",
-     "$557,249.57",
-     "$564,503.33",
-     "$566,300.00",
-     "$6,579.52",
-     "$7,732.38",
-     "$70.10",
-     "$700.00",
-     "$71.96",
-     "$725.64",
-     "$8,052.07",
-     "$831.00",
-     "$935.48"
-    ]
+    "built": 40,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 11,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 80,
-    "built": 12
+    "built": 80
    },
-   "pct": 15.0,
+   "pct": 100.0,
    "retired": []
   },
   {
@@ -9244,6 +11173,16 @@
     "built": 5,
     "missing": []
    },
+   "hosted": {
+    "spec": 11,
+    "built": 11,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 2,
+    "measured": true
+   },
    "units": {
     "spec": 44,
     "built": 44
@@ -9256,50 +11195,20 @@
    "title": "Operator work screens: the per-loan and per-application work the console lacks, each screen a bus tool with server-derived inputs, the queue and the action log",
    "tids": {
     "spec": 16,
-    "built": 0,
-    "todo": 16,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "work_actions",
-     "work_approvals",
-     "work_derivations",
-     "work_item_events",
-     "work_items",
-     "work_log_recon_runs",
-     "work_screen_versions"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 1,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_WORK_APPROVAL_1BD",
-     "SM_WORK_ITEM_AGE_2BD",
-     "SM_WORK_ITEM_AGE_5BD",
-     "SM_WORK_ITEM_CLAIM_4H"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9308,41 +11217,29 @@
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "work.queue",
-     "work.item.open",
-     "work.item.claim",
-     "work.item.release",
-     "work.item.close",
-     "work.item.cancel",
-     "work.screen.read",
-     "work.screen.derive",
-     "work.screen.act",
-     "work.action.propose",
-     "work.action.decide",
-     "work.log.recon",
-     "writeDecision"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 22,
-    "built": 15,
-    "missing": [
-     "$1,665.00",
-     "$2,412.90",
-     "$250,390.82",
-     "$44.22",
-     "$556,852.07",
-     "$619.08",
-     "$700.00"
-    ]
+    "built": 22,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 13,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 7,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 63,
-    "built": 16
+    "built": 63
    },
-   "pct": 25.4,
+   "pct": 100.0,
    "retired": []
   },
   {
@@ -9379,6 +11276,16 @@
     "spec": 27,
     "built": 27,
     "missing": []
+   },
+   "hosted": {
+    "spec": 14,
+    "built": 14,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 8,
+    "built": 7,
+    "measured": true
    },
    "units": {
     "spec": 72,
@@ -9422,6 +11329,16 @@
     "built": 27,
     "missing": []
    },
+   "hosted": {
+    "spec": 13,
+    "built": 13,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 5,
+    "built": 5,
+    "measured": true
+   },
    "units": {
     "spec": 65,
     "built": 65
@@ -9434,52 +11351,20 @@
    "title": "Operations stewardship and hosted measurement: the ops steward over cycles, exceptions and the outbox, the daily ops report, and the audit's hosted and persisted columns",
    "tids": {
     "spec": 18,
-    "built": 0,
-    "todo": 18,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18
-    ]
+    "built": 18,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "exception_triages",
-     "hosted_probe_runs",
-     "ops_daily_reports",
-     "ops_exceptions",
-     "persisted_measurement_runs",
-     "persisted_measurements"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 0,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_HOSTED_PROBE_WEEKLY",
-     "SM_OPS_ADAPTER_DOWN_1H",
-     "SM_OPS_CYCLE_MISSED_2H",
-     "SM_OPS_EXCEPTION_TRIAGE_1BD",
-     "SM_OPS_REPORT_DAILY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9488,32 +11373,29 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "ops.cycles.watch",
-     "ops.exceptions.list",
-     "ops.exceptions.classify",
-     "ops.exceptions.requeue",
-     "ops.exceptions.assign",
-     "ops.exceptions.resolve",
-     "ops.report",
-     "ops.runbook.read",
-     "audit.hosted.run",
-     "audit.hosted.report",
-     "audit.persisted.count",
-     "writeDecision"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 0,
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 12,
+    "built": 12,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 6,
+    "built": 3,
+    "measured": true
+   },
    "units": {
     "spec": 41,
-    "built": 0
+    "built": 41
    },
-   "pct": 0.0,
+   "pct": 100.0,
    "retired": []
   },
   {
@@ -9521,56 +11403,20 @@
    "title": "Production posture: a production environment apart from nonprod, private networking, a person behind every credential, secrets and data classes, `INTEGRATIONS` as a real switch per vendor, backups and the restore drill, the go-live checklist, the four-week parallel run, and no borrower data in nonprod",
    "tids": {
     "spec": 19,
-    "built": 0,
-    "todo": 19,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18,
-     19
-    ]
+    "built": 19,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 12,
-    "built": 2,
-    "missing": [
-     "data_scans",
-     "environment_manifests",
-     "go_live_checklists",
-     "integration_switches",
-     "parallel_run_diffs",
-     "parallel_runs",
-     "posture_checks",
-     "posture_controls",
-     "posture_findings",
-     "restore_drills"
-    ]
+    "built": 12,
+    "missing": []
    },
    "timers": {
     "spec": 6,
-    "built": 2,
+    "built": 6,
     "armable": 6,
-    "missing": [
-     "SM_NONPROD_REAL_DATA_PURGE_1BD",
-     "SM_PROD_GO_LIVE_ATTEST_GATE",
-     "SM_PROD_POSTURE_DRIFT_1BD",
-     "SM_PROD_RESTORE_DRILL_90D"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9579,39 +11425,29 @@
    },
    "tools": {
     "spec": 14,
-    "built": 0,
-    "missing": [
-     "posture.record",
-     "posture.check",
-     "posture.drift.resolve",
-     "integrations.switch",
-     "integrations.status",
-     "backup.drill",
-     "data.scan",
-     "parallel_run.open",
-     "parallel_run.reconcile",
-     "parallel_run.disposition",
-     "parallel_run.close",
-     "go_live.check",
-     "go_live.attest",
-     "writeDecision"
-    ]
+    "built": 14,
+    "missing": []
    },
    "figures": {
     "spec": 7,
+    "built": 7,
+    "missing": []
+   },
+   "hosted": {
+    "spec": 14,
+    "built": 14,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 12,
     "built": 3,
-    "missing": [
-     "$1,250.00",
-     "$3,412.92",
-     "$3,417.92",
-     "$67.50"
-    ]
+    "measured": true
    },
    "units": {
     "spec": 58,
-    "built": 7
+    "built": 58
    },
-   "pct": 12.1,
+   "pct": 100.0,
    "retired": []
   },
   {
@@ -9667,6 +11503,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 1,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 4,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 14,
     "built": 0
@@ -9714,6 +11560,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 5,
@@ -9767,6 +11623,16 @@
      "$605,000.00"
     ]
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 8,
     "built": 0
@@ -9814,6 +11680,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 5,
@@ -9863,6 +11739,16 @@
     "built": 0,
     "missing": []
    },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
    "units": {
     "spec": 5,
     "built": 0
@@ -9908,6 +11794,16 @@
     "spec": 0,
     "built": 0,
     "missing": []
+   },
+   "hosted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
+   },
+   "persisted": {
+    "spec": 0,
+    "built": 0,
+    "measured": true
    },
    "units": {
     "spec": 3,

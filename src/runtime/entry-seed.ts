@@ -57,7 +57,7 @@ async function resolvePartner(runtime: Runtime, partnerId: string | null | undef
   // partner.ts: the configured partner, else the newest servicer party that is not Supermortgage itself (the batch's own party is the subservicer, never the lender)
   const found = await entryPartner(runtime.db, partnerId ?? undefined);
   if (found) return found;
-  const made = await runtime.db.query<{ id: string; legal_name: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, '123456789', '1000123') RETURNING id, legal_name`, ["Partner Bank (FAKE demo)"]);
+  const made = await runtime.db.query<{ id: string; legal_name: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id, synthetic) VALUES ('servicer', $1, '123456789', '1000123', true) RETURNING id, legal_name`, ["Partner Bank (FAKE demo)"]);
   return made[0]!;
 }
 

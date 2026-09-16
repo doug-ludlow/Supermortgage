@@ -25,7 +25,12 @@
  *                  form496MonthlyRunner      the interim Form 496 unit (T6): section I from the FAKE custodial bank's prior-day
  *                                            statement for the period end, the cashbook from the custodial account's ledger cash,
  *                                            then 6.3's own `form496.generate` command as `custodial-recon` — the money figures are
- *                                            6.3's input under 6.3's rules (rule 12), never written here
+ *                                            6.3's input under 6.3's rules (rule 12), never written here; registered behind 35.4's
+ *                                            unit (cycles-35-4.ts form496MonthlyRunnerOf: the chain's own figures once the close
+ *                                            period exists, this one for a period the chain has not opened)
+ *                  cycles-35-4.ts            35.4's units for the cycles cycles.ts names it owner of — `ledger_period_close` (6.3's
+ *                                            cut-off), `investor_period_close` (5.1's close), `form_496a_monthly` (6.4's form),
+ *                                            `star_monthly` (18.3's compute) — each the owning section's own command as its actor
  *                  refiDailyRunner, partnerBookReviewRunner, partnerBookReadinessRunner, partnerBookDailyReportRunner
  *                                            the four sweep-body functions (app.ts) wrapped as one unit each — unchanged code,
  *                                            idempotent by their own day gates, so the board and `expected_by` cover them
@@ -50,6 +55,7 @@ import type { Bureau } from "../credit-reporting/disputes.ts";
 import type { AppliedInstallment } from "../boarding/delinquency.ts";
 import { loanCashState, statementUnitIn, form1098UnitIn, unitIoOf } from "../../runtime/servicing.ts";
 import { cashieringDailyRunner, cashieringDailyReceipt } from "./cycles-35-5.ts";
+import { form496MonthlyRunnerOf, form496aMonthlyRunner, investorPeriodCloseRunner, ledgerPeriodCloseRunner, starMonthlyRunner } from "./cycles-35-4.ts";
 import { delinquencyUnitIn } from "../../runtime/delinquency.ts";
 import { RUNNERS_35_9 } from "./cycles-35-9.ts";
 import { refiDailyRun } from "../../runtime/refi-daily.ts";
@@ -57,6 +63,10 @@ import { partnerBookReviewRun } from "../../runtime/partner-book-review.ts";
 import { readinessRun } from "../../runtime/partner-book-readiness.ts";
 import { sweepDailyReports } from "../../runtime/book-ops/routes.ts";
 import { CYCLE_ROWS, EVT, type CycleDef, type NamedRunner, type UnitContext } from "./cycles.ts";
+import { latestManifest } from "./posture-35-12/manifests.ts";
+import { dayReconciled } from "./posture-35-12/parallel-run.ts";
+import { scannedToday, type ScanKind } from "./posture-35-12/scans.ts";
+import { isProduction } from "./posture-35-12/types.ts";
 
 type Row = Record<string, unknown>;
 const runtimeOf = (toolRt: ToolRuntime): Runtime => { const r = toolRt.services["runtime"] as Runtime | undefined; if (!r) throw new PortUnavailable("service:runtime"); return r; };
@@ -197,13 +207,52 @@ export const busToolRunner = (process: string, name: string, extra: Record<strin
   return { outcome: `${process} ${name} executed`, output: r.output };
 } } });
 
+/**
+ * 35.12's three cycles (the 35.3 table names `posture.check{environment}`, `data.scan{environment, kind}`, `parallel_run.reconcile{parallel_run_id,
+ * as_of_date}` as their runners): each unit runs the process's own bus tool as `compliance-sentinel` for the runtime's environment (a runtime
+ * reads its own database — src/domain/operations-runtime/posture-35-12/sweep.ts), with the sweep pass's gates in place of the generic
+ * `busToolRunner`, whose static input carries neither the scan's kind nor the day's document:
+ *   posture.check           needs a manifest (35.12 rule 1: `posture.record` comes first) — `skipped_no_manifest` leaves no receipt, so the
+ *                           day is unmeasured and SM_PROD_POSTURE_DAILY breaches (edge case 1); the owner emits the receipt (check.ts)
+ *   data.scan               the environment's kind (rule 6: `production_synthetic` in production, `nonprod_real_data` elsewhere), once a day
+ *   parallel_run.reconcile  needs the day's incumbent file as a `documents` row (rule 7) — `skipped_no_file` never appends the owner's
+ *                           `parallel_run.day.reconciled`, so SM_PROD_PARALLEL_RUN_DAILY breaches (edge case 6: a late file reconciles when it arrives)
+ */
+const postureTool = async (rt: Runtime, unit: UnitContext, name: string, input: Record<string, unknown>): Promise<Record<string, unknown>> => {
+  if (!rt.tool("35.12", name)) throw runnerMissing(`no bus tool (35.12, ${name}) is registered for cycle ${unit.cycle_code}`);
+  const r = await rt.execute({ process: "35.12", name, loanId: "", actor: unit.actor, input: { ...input, run_id: unit.run_id, job_id: unit.job_id } });
+  return (r.output ?? {}) as Record<string, unknown>;
+};
+export const postureCheckRunner: NamedRunner = { name: "postureCheckRunner", runner: { mode: "pass", run: async (rt, unit) => {
+  const environment = rt.environment;
+  if (!(await latestManifest(rt.db, environment))) return { outcome: "skipped_no_manifest", environment, as_of_date: unit.as_of_date };
+  const o = await postureTool(rt, unit, "posture.check", { environment });
+  return { outcome: `posture_check_${String(o["receipt"] ?? "run_completed")}`, environment, as_of_date: o["as_of_date"] ?? unit.as_of_date, check_run_id: o["run_id"] ?? null, manifest_id: o["manifest_id"] ?? null, controls: o["controls"] ?? null, passed: o["passed"] ?? null, failed: o["failed"] ?? null, unverifiable: o["unverifiable"] ?? null, not_applicable: o["not_applicable"] ?? null };
+} } };
+export const dataScanRunner: NamedRunner = { name: "dataScanRunner", runner: { mode: "pass", run: async (rt, unit) => {
+  const environment = rt.environment; const kind: ScanKind = isProduction(environment) ? "production_synthetic" : "nonprod_real_data";
+  if (await scannedToday(rt.db, environment, kind, unit.as_of_date)) return { outcome: "skipped_already_scanned", environment, kind, as_of_date: unit.as_of_date };
+  const o = await postureTool(rt, unit, "data.scan", { environment, kind });
+  return { outcome: `data_scan_${kind}_${o["real_data_found"] === true || (Array.isArray(o["findings"]) && o["findings"].length > 0) ? "findings" : "clean"}`, environment, kind, as_of_date: unit.as_of_date, scan_id: o["scan_id"] ?? null, tables_scanned: o["tables_scanned"] ?? null, rows_examined: o["rows_examined"] ?? null, findings: o["findings"] ?? [], real_data_found: o["real_data_found"] ?? null };
+} } };
+export const parallelRunReconcileRunner: NamedRunner = { name: "parallelRunReconcileRunner", runner: { mode: "pass", run: async (rt, unit) => {
+  const parallelRunId = String(unit.input["parallel_run_id"] ?? unit.unit_id); const asOf = String(unit.input["as_of_date"] ?? unit.as_of_date);
+  if (await dayReconciled(rt.db, parallelRunId, asOf)) return { outcome: "skipped_day_reconciled", parallel_run_id: parallelRunId, as_of_date: asOf };
+  const [doc] = await rt.db.query<{ id: string }>(`SELECT id::text AS id FROM documents WHERE kind = 'incumbent_trial_balance' AND metadata->>'parallel_run_id' = $1 AND metadata->>'as_of_date' = $2 ORDER BY created_at DESC LIMIT 1`, [parallelRunId, asOf]);
+  if (!doc) return { outcome: "skipped_no_file", parallel_run_id: parallelRunId, as_of_date: asOf };
+  const o = await postureTool(rt, unit, "parallel_run.reconcile", { parallel_run_id: parallelRunId, as_of_date: asOf, incumbent_file_document_id: doc.id });
+  return { outcome: "parallel_run_day_reconciled", parallel_run_id: parallelRunId, as_of_date: asOf, incumbent_file_document_id: doc.id, loans: o["loans"] ?? null, comparisons: o["comparisons"] ?? null, matched: o["matched"] ?? null, mismatched: o["mismatched"] ?? null, mismatch_cents: o["mismatch_cents"] ?? null, report_document_id: o["report_document_id"] ?? null };
+} } };
+
 const RUNNERS: Readonly<Record<string, NamedRunner>> = {
   month_end: monthEndRunner, statements: statementsRunner, form_1098: form1098Runner, delinquency_counters: delinquencyCountersRunner, metro2_monthly: metro2MonthlyRunner,
-  cashiering_daily: cashieringDailyRunner, form_496_monthly: form496MonthlyRunner,
+  cashiering_daily: cashieringDailyRunner, form_496_monthly: form496MonthlyRunnerOf(form496MonthlyRunner),
+  // 35.4's units for the cycles it owns as runner (cycles-35-4.ts) — the close chain plans them as jobs, this executor runs them
+  ledger_period_close: ledgerPeriodCloseRunner, investor_period_close: investorPeriodCloseRunner, form_496a_monthly: form496aMonthlyRunner, star_monthly: starMonthlyRunner,
   refi_daily: refiDailyRunner, partner_book_review: partnerBookReviewRunner, partner_book_readiness: partnerBookReadinessRunner, partner_book_daily_report: partnerBookDailyReportRunner,
   projection_verify: busToolRunner("35.1", "record.verify"), document_integrity: busToolRunner("35.2", "documents.verify", { op: "run" }),   // 35.2: the daily integrity unit is `documents.verify{op: run}` (section35-2.ts) — the owner emits `document.integrity.run_completed` and re-arms SM_DOC_INTEGRITY_DAILY
   "roles.queue_scan": busToolRunner("35.7", "roles.queue_scan"), work_log_recon: busToolRunner("35.8", "work.log.recon"),
-  "posture.check": busToolRunner("35.12", "posture.check"), "data.scan": busToolRunner("35.12", "data.scan"), "parallel_run.reconcile": busToolRunner("35.12", "parallel_run.reconcile"),
+  "posture.check": postureCheckRunner, "data.scan": dataScanRunner, "parallel_run.reconcile": parallelRunReconcileRunner,   // 35.12's units with the sweep pass's gates (above)
   // 35.9's four case cycles (cycles-35-9.ts): docket.sync, the DRA import from the law-firm port, case.progress, claims.sweep + claims.package — as the foreclosure-ops agent
   ...RUNNERS_35_9,
   lockbox_ingest: busToolRunner("35.5", "lockbox.ingest"), ach_file_build: busToolRunner("35.5", "ach.file.build"), ach_returns_ingest: busToolRunner("35.5", "ach.returns.ingest"),

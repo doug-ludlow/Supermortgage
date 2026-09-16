@@ -33,6 +33,7 @@
  *
  * Money is bigint cents; dates are PlainDate; every event type is a string literal (tools/lint-emission.ts).
  */
+import { mapLimit, UNIT_CONCURRENCY } from "../../kernel/concurrency.ts";
 import { randomUUID } from "node:crypto";
 import type { Queryable } from "../../infra/db/client.ts";
 import { toJson } from "../../infra/db/client.ts";
@@ -389,11 +390,10 @@ export async function cashieringDailyRun(rt: Runtime, nowIso: string = rt.clock.
   if (existing && existing.status === "completed") {
     // the day already ran: every loan's unit by hand finds its `done` row and records only the decision naming it (ONE_UNIT_PER_LOAN_PER_DAY) — nothing planned, nothing posted
     report.already = true; report.run_id = existing.id;
-    for (const l of book.loans) {
-      const o = await runCashieringUnit(rt, { loan_id: l.loan_id, as_of_date: asOf, as_of_instant: nowIso, run_id: existing.id });
+    for (const o of await mapLimit(book.loans, UNIT_CONCURRENCY, (l) => runCashieringUnit(rt, { loan_id: l.loan_id, as_of_date: asOf, as_of_instant: nowIso, run_id: existing.id }))) {
       if (o.outcome === "already_done") report.units.already += 1;
-      else if (o.outcome === "failed") { report.units.failed += 1; report.errors.push({ loan_id: l.loan_id, step: o.error_class ?? "unit", error: o.error ?? "failed" }); }
-      else { if (o.outcome === "skipped_hold") report.units.skipped_hold += 1; else report.units.done += 1; report.posted.push(...o.posted); if (o.late_charge_run) report.late_charge_runs.push(l.loan_id); report.amount_change_checks.push(...o.amount_change_checks); }
+      else if (o.outcome === "failed") { report.units.failed += 1; report.errors.push({ loan_id: o.loan_id, step: o.error_class ?? "unit", error: o.error ?? "failed" }); }
+      else { if (o.outcome === "skipped_hold") report.units.skipped_hold += 1; else report.units.done += 1; report.posted.push(...o.posted); if (o.late_charge_run) report.late_charge_runs.push(o.loan_id); report.amount_change_checks.push(...o.amount_change_checks); }
     }
     await recordUnconfigured(rt, book.unconfigured, asOf, existing.id);
     return report;
@@ -401,11 +401,10 @@ export async function cashieringDailyRun(rt: Runtime, nowIso: string = rt.clock.
   // a runtime without a databaseUrl (a unit harness; the hosted runtime always carries one — src/runtime/main.ts) has no planner lock (35.3 rule 1: a dedicated session), so the day
   // runs as the by-hand path does: every loan's unit in its own unit of work, no run row and no receipt — the same steps, the same rows, and the sweep's cycles pass is skipped on such a runtime too
   if (!rt.databaseUrl) {
-    for (const l of book.loans) {
-      const o = await runCashieringUnit(rt, { loan_id: l.loan_id, as_of_date: asOf, as_of_instant: nowIso });
+    for (const o of await mapLimit(book.loans, UNIT_CONCURRENCY, (l) => runCashieringUnit(rt, { loan_id: l.loan_id, as_of_date: asOf, as_of_instant: nowIso }))) {
       if (o.outcome === "already_done") report.units.already += 1;
-      else if (o.outcome === "failed") { report.units.failed += 1; report.errors.push({ loan_id: l.loan_id, step: o.error_class ?? "unit", error: o.error ?? "failed" }); }
-      else { if (o.outcome === "skipped_hold") report.units.skipped_hold += 1; else report.units.done += 1; report.posted.push(...o.posted); if (o.late_charge_run) report.late_charge_runs.push(l.loan_id); report.amount_change_checks.push(...o.amount_change_checks); }
+      else if (o.outcome === "failed") { report.units.failed += 1; report.errors.push({ loan_id: o.loan_id, step: o.error_class ?? "unit", error: o.error ?? "failed" }); }
+      else { if (o.outcome === "skipped_hold") report.units.skipped_hold += 1; else report.units.done += 1; report.posted.push(...o.posted); if (o.late_charge_run) report.late_charge_runs.push(o.loan_id); report.amount_change_checks.push(...o.amount_change_checks); }
     }
     await recordUnconfigured(rt, book.unconfigured, asOf, null);
     return report;

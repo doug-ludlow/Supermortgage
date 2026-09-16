@@ -183,7 +183,12 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const blobs = opts.blobs ?? runtime.blobs;   // 35.2: the runtime's object store (document_blobs) — the per-process FakeBlobStore is a unit-test double only
   const urlSecret = opts.urlSecret ?? process.env["BORROWER_URL_SECRET"] ?? randomBytes(32).toString("hex");
   const returnUrlBase = opts.returnUrlBase ?? process.env["BORROWER_APP_URL"] ?? "https://app.supermortgage.example";
-  const auth = new BorrowerAuth(runtime.db);
+  // 35.12 rule 6: a party this door creates is synthetic when the vendors that vouched for it (identity, Sign in with Google, the telephony webhooks) are the in-repo FAKEs — marked by the writer, never by environment
+  const oidcWired = opts.oidc ?? runtime.ports.oidc;
+  const edelivery: EdeliveryPort | undefined = runtime.ports.edelivery;
+  const deliveryIsFake = (): boolean => !edelivery || edelivery instanceof FakeEdelivery;
+  const doorVendorsFake = deliveryIsFake() && stripe instanceof FakeStripeIdentity && (!oidcWired || oidcWired instanceof FakeGoogleOidc) && (!opts.telephonyWebhooks || opts.telephonyWebhooks.vendorName === "FAKE");
+  const auth = new BorrowerAuth(runtime.db, { synthetic: doorVendorsFake });
   const credentials = new PgBorrowerCredentialRepository(runtime.db);   // 32.16 DELTA-29
   const ui = new PgBorrowerUiRepository(runtime.db);
   const reader = new BorrowerRecordReader(runtime.db);
@@ -205,8 +210,6 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const plaid = opts.plaid ?? new FakePlaid((line) => logger.info("vendor", line));
   const VERIFICATION_ACTOR = { kind: "agent" as const, id: "verification" };
   const now = (): string => runtime.clock.now();
-  const edelivery: EdeliveryPort | undefined = runtime.ports.edelivery;
-  const deliveryIsFake = (): boolean => !edelivery || edelivery instanceof FakeEdelivery;
   // 32.14 §4: SMS and voice entry on the same lead — the telephony vendor's inbound webhooks (./channels.ts; the FAKE adapter unless a real one is wired)
   const channels = createBorrowerChannels({ runtime, logger, auth, ui, flows, commands, telephony: opts.telephonyWebhooks, nonProduction, defaultPartnerId, voice: () => voice });   // `voice` is built below; read at call time
   // Talk: the anonymous minute and sign-in as one conversation with Claude on the same tools (./talk.ts); 503 TALK_NOT_CONFIGURED without the key

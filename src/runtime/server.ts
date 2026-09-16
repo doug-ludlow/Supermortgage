@@ -53,8 +53,14 @@ import { timingSafeEqual } from "node:crypto";
 import { CommandRefused, AiPathUnavailable } from "../app/commands.ts";
 import { refuseClientState } from "../domain/operations-runtime/cashiering-cycle.ts";
 import { CardRefused } from "../app/tools/section32-1.ts";
+import { orchestrationByApplication, orchestrationOwnsHandoff } from "../domain/operations-runtime/orchestration-35-6.ts";
+import { hasRole } from "../app/roles.ts";
+import { SnapshotRefused } from "../domain/operations-runtime/snapshot-35-6.ts";
 import { RescissionRefused } from "../domain/compliance-disclosures/ops-25-3.ts";
+import { CyclesRefused } from "../domain/operations-runtime/service.ts";
 import { PortUnavailable } from "../app/tools.ts";
+// 35.11 rule 10: a port's own typed failure thrown by a tool (the FAKE bank's rejection of a date, a feed not yet refreshed) is a typed refusal the unit of work rolled back — never an unhandled 500
+import { AdapterUnavailable, PermanentRejection, TransientFailure } from "../infra/integrations/failures.ts";
 import { StaleRecord } from "../domain/operations-runtime/seam/guard.ts";
 import { RoleDenied } from "../app/roles.ts";
 import { StaffError } from "./staff/roles.ts";
@@ -81,6 +87,8 @@ import { handleVerifyRoute } from "./documents/verify-route.ts";
 import { holdsOf, importPartnerBook, listPartnerBookImports, partnerBookReport, partnerBookStatus, resolvePartnerBookLoan, seedPartnerBookDemo, type PartnerBookImportInput } from "./partner-book.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 import { OffsetClock, advanceDemoClock, demoClockStatus } from "./demo-clock.ts";
+/** 35.12 Inputs and triggers: the /v1 posture routes as aliases of the process's tools (the body is the input). */
+const POSTURE_V1_ROUTES: Readonly<Record<string, string>> = { "/v1/posture/manifests": "posture.record", "/v1/posture/check": "posture.check", "/v1/posture/scans": "data.scan" };
 
 export interface ServerOptions { readonly runtime: Runtime; readonly apiToken: string; readonly logger: Logger; readonly console?: boolean;
   /** The borrower API's own dependencies (vendor fakes, rpId, environment); defaults to the FAKE vendors. */
@@ -227,6 +235,16 @@ export function createApiServer(opts: ServerOptions): Server {
       try { principal = await v1.resolve(req, runtime.clock.now()); } catch (e) { if (e instanceof PrincipalRefused && e.context) principal = e.context as PrincipalContext; throw e; }
       if (method === "GET" && path === "/v1/tools") { done(200, { tools: runtime.listTools() }); return; }
       let m: RegExpExecArray | null;
+      // 35.12 Inputs: the deploy workflow's `POST /v1/posture/manifests` (posture.record, under a 35.7 service principal), `POST /v1/posture/check` and
+      // `POST /v1/posture/scans` (the cycle or a compliance principal) — the body IS the tool input; the same door, bus and staff_actions row as the tool routes
+      const postureAlias = method === "POST" ? POSTURE_V1_ROUTES[path] : undefined;
+      if (postureAlias) {
+        const b = await readJson(req);
+        action.command = `35.12 ${postureAlias}`;
+        const { actor, grantRole } = await resolveActor({}, runtime.tool("35.12", postureAlias), {}, "35.12");
+        const r = await executeWithControls(runtime, { process: "35.12", name: postureAlias, loanId: "", actor, input: toolInput(b) }, { surface: "v1", source: principal!.source, requestId: null, grantRole });
+        done(200, r, { tool: `35.12 ${postureAlias}`, actor: `${actor.kind}:${actor.id}`, events: r.events.length }); return;
+      }
       if (method === "POST" && (m = /^\/v1\/(?:loans\/([^/]+)\/)?tools\/([^/]+)\/([^/]+)$/.exec(path))) {
         const loanId = m[1] ? decodeURIComponent(m[1]) : "";
         if (loanId && !isUuid(loanId)) throw new RangeError("loanId must be the loan's uuid (loans.id)");
@@ -281,6 +299,21 @@ export function createApiServer(opts: ServerOptions): Server {
         const { actor } = await resolveActor(b, undefined, { applicationId }, "fund");
         const app = await runtime.applications.get(applicationId);
         if (!app) { done(404, { error: "no_such_application" }); return; }
+        // 35.6 rule 6: an orchestrated application funds through `orchestration.snapshot` + `orchestration.fund` — the snapshot from the record, an officer's `snapshot` overrides only (NO_CLIENT_STATE otherwise), a `funded` override never (26.3's loan.funded is read from the log); a second call is the duplicate receipt
+        const orch = await orchestrationByApplication(runtime.db, applicationId);
+        // 35.6 rule 2 / rule 6 / T14: on an orchestrated application (the pass owns the hand-off) and in production, refused before anything is written — a `snapshot` correction is an officer's (a money-field change proposed by an agent has no officer approval record), `funded` is never a client's; the nonprod harness path of a row the pass does not yet own keeps 30.2's fixture fill (Discrepancies (1))
+        const orchestrated = orch !== null || environment === "production";
+        if (orchestrated && b["snapshot"] !== undefined && !hasRole(actor, ["officer"])) { done(409, { error: "refused", command: "orchestration.fund", code: "NO_CLIENT_STATE", citation: "35.6 rule 6: snapshot overrides only from an officer actor", reason: `a snapshot override is an officer's correction (${actor.kind}:${actor.id})` }, { refused: "NO_CLIENT_STATE" }); return; }
+        if (orchestrated && b["funded"] !== undefined) { done(409, { error: "refused", command: "orchestration.fund", code: "NO_CLIENT_STATE", citation: "35.6 rule 2 / rule 6: 26.3's loan.funded is read from the log", reason: "a `funded` payload is never a client's" }, { refused: "NO_CLIENT_STATE" }); return; }
+        // 35.6 edge case: a POST /fund on an application whose orchestration is not at `funded` (26.3's loan.funded not on the log) → NOT_FUNDED, unless an officer supplies 26.3's facts as a correction
+        if (orch !== null && !orchestrationOwnsHandoff(orch) && !(await fundedFromLog(runtime, applicationId)) && !(hasRole(actor, ["officer"]) && b["snapshot"] !== undefined)) { done(409, { error: "refused", command: "orchestration.fund", code: "NOT_FUNDED", citation: "35.6 edge cases: a POST /fund on an application whose orchestration is not at funded is refused unless an officer supplies 26.3's facts as a correction", reason: `orchestration at ${orch.step} (${orch.status}); no loan.funded on the log` }, { refused: "NOT_FUNDED", step: orch.step }); return; }
+        if (orchestrated) {
+          const input: Record<string, unknown> = { ...(b["snapshot"] !== undefined ? { snapshot: b["snapshot"] } : {}) };
+          if (!app.loan_id) { const snap = await runtime.execute({ process: "35.6", name: "orchestration.snapshot", loanId: "", applicationId, actor, input: {} }); input["snapshot_id"] = (snap.output as { snapshot_id: string | null }).snapshot_id; }
+          const r = await runtime.execute({ process: "35.6", name: "orchestration.fund", loanId: "", applicationId, actor, input });
+          const out = r.output as Record<string, unknown>;
+          done(200, out, { application_id: applicationId, loan_id: out["loan_id"], status: out["status"], duplicate: out["duplicate"], events: out["events"], via: "35.6" }); return;
+        }
         const snapshotOverrides = (b["snapshot"] && typeof b["snapshot"] === "object" ? reviveCents(b["snapshot"]) : {}) as DemoOverrides;
         const fundedOverrides = (b["funded"] && typeof b["funded"] === "object" ? reviveCents(b["funded"]) : {}) as Partial<LoanFundedPayload>;
         // the record first: the closing facts 26.1/26.2 wrote and 26.3's loan.funded; the body's overrides win; the demo fixture fills what the record does not carry
@@ -334,10 +367,15 @@ export function createApiServer(opts: ServerOptions): Server {
         action.command = "transfers.batches.demo";
         const { actor } = await resolveActor(b, undefined, {}, "transfers", { kind: "system", id: "demo-seed" });
         const demo = generateDemoBatch();
-        const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), actor);
+        const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), actor, { synthetic: true });   // 35.12 rule 6: the demo batch is synthetic
         done(200, r, { batch: r.batch_id, status: r.status, boarded: r.loans.boarded }); return;
       }
       if (method === "POST" && path === "/v1/transfers/batches") {
+        // 35.12 rule 6 — the door: nonprod boards a tape only under `X-Supermortgage-Synthetic: true` (REAL_DATA_REFUSED_IN_NONPROD); production refuses a tape with it (SYNTHETIC_REFUSED_IN_PRODUCTION); the rows it boards inherit the marker
+        const syntheticHeader = String(req.headers["x-supermortgage-synthetic"] ?? "").trim().toLowerCase() === "true";
+        const productionEnv = runtime.environment === "production" || runtime.environment === "prod";
+        if (productionEnv && syntheticHeader) { action.command = "transfers.batches"; done(409, { error: "synthetic_refused_in_production", code: "SYNTHETIC_REFUSED_IN_PRODUCTION", reason: "a synthetic tape never boards in production (35.12 rule 6)" }); return; }
+        if (!productionEnv && !syntheticHeader) { action.command = "transfers.batches"; done(409, { error: "real_data_refused_in_nonprod", code: "REAL_DATA_REFUSED_IN_NONPROD", reason: "nonprod boards synthetic tapes only: send X-Supermortgage-Synthetic: true (35.12 rule 6; docs/DEPLOY.md §7)" }); return; }
         const b = await readJson(req);
         action.command = "transfers.batches";
         const { actor } = await resolveActor(b, undefined, {}, "transfers");
@@ -350,7 +388,7 @@ export function createApiServer(opts: ServerOptions): Server {
         const f: TransferBatchFiles = { "boarding_tape.final.csv": String(files["boarding_tape.final.csv"]), "payment_history.csv": String(files["payment_history.csv"] ?? empty()), "escrow_history.csv": String(files["escrow_history.csv"] ?? empty()), "escrow_analysis.csv": String(files["escrow_analysis.csv"] ?? empty()),
           "lossmit_file.csv": String(files["lossmit_file.csv"] ?? empty()), "fc_bk_file.csv": String(files["fc_bk_file.csv"] ?? empty()), "consents_file.csv": String(files["consents_file.csv"] ?? empty()), "images_manifest.csv": String(files["images_manifest.csv"] ?? empty()), "trial_balance.csv": String(files["trial_balance.csv"] ?? empty()),
           "fnma_position.csv": String(files["fnma_position.csv"] ?? empty()), "mers_lookup.csv": String(files["mers_lookup.csv"] ?? empty()), "fair_lending.csv": String(files["fair_lending.csv"] ?? empty()) };
-        const r = await boardTransferBatch(runtime, input, f, actor);
+        const r = await boardTransferBatch(runtime, input, f, actor, { synthetic: syntheticHeader });
         done(200, r, { batch: r.batch_id, status: r.status, boarded: r.loans.boarded }); return;
       }
       if (method === "GET" && (m = /^\/v1\/transfers\/batches\/([^/]+)$/.exec(path))) {
@@ -362,7 +400,10 @@ export function createApiServer(opts: ServerOptions): Server {
       if (method === "POST" && path === "/v1/partner-book/imports") {
         action.command = "book.import"; v1.scopeCheck(principal!, { process: "33.1" });
         const actorHeader = principal!.person?.id ?? String(req.headers["x-actor-id"] ?? "");
-        const input = await partnerBookInput(req);
+        // 35.12 rule 6: `X-Supermortgage-Synthetic: true` marks every party the import writes (a fixture book); production refuses it
+        const syntheticBook = String(req.headers["x-supermortgage-synthetic"] ?? "").trim().toLowerCase() === "true";
+        if (syntheticBook && (runtime.environment === "production" || runtime.environment === "prod")) { done(409, { error: "synthetic_refused_in_production", code: "SYNTHETIC_REFUSED_IN_PRODUCTION", reason: "a synthetic partner book never loads in production (35.12 rule 6)" }); return; }
+        const input = { ...(await partnerBookInput(req)), ...(syntheticBook ? { synthetic: true } : {}) };
         const r = await importPartnerBook(runtime, input, { kind: "human", id: actorHeader || "ops", ...(req.headers["x-actor-role"] ? { role: String(req.headers["x-actor-role"]) } : { role: "ops_analyst" }) });
         done(200, r, { import: r.import_id, status: r.status, rows_total: r.rows_total, rows_loaded: r.rows_loaded, loans_created: r.loans_created, invitations_sent: r.invitations_sent }); return;
       }
@@ -415,12 +456,19 @@ export function createApiServer(opts: ServerOptions): Server {
       // a section's own typed refusal thrown by its tool (not a bus guardrail): the same 409 shape, its code and reason kept (32.5 T10, 32.7 T6)
       if (e instanceof CardRefused) { done(409, { error: "refused", code: e.code, reason: e.message }, { refused: e.code }); return; }
       if (e instanceof RescissionRefused) { done(409, { error: "refused", code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }
+      // 35.3's own typed refusal (RUN_NOT_FOUND, JOB_NOT_DEAD, RECEIPT_ONCE, …): the same 409 shape with its code and detail — a typed refusal the unit of work rolled back, never a 500 (35.11 rule 10's `refused_typed`)
+      if (e instanceof CyclesRefused) { done(409, { error: "refused", code: e.code, reason: e.message, ...e.detail }, { refused: e.code }); return; }
       if (e instanceof BoardingRefused) { done(409, { error: "refused", command: "applications.fund", code: e.code, citation: "30.2 rule 2 / OB-018: boarding is refused until the source record is corrected", reason: e.message, application_id: e.applicationId, validations: e.validations }, { refused: e.code }); return; }
       if (e instanceof ApplicationNotFound) { done(404, { error: "no_such_application", reason: e.message }); return; }
+      // 35.6 rule 6: the hand-off refused by the snapshot (FIXTURE_REFUSED in production, SNAPSHOT_GAP, NO_LOAN_FUNDED) — the same 409 shape with the paths
+      if (e instanceof SnapshotRefused) { done(409, { error: "refused", command: "orchestration.fund", code: e.code, citation: "35.6 rule 6: the hand-off snapshot is built from the record; a production gap refuses the hand-off", reason: e.message, gaps: e.gaps }, { refused: e.code }); return; }
       if (e instanceof RoleDenied) { done(403, { error: "role_denied", reason: e.message }); return; }
       if (e instanceof AiPathUnavailable) { done(503, { error: "ai_path_unavailable", reason: e.message }); return; }
       if (e instanceof ToolNotFound) { done(404, { error: "no_such_tool", reason: e.message }); return; }
       if (e instanceof PortUnavailable) { done(501, { error: "not_wired", reason: e.message }); return; }
+      if (e instanceof PermanentRejection) { done(409, { error: "refused", code: `PORT_REJECTED:${e.code}`, kind: "rejected", reason: e.message, details: [...e.details] }, { refused: `PORT_REJECTED:${e.code}` }); return; }
+      if (e instanceof TransientFailure) { done(409, { error: "refused", code: "PORT_TRANSIENT", kind: "transient", retryable: true, reason: e.message }, { refused: "PORT_TRANSIENT" }); return; }
+      if (e instanceof AdapterUnavailable) { done(409, { error: "refused", code: "PORT_UNAVAILABLE", kind: "unavailable", fallback: e.fallbackKind, reason: e.message }, { refused: "PORT_UNAVAILABLE" }); return; }
       if (e instanceof RangeError || e instanceof TypeError || e instanceof SyntaxError) { done(400, { error: "bad_request", reason: e.message }); return; }
       logger.error("unhandled", { method, path, error: e });
       done(500, { error: "internal" });

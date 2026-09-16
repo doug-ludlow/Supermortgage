@@ -82,7 +82,8 @@ const monthsBetween = (a: PlainDate, b: PlainDate): number => (Number(b.slice(0,
 /** 35.1 rule 10: the seed path never runs in production — `1.1 boardLoan` on the bus is the production write. */
 export class SeedOnly extends Error { readonly code = "SEED_ONLY"; constructor() { super("SEED_ONLY: boardTransferBatch is the seed path; under ENVIRONMENT=production a batch boards through `1.1 boardLoan` on the bus (35.1 rule 10)"); this.name = "SeedOnly"; } }
 
-export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput, files: TransferBatchFiles, actor: Actor, opts: { readonly environment?: string } = {}): Promise<TransferBatchSummary> {
+/** 35.12 rule 6: `synthetic` marks the parties and the batch the seed / the header-bearing tape writes (never a production writer). */
+export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput, files: TransferBatchFiles, actor: Actor, opts: { readonly environment?: string; readonly synthetic?: boolean } = {}): Promise<TransferBatchSummary> {
   if ((opts.environment ?? process.env["ENVIRONMENT"]) === "production") throw new SeedOnly();
   const uuid = batchUuid(input.batch_id);
   const existing = await rt.entities.current("transfer_batches", input.batch_id);
@@ -107,8 +108,9 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
 
   return rt.db.tx(async (q) => {
     // the parties and the clearing account the opening entries balance against
-    const transferorParty = await partyId(q, "transferor", input.transferor_name, input.transferor_servicer_number, input.transferor_mers_org_id);
-    const partnerParty = await partyId(q, "servicer", "Supermortgage", input.partner_servicer_number, input.partner_mers_org_id);
+    const synthetic = opts.synthetic === true;
+    const transferorParty = await partyId(q, "transferor", input.transferor_name, input.transferor_servicer_number, input.transferor_mers_org_id, synthetic);
+    const partnerParty = await partyId(q, "servicer", "Supermortgage", input.partner_servicer_number, input.partner_mers_org_id, synthetic);
     const clearing = await custodialAccount(q, partnerParty, "clearing");
 
     const events = new MemoryEventStore(clock);
@@ -136,7 +138,7 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
 
     // ---- persist: rows first (the events reference them), then the log, ledger, timers, escalations
     const upbTotal = staged.reduce((s, bl) => s + (bl.staged.upb_cents ?? 0n), 0n);
-    await insertBoardingRows(q, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt: clock.now(), ruleSetVersion: ctx.rule_set_version });
+    await insertBoardingRows(q, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt: clock.now(), ruleSetVersion: ctx.rule_set_version, synthetic });
     // 35.5 rules 1 and 9: the installment schedule and the servicing configuration in this transaction, after the boarding set (the run names the
     // loan_terms row insertBoardingRows wrote — persistBoardingSchedule reads it back), against the batch's log, engine and clock
     // (src/domain/operations-runtime/boarding-hook.ts); a refusal (SCHEDULE_REQUIRED, CONFIG_REQUIRED) rolls the batch back
@@ -161,7 +163,7 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
   });
 }
 
-export interface BoardingRowInputs { readonly uuid: string; readonly input: TransferBatchInput; readonly transferorParty: string; readonly partnerParty: string; readonly staged: readonly BatchLoan[]; readonly boardedIds: ReadonlySet<string>; readonly boardedAt: string; readonly ruleSetVersion: string; }
+export interface BoardingRowInputs { readonly uuid: string; readonly input: TransferBatchInput; readonly transferorParty: string; readonly partnerParty: string; readonly staged: readonly BatchLoan[]; readonly boardedIds: ReadonlySet<string>; readonly boardedAt: string; readonly ruleSetVersion: string; /** 35.12 rule 6: the tape's X-Supermortgage-Synthetic header / the seed; the batch row inherits it. */ readonly synthetic?: boolean; }
 /**
  * The boarding set (35.1 rule 10): `transfer_batches`, then per staged loan `properties`, `loans`, `borrowers`, `loan_borrowers`,
  * `loan_terms` (boarded loans), `transfer_batch_loans` and `boarding_validations` — the rows the events reference, written before
@@ -172,9 +174,9 @@ export async function insertBoardingRows(q: Queryable, r: BoardingRowInputs): Pr
   const upbTotal = staged.reduce((s, bl) => s + (bl.staged.upb_cents ?? 0n), 0n);
   const escrowTotal = staged.reduce((s, bl) => s + bl.staged.escrow_balance_cents, 0n);
   const boarded = staged.filter((bl) => boardedIds.has(bl.id));
-  await q.query(`INSERT INTO transfer_batches (id, transfer_type, transferor_party_id, transferor_servicer_number, partner_servicer_number, sale_date, transfer_date, respa_effective_date, d_code, status, loan_count, upb_total_cents, escrow_total_cents, rule_set_version)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-    [uuid, input.transfer_type ?? "servicing_sale_with_sub", transferorParty, input.transferor_servicer_number, input.partner_servicer_number, input.sale_date ?? null, input.transfer_date, input.respa_effective_date ?? input.transfer_date, input.d_code ?? null, boarded.length ? "cutover" : "staging", staged.length, upbTotal, escrowTotal, r.ruleSetVersion]);
+  await q.query(`INSERT INTO transfer_batches (id, transfer_type, transferor_party_id, transferor_servicer_number, partner_servicer_number, sale_date, transfer_date, respa_effective_date, d_code, status, loan_count, upb_total_cents, escrow_total_cents, rule_set_version, synthetic)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+    [uuid, input.transfer_type ?? "servicing_sale_with_sub", transferorParty, input.transferor_servicer_number, input.partner_servicer_number, input.sale_date ?? null, input.transfer_date, input.respa_effective_date ?? input.transfer_date, input.d_code ?? null, boarded.length ? "cutover" : "staging", staged.length, upbTotal, escrowTotal, r.ruleSetVersion, r.synthetic === true]);
   const runId = randomUUID();
   for (const bl of staged) {
     const s = bl.staged; const isBoarded = boardedIds.has(bl.id);
@@ -204,10 +206,10 @@ export async function insertBoardingRows(q: Queryable, r: BoardingRowInputs): Pr
 }
 
 /** The transferor and the servicer parties, found or inserted (rule 10: the same rows the seed route writes). */
-export async function partyId(q: Queryable, type: "transferor" | "servicer", name: string, servicerNumber: string, mersOrgId: string): Promise<string> {
+export async function partyId(q: Queryable, type: "transferor" | "servicer", name: string, servicerNumber: string, mersOrgId: string, synthetic = false): Promise<string> {
   const found = await q.query<{ id: string }>(`SELECT id FROM parties WHERE party_type = $1 AND servicer_number = $2 LIMIT 1`, [type, servicerNumber]);
   if (found[0]) return found[0].id;
-  const made = await q.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ($1, $2, $3, $4) RETURNING id`, [type, name, servicerNumber, mersOrgId]);
+  const made = await q.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id, synthetic) VALUES ($1, $2, $3, $4, $5) RETURNING id`, [type, name, servicerNumber, mersOrgId, synthetic]);
   return made[0]!.id;
 }
 /** A custodial account of the partner (clearing for the opening entries), found or inserted. */

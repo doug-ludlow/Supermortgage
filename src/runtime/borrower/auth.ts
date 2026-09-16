@@ -54,7 +54,7 @@ export const userAgentOf = (req: IncomingMessage): string | null => { const ua =
 export class BorrowerAuth {
   readonly sessions: PgBorrowerSessionRepository;
   readonly parties: PgBorrowerPartyRepository;
-  constructor(db: Queryable) { this.sessions = new PgBorrowerSessionRepository(db); this.parties = new PgBorrowerPartyRepository(db); }
+  constructor(db: Queryable, opts: { synthetic?: boolean } = {}) { this.sessions = new PgBorrowerSessionRepository(db); this.parties = new PgBorrowerPartyRepository(db, opts); }
 
   /** Resolve the bearer token to a live session (401 AUTH_REQUIRED / SESSION_EXPIRED), touch it, and load the party's scope. */
   async authenticate(req: IncomingMessage, now: string): Promise<BorrowerContext> {

@@ -1,66 +1,20 @@
 /**
- * §35.9 — the narrow ports on sibling processes, each with an in-repo default so this process runs (and its tests pass)
- * whether or not the neighbour has merged (the roles-35-7/ports.ts pattern: a `to_regclass` probe, never a second
- * implementation of the neighbour):
- *   35.3  CyclesPort      — one `cycles.run_unit` per (cycle, period, unit): the default runs the unit and, when 35.3's
- *                           `cycle_runs` / `cycle_receipts` tables exist, records the run row (unique `(cycle_code, period_key)`),
- *                           its unit counters and the receipt row (35.3 rule 5) — the columns 35.3's spec names, nothing else.
+ * §35.9 — the narrow ports on sibling processes not yet in the tree, each with an in-repo default so this process runs (and
+ * its tests pass) whether or not the neighbour has merged (the roles-35-7/ports.ts pattern: a `to_regclass` probe, never a
+ * second implementation of the neighbour). 35.3's cycles and 35.5's servicing configuration ARE in the tree: the day's cycles
+ * run through src/domain/operations-runtime/service.ts (cycles-35-9.ts registers the runners) and the loan's zone is
+ * src/runtime/delinquency.ts's read of `loan_servicing_configs` (35.5 rule 9) — neither has a port here any more.
  *   35.8  WorkItemsPort   — the queue item a due milestone, a deferred breach action, a counsel docket entry or an unexpected
  *                           transition opens; the default writes 35.8's `work_items` when it exists (unique open `(source_kind,
  *                           source_id)`), else answers null (the escalation the same path opens is the fallback a person sees).
  *   35.2  DocumentsPort   — `documents.store` for the referral / claim packages and the daily report: the default inserts a
  *                           baseline `documents` row with the sha256 of the canonical bytes (`storage_uri` mem://35.9/<sha>).
- *   35.5  ServicingConfigPort — the loan's zone (35.5 rule 9) from `loan_servicing_configs.time_zone` when the table exists,
- *                           else 11.1's LOAN_LOCAL_TZ.
  * A test or the runtime injects a port through the optional `ports` argument of the runner / pass.
  */
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { Queryable } from "../../../infra/db/client.ts";
-import { loanZoneOf } from "../../../runtime/delinquency.ts";
-import { plainDate } from "../../../kernel/calendar/date.ts";
 
 const exists = async (q: Queryable, table: string): Promise<boolean> => (await q.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${table}`]))[0]?.r !== null;
-
-// ---- 35.3 -------------------------------------------------------------------------------------------------------------------
-export interface UnitOutcome { readonly status: "done" | "failed" | "skipped"; readonly decision_id?: string | null; readonly error?: string | null }
-export interface CycleUnitInput { readonly cycle_code: string; readonly period_key: string; readonly as_of_date: string; readonly unit_id: string; readonly loan_id: string | null; readonly planned_by: string; readonly now: string }
-export interface CycleRunHandle { readonly run_id: string; readonly recorded: boolean }
-export interface CyclesPort {
-  /** Open (or find) the cycle's run for the period; returns its id (a fresh uuid when 35.3 is not in the tree). */
-  openRun(q: Queryable, i: { cycle_code: string; period_key: string; as_of_date: string; planned_by: string; units_total: number; now: string }): Promise<CycleRunHandle>;
-  /** Record one unit's outcome on the run. */
-  unitDone(q: Queryable, run: CycleRunHandle, i: CycleUnitInput, outcome: UnitOutcome): Promise<void>;
-  /** Close the run and write its receipt (35.3 rule 5: exactly once per run). */
-  complete(q: Queryable, run: CycleRunHandle, i: { cycle_code: string; period_key: string; as_of_date: string; units: readonly { unit_id: string; outcome: UnitOutcome }[]; receipt_event_id: string | null; now: string }): Promise<void>;
-}
-export const defaultCycles: CyclesPort = {
-  async openRun(q, i) {
-    if (!(await exists(q, "cycle_runs"))) return { run_id: randomUUID(), recorded: false };
-    const rows = await q.query<{ id: string }>(
-      `INSERT INTO cycle_runs (cycle_code, period_key, as_of_date, planned_by, opened_at, units_total, status)
-       VALUES ($1, $2, $3::date, $4, $5::timestamptz, $6, 'running')
-       ON CONFLICT (cycle_code, period_key) DO UPDATE SET planned_by = cycle_runs.planned_by RETURNING id::text AS id`,
-      [i.cycle_code, i.period_key, i.as_of_date, i.planned_by, i.now, i.units_total]);
-    return { run_id: rows[0]!.id, recorded: true };
-  },
-  async unitDone(q, run, _i, outcome) {
-    if (!run.recorded) return;
-    const col = outcome.status === "done" ? "units_done" : outcome.status === "failed" ? "units_dead" : "units_skipped";
-    await q.query(`UPDATE cycle_runs SET ${col} = ${col} + 1 WHERE id = $1::uuid`, [run.run_id]);
-  },
-  async complete(q, run, i) {
-    if (!run.recorded) return;
-    const done = i.units.filter((u) => u.outcome.status === "done").length, dead = i.units.filter((u) => u.outcome.status === "failed").length, skipped = i.units.filter((u) => u.outcome.status === "skipped").length;
-    const sha = createHash("sha256").update(JSON.stringify(i.units.map((u) => [u.unit_id, u.outcome.status, u.outcome.decision_id ?? null]))).digest("hex");
-    const already = await q.query<{ id: string }>(`SELECT id::text AS id FROM cycle_receipts WHERE run_id = $1::uuid`, [run.run_id]);
-    if (!already.length && (await exists(q, "cycle_receipts"))) {
-      await q.query(`INSERT INTO cycle_receipts (run_id, cycle_code, period_key, as_of_date, units_total, units_done, units_dead, units_skipped, outcomes_sha256, receipt_event_id, emitted_by)
-                     VALUES ($1::uuid, $2, $3, $4::date, $5, $6, $7, $8, $9, $10::uuid, $11)`,
-        [run.run_id, i.cycle_code, i.period_key, i.as_of_date, i.units.length, done, dead, skipped, sha, i.receipt_event_id, `planner:${run.run_id}`]);
-    }
-    await q.query(`UPDATE cycle_runs SET status = 'completed', completed_at = $2::timestamptz, units_total = $3 WHERE id = $1::uuid`, [run.run_id, i.now, i.units.length]);
-  },
-};
 
 // ---- 35.8 -------------------------------------------------------------------------------------------------------------------
 export interface WorkItemInput {
@@ -107,10 +61,5 @@ export const defaultDocuments: DocumentsPort = {
   },
 };
 
-// ---- 35.5 -------------------------------------------------------------------------------------------------------------------
-export interface ServicingConfigPort { zoneOf(q: Queryable, loanId: string, asOf: string): Promise<string> }
-export const defaultServicingConfig: ServicingConfigPort = { zoneOf: (q, loanId, asOf) => loanZoneOf(q, loanId, plainDate(asOf)) };
-
-export interface DefaultOpsPorts { readonly cycles?: CyclesPort; readonly workItems?: WorkItemsPort; readonly documents?: DocumentsPort; readonly servicingConfig?: ServicingConfigPort }
-export const portsOf = (p: DefaultOpsPorts | undefined): Required<DefaultOpsPorts> =>
-  ({ cycles: p?.cycles ?? defaultCycles, workItems: p?.workItems ?? defaultWorkItems, documents: p?.documents ?? defaultDocuments, servicingConfig: p?.servicingConfig ?? defaultServicingConfig });
+export interface DefaultOpsPorts { readonly workItems?: WorkItemsPort; readonly documents?: DocumentsPort }
+export const portsOf = (p: DefaultOpsPorts | undefined): Required<DefaultOpsPorts> => ({ workItems: p?.workItems ?? defaultWorkItems, documents: p?.documents ?? defaultDocuments });

@@ -15,7 +15,8 @@ import type { ToolInput, ToolRuntime } from "../../../app/tools.ts";
 import { addBusinessDays, servicer } from "../../../kernel/calendar/business.ts";
 import { addDays, plainDate as D, type PlainDate } from "../../../kernel/calendar/date.ts";
 import { unearnedPremiumCredit } from "../../reo/claims.ts";
-import { ENGINE_ACTOR, EV, STEP_AGENTS } from "../default-35-9.ts";
+import { ENGINE_ACTOR, EV, MILESTONE_OF_EVENT, STEP_AGENTS } from "../default-35-9.ts";
+export { MILESTONE_OF_EVENT };
 import { asOfOf, need, portsFor, q, s } from "./commands.ts";
 import { delegate } from "./delegate.ts";
 import { caseUuid, loanRows, openForeclosure, str, type CurrentRow, type Row } from "./store.ts";
@@ -27,14 +28,6 @@ export const LEGAL_CLOCKS: Readonly<Record<ClaimKind, readonly string[]>> = {
   mi_claim: ["MI_MP_CLAIM_FILE_60", "FNMA_F106_MI_DIRECT_FILE_30", "FNMA_F106_MICP_DOCS_10BD"],
   expense_571: ["FNMA_F106_MI_EXPENSE_FINAL_30", "FNMA_E501_EXPENSE_FINAL_60"],
   delinquency_advance_4828: [],
-};
-/** The timeline events that are liquidation / completion milestones, as 15.2's `milestoneReached` spells the producing event. */
-export const MILESTONE_OF_EVENT: Readonly<Record<string, { event_type: string; kind: string; liquidation_type: string | null }>> = {
-  "foreclosure.sale.held": { event_type: "foreclosure.sale.held", kind: "foreclosure_sale", liquidation_type: "fcl_fnma" },
-  "foreclosure.sale.completed": { event_type: "foreclosure.sale.held", kind: "foreclosure_sale", liquidation_type: "fcl_fnma" },
-  "workout_plan.completed": { event_type: "lossmit.modification.completed", kind: "workout_completed", liquidation_type: null },
-  "reo.disposed_by_fnma": { event_type: "reo.disposed_by_fnma", kind: "reo_disposition", liquidation_type: null },
-  "mortgage_release.completed": { event_type: "mortgage_release.completed", kind: "mortgage_release", liquidation_type: "mortgage_release" },
 };
 export type CandidateRow = { readonly id: string; readonly loan_id: string; readonly case_id: string | null; readonly claim_kind: ClaimKind; readonly milestone_event_id: string; readonly milestone_kind: string; readonly milestone_date: string; readonly legal_due_on: string | null; readonly package_due_on: string; readonly status: string; readonly claim_id: string | null; readonly package_document_id: string | null; readonly opened_at: string };
 const SEL = `id::text AS id, loan_id::text AS loan_id, case_id::text AS case_id, claim_kind, milestone_event_id::text AS milestone_event_id, milestone_kind, milestone_date::text AS milestone_date, legal_due_on::text AS legal_due_on, package_due_on::text AS package_due_on, status, claim_id, package_document_id::text AS package_document_id, opened_at::text AS opened_at`;

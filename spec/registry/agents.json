@@ -2083,6 +2083,7 @@
     "32.14",
     "32.17",
     "32.18",
+    "32.19",
     "32.2"
    ],
    "tools": [
@@ -6468,6 +6469,20 @@
    ],
    "guardrails": "",
    "escalates_to": []
+  },
+  {
+   "process": "32.19",
+   "agent": "borrower-app",
+   "agents_named": [
+    "borrower-app"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `human_agent`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer"
+   ]
   },
   {
    "process": "32.2",

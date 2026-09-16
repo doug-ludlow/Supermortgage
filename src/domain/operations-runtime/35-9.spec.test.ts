@@ -5,9 +5,11 @@
 //
 // The harness: this file's own database (src/infra/db/test-db.ts), a Runtime whose clock the tests move (a settable clock:
 // the daily unit, the sweep and the demo advance all read `runtime.clock`), the FAKE ports, the post-commit folder started
-// (rule 1), and the neighbours' tables the ports write when they exist — `work_items` (35.8), `cycle_runs` / `cycle_receipts`
-// (35.3), `loan_servicing_configs` (35.5) — created here from those specs' Data model bullets (the columns they name) because
-// their migrations are not in this tree; the port defaults probe `to_regclass` and write the same columns in production.
+// (rule 1), and the one neighbour's table the ports write when it exists — `work_items` (35.8) — created here from that spec's
+// Data model bullet (the columns it names) because its migration is not in this tree; the port default probes `to_regclass` and
+// writes the same columns in production. 35.3's cycles and 35.5's schedule and configuration are in the tree: the books that run
+// the daily pass (T9, T13, T14, T17) carry `databaseUrl` for 35.3's planner lock, so the day's cycles are planned and drained
+// through the engine and read back from `cycle_runs` / `cycle_receipts`.
 // Every section row the fixtures need (the retained FAKE firm, a foreclosure case at `prereferral`, advances, an MI policy) is
 // seeded as the section would leave it in the entity store (`entity_records`, the kinds 13.x–15.x read), and every act runs
 // through the bus (`runtime.execute`) so the sections' own tools write their rows and events.
@@ -18,7 +20,8 @@ import { connect, type Db, type Queryable } from "../../infra/db/client.ts";
 import { testDatabase } from "../../infra/db/test-db.ts";
 import { PgLoanRepository, type Fixture } from "../../infra/db/loans.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
-import type { Actor, Clock } from "../../kernel/events/index.ts";
+import type { Actor } from "../../kernel/events/index.ts";
+import { FixedClock } from "../../kernel/events/index.ts";
 import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
 import { plainDate as D, addDays, daysBetween, type PlainDate } from "../../kernel/calendar/date.ts";
 import { Runtime, type SweepReport } from "../../runtime/app.ts";
@@ -32,10 +35,12 @@ import { EV, TIMERS_35_9, ENGINE_ACTOR, EXAMPLE_A, EXAMPLE_B, EXAMPLE_C } from "
 import { exposureCents } from "../foreclosure/timeframes.ts";
 import { unearnedPremiumCredit } from "../reo/claims.ts";
 import { caseUuid } from "./default-35-9/store.ts";
+import { AZ_TAPE, boardTapeLoan } from "./harness-35-5.ts";
+import { CYCLES_35_9 } from "./default-35-9.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
-/** A clock the tests move: the daily unit runs "on 2027-04-19" because the runtime's clock says so. */
-class MovableClock implements Clock { private at: string; constructor(at: string) { this.at = at; } now(): string { return this.at; } set(iso: string): void { this.at = iso; } }
+/** A clock the tests move: the daily unit runs "on 2027-04-19" because the runtime's clock says so (a FixedClock, so 35.5's boarding harness accepts it). */
+class MovableClock extends FixedClock {}
 const clock = new MovableClock("2027-03-02T15:00:00.000Z");   // Tue 2027-03-02 10:00 ET
 const FC_OPS: Actor = { kind: "agent", id: "foreclosure-ops" };
 const OFFICER: Actor = { kind: "human", id: randomUUID(), role: "officer" };
@@ -60,13 +65,7 @@ CREATE TABLE IF NOT EXISTS work_items (id uuid PRIMARY KEY DEFAULT gen_random_uu
   source_kind text NOT NULL, source_id text NOT NULL, required_role text NOT NULL, status text NOT NULL DEFAULT 'open', claimed_by uuid, claimed_at timestamptz, claim_expires_at timestamptz, claim_lapses int NOT NULL DEFAULT 0,
   opened_at timestamptz NOT NULL, due_at timestamptz, closed_at timestamptz, closed_by uuid, disposition text, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
 CREATE UNIQUE INDEX IF NOT EXISTS work_items_open_source_idx ON work_items (source_kind, source_id) WHERE status NOT IN ('closed', 'cancelled');
-CREATE TABLE IF NOT EXISTS cycle_runs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), cycle_code text NOT NULL, period_key text NOT NULL, as_of_date date NOT NULL, planned_by text NOT NULL, opened_at timestamptz NOT NULL, units_total int NOT NULL DEFAULT 0,
-  units_done int NOT NULL DEFAULT 0, units_dead int NOT NULL DEFAULT 0, units_skipped int NOT NULL DEFAULT 0, status text NOT NULL DEFAULT 'planned', completed_at timestamptz, receipt_id uuid, cancelled_by text, cancelled_reason text, demo_offset_ms bigint NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (cycle_code, period_key));
-CREATE TABLE IF NOT EXISTS cycle_receipts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), run_id uuid NOT NULL UNIQUE REFERENCES cycle_runs(id), cycle_code text NOT NULL, period_key text NOT NULL, as_of_date date NOT NULL, units_total int NOT NULL, units_done int NOT NULL,
-  units_dead int NOT NULL, units_skipped int NOT NULL, outcomes_sha256 char(64) NOT NULL, receipt_event_id uuid REFERENCES loan_events(id), generic_event_id uuid, emitted_by text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
-CREATE TABLE IF NOT EXISTS loan_servicing_configs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), loan_id uuid NOT NULL REFERENCES loans(id), effective_from date NOT NULL, time_zone text NOT NULL, time_zone_source text NOT NULL DEFAULT 'state_default',
-  jurisdiction_state char(2), created_at timestamptz NOT NULL DEFAULT now());`;
+`;
 
 test.before(async () => {
   if (skip) return;
@@ -167,8 +166,9 @@ async function lbFixture(): Promise<typeof LB> {
 // ───────── the daily pass (Trigger & frequency; rule 2): a fresh "book" per test — its own database, runtime and clock ─────────
 // T9, T13, T14 and T17 each need a book nobody else has touched (T13 counts the universe; T14 compares two runs of one fixture;
 // T17 boards one loan with no hand-fed state), so each opens its own database from the migrated template (test-db.ts `suffix`),
-// applies the neighbours' DDL and starts a Runtime whose clock it moves. The shared harness above keeps the sweep's daily pass
-// off (`dailyCase: false`) so the breach tests never progress another test's fixture.
+// applies the neighbour's DDL and starts a Runtime whose clock it moves — with `databaseUrl`, so 35.3's planner (its lock on a
+// dedicated client) plans and drains the day's cycles. The shared harness above keeps the sweep's daily pass off
+// (`dailyCase: false`) so the breach tests never progress another test's fixture.
 interface Book { readonly db: Db; readonly runtime: Runtime; readonly clock: MovableClock; readonly url: string; close(): Promise<void> }
 async function openBook(suffix: string, startIso: string): Promise<Book> {
   const t = await testDatabase(import.meta.url, { suffix });
@@ -176,7 +176,7 @@ async function openBook(suffix: string, startIso: string): Promise<Book> {
   const bdb = connect(t.url);
   await bdb.query(NEIGHBOUR_DDL);
   const bclock = new MovableClock(startIso);
-  const brt = new Runtime({ db: bdb, registry: loadOverriddenRegistry(), clock: bclock, logger, environment: "nonprod", env: { INTEGRATIONS: "fake" } as NodeJS.ProcessEnv, reviewers: null });
+  const brt = new Runtime({ db: bdb, registry: loadOverriddenRegistry(), clock: bclock, logger, environment: "nonprod", env: { INTEGRATIONS: "fake" } as NodeJS.ProcessEnv, reviewers: null, databaseUrl: t.url });
   brt.caseFolder.start();
   return { db: bdb, runtime: brt, clock: bclock, url: t.url, close: async () => { brt.caseFolder.stop(); await bdb.end(); await t.close(); } };
 }
@@ -222,7 +222,7 @@ async function bookBankruptcyCase(b: Book, f: Fixture, caseNumber: string): Prom
 async function bookEiWindow(b: Book, f: Fixture, dueDate: string): Promise<void> {
   await b.db.query(`INSERT INTO regx_ei_windows (loan_id, due_date, principal_residence, live_due_at, notice_due_at, live_status, notice_status) VALUES ($1::uuid, $2::date, true, ($2::date + 36)::timestamptz, ($2::date + 45)::timestamptz, 'open', 'open')`, [f.loanId, dueDate]);
 }
-/** One sweep minute as the hosted runtime runs it (main.ts `sweep`: the origination and servicing daily sweeps, then Runtime.sweep — whose 35.9 pass runs 11.1's counter as the `delinquency_counters` unit — then the counter's once-per-loan-day catch-up, then the folder settled). */
+/** One sweep minute as the hosted runtime runs it (main.ts `sweep`: the origination and servicing daily sweeps, then Runtime.sweep — its cycles pass plans and runs the day's `cashiering_daily` and `delinquency_counters` units, its 35.9 pass the four case cycles — then the counter's direct pass, which yields to the cycle (35.3 D13), then the folder settled). */
 async function hostedSweep(b: Book, iso: string): Promise<SweepReport> {
   b.clock.set(iso);
   await originationDailySweep(b.runtime, iso); await servicingDailySweep(b.runtime, iso);
@@ -753,7 +753,7 @@ test("35.9-T13: Given the fixture book with three open foreclosure cases, one ba
     const again = await hostedSweep(b, "2027-03-02T12:00:00.000Z");
     assert.equal(again.default_case_daily?.already, true);
     assert.equal(await bcount(b, `FROM default_case_daily_runs`), 1); assert.equal(await bcount(b, `FROM loan_events WHERE type = $1`, [EV.dailyRunCompleted]), 1);
-    assert.equal(await bcount(b, `FROM cycle_runs WHERE as_of_date = '2027-03-02'`), 5, "no second cycle run either");
+    assert.equal(await bcount(b, `FROM cycle_runs WHERE as_of_date = '2027-03-02' AND cycle_code = ANY($1::text[])`, [Object.values(CYCLES_35_9)]), 5, "no second cycle run of this process's five either (35.3 rule 3: one run per cycle and day)");
   } finally { await b.close(); }
 });
 
@@ -774,7 +774,7 @@ test("35.9-T14: Given the demo clock advanced 30 days over the fixture, then one
     const labelsDemo = await fixture(demo); const labelsHosted = await fixture(hosted);
     // the demo clock advanced 30 days (src/runtime/demo-clock.ts: one sweep minute per crossed day at noon ET, then the target)
     const offset = new OffsetClock(demo.clock);
-    const demoRt = new Runtime({ db: demo.db, registry: loadOverriddenRegistry(), clock: offset, logger, environment: "nonprod", env: { INTEGRATIONS: "fake" } as NodeJS.ProcessEnv, reviewers: null });
+    const demoRt = new Runtime({ db: demo.db, registry: loadOverriddenRegistry(), clock: offset, logger, environment: "nonprod", env: { INTEGRATIONS: "fake" } as NodeJS.ProcessEnv, reviewers: null, databaseUrl: demo.url });
     demoRt.caseFolder.start();
     const adv = await advanceDemoClock({ runtime: demoRt, clock: offset, actor: "human:test" }, { to: END, budget_ms: 600_000 });
     await demoRt.caseFolder.settle(); demoRt.caseFolder.stop();
@@ -907,16 +907,21 @@ test("35.9-T16: Given the timeline of loan L-A at any point, then no row of this
 });
 
 test("35.9-T17: Given loan L-B boarded on the hosted runtime with 35.5's `loan_installments` (the installment due 2026-10-01 left `due`), a `loan_servicing_configs.time_zone` of America/Phoenix, no `regx_ei_windows` row and no hand-fed state, when the demo clock advances from 2026-10-01 to 2026-11-06 with 35.3 planning `delinquency_counters` after `cashiering_daily` each day, then `cycle_runs` holds one `delinquency_counters` run per crossed day with `period_key` equal to that day and a `cycle_receipts` row each, 11.1's `loan.delinquency.window_opened{due_date: \"2026-10-01\"}` is on L-B's log exactly once with the counter's actor `{agent, default-collections}` (delinquency.ts:26), a `regx_ei_windows` row is open for it, `REGX_1024_39A_LIVE_CONTACT_36` is armed on that window with `due_at` on the 36th day of delinquency as 11.1's row computes it in the loan's zone, `loan.delinquency.day_reached` is logged for each 11.1 milestone on the loan-local date, `default_case_daily` selected L-B from the open window on the day it opened, and running the same day's unit twice adds no event (35.3 rule 3).", { skip }, async () => {
-  // loan L-B boarded on the hosted runtime: 35.5's installment due 2026-10-01 left `due`, a Phoenix servicing config, no regx_ei_windows row, nothing hand-fed
+  // loan L-B boarded on the hosted runtime through 35.5's transfer route (harness-35-5.ts boardTapeLoan: the tape, the schedule, the terms and the servicing
+  // configuration as boarding writes them — a TX tape whose next due installment is 2026-10-01, left `due`), then the spec's America/Phoenix zone as a later
+  // configuration version (35.5 rule 9: the latest row by effective_from applies; the rows are append-only), no regx_ei_windows row, nothing hand-fed
   const b = await openBook("_t17", "2026-10-01T16:00:00.000Z");   // Thu 2026-10-01 12:00 ET / 09:00 Phoenix
   try {
-    const lb = await bookLoan(b, "TX", { firstPaymentDate: D("2026-10-01") });
-    await b.db.query(`INSERT INTO loan_installments (loan_id, due_date, pi_cents, interest_cents, principal_cents, escrow_cents, status) VALUES ($1::uuid, '2026-10-01', 161234, 134502, 26732, 43278, 'due')`, [lb.loanId]);
-    await b.db.query(`INSERT INTO loan_servicing_configs (loan_id, effective_from, time_zone, time_zone_source, jurisdiction_state) VALUES ($1::uuid, '2026-01-01', 'America/Phoenix', 'state_default', 'TX')`, [lb.loanId]);
+    const boarded = await boardTapeLoan(b.runtime, b.clock, { ...AZ_TAPE, transferor_loan_number: "LB-1", state: "TX", city: "Austin", postal_code: "78701" }, `B-LB-${randomUUID().slice(0, 8)}`, D("2026-10-01"));
+    const lb = { loanId: boarded.loan_id };
+    b.clock.set("2026-10-01T16:00:00.000Z");
+    assert.equal(await bcount(b, `FROM loan_installments WHERE loan_id = $1::uuid AND due_date = '2026-10-01' AND status = 'due'`, [lb.loanId]), 1, "35.5's installment due 2026-10-01 left due");
+    await b.db.query(`INSERT INTO loan_servicing_configs (loan_id, effective_from, time_zone, time_zone_source, jurisdiction_state, servicer_profile_id, lockbox_id, channels_enabled, late_charge_terms, nsf_fee_allowed, written_by)
+      SELECT loan_id, effective_from, 'America/Phoenix', 'manual', jurisdiction_state, servicer_profile_id, lockbox_id, channels_enabled, late_charge_terms, nsf_fee_allowed, '{"by": "35.9-T17: the spec''s Phoenix zone on L-B"}'::jsonb FROM loan_servicing_configs WHERE loan_id = $1::uuid ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [lb.loanId]);
     assert.equal(await bcount(b, `FROM regx_ei_windows WHERE loan_id = $1::uuid`, [lb.loanId]), 0);
-    // the demo clock advances 2026-10-01 → 2026-11-06 (36 crossed days; each step's sweep plans delinquency_counters before default_case_daily)
+    // the demo clock advances 2026-10-01 → 2026-11-06 (36 crossed days; each step's cycles pass plans cashiering_daily and delinquency_counters, the sweep's 35.9 pass then the case cycles)
     const offset = new OffsetClock(b.clock);
-    const rt = new Runtime({ db: b.db, registry: loadOverriddenRegistry(), clock: offset, logger, environment: "nonprod", env: { INTEGRATIONS: "fake" } as NodeJS.ProcessEnv, reviewers: null });
+    const rt = new Runtime({ db: b.db, registry: loadOverriddenRegistry(), clock: offset, logger, environment: "nonprod", env: { INTEGRATIONS: "fake" } as NodeJS.ProcessEnv, reviewers: null, databaseUrl: b.url });
     rt.caseFolder.start();
     const adv = await advanceDemoClock({ runtime: rt, clock: offset, actor: "human:test" }, { to: "2026-11-06T20:00:00.000Z", budget_ms: 600_000 });   // 13:00 Phoenix on day 36
     await rt.caseFolder.settle();
@@ -931,14 +936,15 @@ test("35.9-T17: Given loan L-B boarded on the hosted runtime with 35.5's `loan_i
     const unit = (await brows<{ payload: Record<string, unknown> }>(b, `SELECT payload FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2026-10-02'`, [EV.countersRunCompleted]))[0]!;
     assert.equal(unit.payload["units_done"], 1);
     assert.equal(await bcount(b, `FROM loan_events WHERE type = $1`, [EV.countersRunCompleted]), 36);
-    // 11.1's window opened exactly once, by the counter's actor
-    const opened = await brows<{ actor_kind: string; actor_id: string; payload: Record<string, unknown>; occurred_at: string }>(b, `SELECT actor_kind, actor_id, payload, occurred_at::text AS occurred_at FROM loan_events WHERE type = 'loan.delinquency.window_opened' AND loan_id = $1::uuid`, [lb.loanId]);
-    assert.equal(opened.length, 1, "window_opened once"); assert.equal(opened[0]!.payload["due_date"], "2026-10-01"); assert.equal(opened[0]!.actor_kind, "agent"); assert.equal(opened[0]!.actor_id, "default-collections");
-    const win = await brows<{ live_status: string; due_date: string; live_due_at: string }>(b, `SELECT live_status, due_date::text AS due_date, live_due_at::text AS live_due_at FROM regx_ei_windows WHERE loan_id = $1::uuid`, [lb.loanId]);
+    // 11.1's window for the installment due 2026-10-01 opened exactly once, by the counter's actor (the boarded schedule's 2026-11-01 installment goes unpaid on 11-02 and opens 11.1's own second window — its due date, its own row and clock)
+    const opened = await brows<{ actor_kind: string; actor_id: string; payload: Record<string, unknown>; occurred_at: string }>(b, `SELECT actor_kind, actor_id, payload, occurred_at::text AS occurred_at FROM loan_events WHERE type = 'loan.delinquency.window_opened' AND loan_id = $1::uuid AND payload->>'due_date' = '2026-10-01'`, [lb.loanId]);
+    assert.equal(opened.length, 1, "window_opened{due_date: 2026-10-01} once"); assert.equal(opened[0]!.payload["due_date"], "2026-10-01"); assert.equal(opened[0]!.actor_kind, "agent"); assert.equal(opened[0]!.actor_id, "default-collections");
+    assert.ok((await brows<{ due_date: string }>(b, `SELECT payload->>'due_date' AS due_date FROM loan_events WHERE type = 'loan.delinquency.window_opened' AND loan_id = $1::uuid`, [lb.loanId])).every((e) => /^\d{4}-\d{2}-01$/.test(e.due_date)), "every window is an installment's");
+    const win = await brows<{ live_status: string; due_date: string; live_due_at: string }>(b, `SELECT live_status, due_date::text AS due_date, live_due_at::text AS live_due_at FROM regx_ei_windows WHERE loan_id = $1::uuid AND due_date = '2026-10-01'`, [lb.loanId]);
     assert.equal(win.length, 1); assert.equal(win[0]!.live_status, "open"); assert.equal(win[0]!.due_date, "2026-10-01");
     // REGX_1024_39A_LIVE_CONTACT_36 armed on the window, due on the 36th day of delinquency (2026-11-06) as 11.1's row computes it
-    const live = await brows<{ status: string; due_date: string; anchor_date: string; due_at: string }>(b, `SELECT status::text AS status, due_date::text AS due_date, anchor_date::text AS anchor_date, due_at::text AS due_at FROM timers WHERE code = 'REGX_1024_39A_LIVE_CONTACT_36' AND loan_id = $1::uuid`, [lb.loanId]);
-    assert.equal(live.length, 1, "one live-contact clock"); assert.equal(live[0]!.anchor_date, "2026-10-01"); assert.equal(live[0]!.due_date, "2026-11-06"); assert.equal(live[0]!.status, "armed", "still armed at 13:00 Phoenix on day 36");
+    const live = await brows<{ status: string; due_date: string; anchor_date: string; due_at: string }>(b, `SELECT status::text AS status, due_date::text AS due_date, anchor_date::text AS anchor_date, due_at::text AS due_at FROM timers WHERE code = 'REGX_1024_39A_LIVE_CONTACT_36' AND loan_id = $1::uuid AND anchor_date = '2026-10-01'`, [lb.loanId]);
+    assert.equal(live.length, 1, "one live-contact clock on that window"); assert.equal(live[0]!.anchor_date, "2026-10-01"); assert.equal(live[0]!.due_date, "2026-11-06"); assert.equal(live[0]!.status, "armed", "still armed at 13:00 Phoenix on day 36");
     // loan.delinquency.day_reached for each 11.1 milestone in the window, on the loan-local date
     const reached = await brows<{ payload: Record<string, unknown> }>(b, `SELECT payload FROM loan_events WHERE type = 'loan.delinquency.day_reached' AND loan_id = $1::uuid ORDER BY sequence`, [lb.loanId]);
     assert.deepEqual(reached.map((r) => [Number(r.payload["day"]), r.payload["on"]]), [[16, "2026-10-17"], [20, "2026-10-21"], [30, "2026-10-31"], [36, "2026-11-06"]]);

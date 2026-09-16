@@ -12,6 +12,8 @@
 import type { CommandContext } from "../../../app/commands.ts";
 import type { ToolInput, ToolRuntime } from "../../../app/tools.ts";
 import type { Queryable } from "../../../infra/db/client.ts";
+import { MemoryEventStore, type DomainEvent } from "../../../kernel/events/index.ts";
+import type { Runtime } from "../../../runtime/app.ts";
 import { loadOverriddenRegistry } from "../../timer-overrides.ts";
 import type { TimerRegistry } from "../../../kernel/timers/registry.ts";
 import { wallClock, zonedEpochMs, toIso } from "../../../kernel/calendar/zoned.ts";
@@ -149,6 +151,25 @@ export async function breachExecute(i: ToolInput, ctx: CommandContext, rt: ToolR
   ctx.events.append({ type: EV.breachActionExecuted, ...(loanId ? { loanId } : { aggregate: { kind: "timer", id: timerId } }), actor: ctx.actor, payload: { timer_id: timerId, timer_code: code, action_kind: actionKind, outcome, command_event_id: commandEventId, escalation_id: escalationId, work_item_id: workItemId, refusal_code: refusal, error_class: errorClass, registry_version: row?.version ?? null, extra_escalation_id: extraEscalation, note, breach_action_id: a.id } });
   ctx.decide({ agent: ENGINE_ACTOR.id, action: `breach.execute:${actionKind}`, rationale: `${code} breached at ${breachedAt}: registry v${row?.version ?? "none"} (${row ? `"${row.cited_text}"` : "no row"}) → ${outcome}${refusal ? ` (${refusal})` : ""}${note ? ` — ${note}` : ""}`, ruleSetVersion: RULE_SET_VERSION_35_9, ...(loanId ? { loanId } : {}), subject: { kind: "breach", id: timerId }, ruleCode: code, confidence: 1, modelVersion: "deterministic", promptVersion: PROMPT_VERSION_35_9 });
   return { ...a, note };
+}
+
+/**
+ * Rule 7's default, in bulk: a code with no `breach_action_registry` row is `escalated_only` — "the escalation the sweep opens today is
+ * kept as the `escalated_only` outcome" (open question 2: every code but the seeded rows) — so nothing runs and the breach pass records
+ * the outcome directly in its page's transaction: one `breach_actions` row per breach instance (`timer_id` unique) and one
+ * `breach_action.executed{outcome: escalated_only}` on the breach's loan, in one append. No decision record: no engine step was taken
+ * (the executor's decision accompanies an action it ran — `breachExecute`). 10,000 breaches of 3.x clocks (35.3-T7) are 20 pages of
+ * 500 rows, not 10,000 commands. Returns the persisted events for the post-commit listeners.
+ */
+export async function recordEscalatedOnly(rt: Runtime, qx: Queryable, nowIso: string, breaches: readonly { timer_id: string; code: string; loan_id: string | null; escalation_id: string | null }[]): Promise<DomainEvent[]> {
+  if (!breaches.length) return [];
+  const events = new MemoryEventStore(rt.clock);
+  for (const b of breaches) {
+    const ins = await qx.query<{ id: string }>(`INSERT INTO breach_actions (timer_id, timer_code, loan_id, breached_at, registry_version, action_kind, outcome, escalation_id, created_at) VALUES ($1::uuid, $2, $3::uuid, $4::timestamptz, NULL, 'escalate', 'escalated_only', $5::uuid, $4::timestamptz) ON CONFLICT (timer_id) DO NOTHING RETURNING id::text AS id`, [b.timer_id, b.code, b.loan_id, nowIso, b.escalation_id]);
+    if (!ins[0]) continue;   // one action per breach instance (ONE_ACTION_PER_BREACH): a page that re-evaluated a breached instance adds nothing
+    events.append({ type: EV.breachActionExecuted, ...(b.loan_id ? { loanId: b.loan_id } : { aggregate: { kind: "timer", id: b.timer_id } }), actor: { kind: "system", id: "sweep" }, payload: { timer_id: b.timer_id, timer_code: b.code, action_kind: "escalate", outcome: "escalated_only", command_event_id: null, escalation_id: b.escalation_id, work_item_id: null, refusal_code: null, error_class: null, registry_version: null, extra_escalation_id: null, note: "no registry row: the sweep's escalation is the action (open question 2)", breach_action_id: ins[0].id } });
+  }
+  return events.since(0).length ? [...await rt.uow.events.append(events.since(0), qx)] : [];
 }
 
 /** rule 7's last sentence: registration by `compliance` with `officer` confirmation, never an action the cited_text does not name, never cancel_clock (34.4 rule 1). */

@@ -1,0 +1,164 @@
+[
+ {
+  "unit_id": "32.9-T9",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "spoken payoff request (voice)"
+ },
+ {
+  "unit_id": "32.14-T1",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the anonymous minute — already retired in 32.16 §0.4 prose, inert until now"
+ },
+ {
+  "unit_id": "32.14-T2",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the anonymous minute — already retired in 32.16 §0.4 prose, inert until now"
+ },
+ {
+  "unit_id": "32.14-T3",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the anonymous minute — already retired in 32.16 §0.4 prose, inert until now"
+ },
+ {
+  "unit_id": "32.14-T4",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the anonymous minute — already retired in 32.16 §0.4 prose, inert until now"
+ },
+ {
+  "unit_id": "32.14-T5",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the anonymous minute — already retired in 32.16 §0.4 prose, inert until now"
+ },
+ {
+  "unit_id": "32.14-T6",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the anonymous minute — already retired in 32.16 §0.4 prose, inert until now"
+ },
+ {
+  "unit_id": "32.14-T19",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the anonymous minute — already retired in 32.16 §0.4 prose, inert until now"
+ },
+ {
+  "unit_id": "32.16-T11",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the rail at ≥ 1024 px and reference chips"
+ },
+ {
+  "unit_id": "32.16-T12",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the rail at ≥ 1024 px and reference chips"
+ },
+ {
+  "unit_id": "32.16-T17",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "in-app voice turns"
+ },
+ {
+  "unit_id": "32.16-T18",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "in-app voice turns"
+ },
+ {
+  "unit_id": "32.16-T20",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "in-app voice turns"
+ },
+ {
+  "unit_id": "32.17-T3",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the video stage"
+ },
+ {
+  "unit_id": "32.17-T4",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the rail beside the call"
+ },
+ {
+  "unit_id": "32.17-T6",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the rail beside the call"
+ },
+ {
+  "unit_id": "32.17-T10",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the video door"
+ },
+ {
+  "unit_id": "32.17-T11",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "Michelle"
+ },
+ {
+  "unit_id": "32.17-T12",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the video stage"
+ },
+ {
+  "unit_id": "32.17-T14",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the video door"
+ },
+ {
+  "unit_id": "32.17-T15",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the video door"
+ },
+ {
+  "unit_id": "32.17-T16",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the video door"
+ },
+ {
+  "unit_id": "32.17-T19",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the video stage"
+ },
+ {
+  "unit_id": "32.17-T20",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the video stage"
+ },
+ {
+  "unit_id": "32.17-T22",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the video stage"
+ },
+ {
+  "unit_id": "32.17-T23",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "the video stage"
+ },
+ {
+  "unit_id": "32.17-T26",
+  "decision": "docs/decisions/2026-09-16-apply-product.md",
+  "date": "2026-09-16",
+  "reason": "Michelle"
+ }
+]

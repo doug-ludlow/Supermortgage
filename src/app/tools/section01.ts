@@ -24,6 +24,9 @@ import type { CommandContext } from "../commands.ts";
 import type { ToolRuntime } from "../tools.ts";
 import { batchUuid, insertBoardingRows, partyId, custodialAccount, DEFAULT_LICENSED_STATES, type TransferBatchInput } from "../../runtime/transfers.ts";
 import type { BoardingDepsHandle } from "../../runtime/origination.ts";
+import type { Runtime } from "../../runtime/app.ts";
+import { wallClock } from "../../kernel/calendar/zoned.ts";
+import { onLoanBoardedProject, onLoanBoardedPersist, tapeBoardedFacts, type BoardingProjection } from "../../domain/operations-runtime/boarding-hook.ts";
 import { decodeTransferBatch, type TransferBatchFiles } from "../../domain/boarding/tape-codec.ts";
 import type { BatchContext, FnmaPosition, MersRecord } from "../../domain/boarding/types.ts";
 import { TransferBatchService, proposeBatch, parseConsentNotice as parseConsent, loanListFreezeOn, planNoticeRun as planRun, releaseGate, forecastRecertRisk as forecastRisk, ingestCustodianFeedItem, planMersTransactions as planMers, recordMersAcknowledgement, verifyPostTransferSnapshots, mreMismatchFinding, raiseVariance as raiseVarianceEvent, resolveVariance, verifyCarryover, requestFromTransferor as sendTransferorRequest, honorTransferorOfferCase, type BatchProposal, type CustodianFeedItem, type MersTxnRow, type TransferorLossmitFile, type InheritedOffer } from "../../domain/transfers/inbound.ts";
@@ -103,6 +106,13 @@ async function boardBatchOnBus(i: ToolInput, ctx: CommandContext, rt: ToolRuntim
   // the boarding set, written before the events in the command's own transaction (rule 2 / rule 10)
   const boardedAt = ctx.now;
   deferBefore((qq) => insertBoardingRows(qq, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt, ruleSetVersion: bctx.rule_set_version }));
+  // 35.5 rules 1 and 9 on this path too: the installment schedule and the servicing configuration of every boarded loan, projected on the command's log and
+  // engine (the two AT_BOARD_0 clocks satisfied in this commit) and persisted in the `before` phase right after the boarding set whose loan_terms row the run names
+  const runtime = rt.services["runtime"] as Runtime | undefined; if (!runtime) throw new RangeError("1.1 boardLoan{batch, files} needs the hosted runtime (services.runtime)");
+  const boardedOn = wallClock(Date.parse(ctx.now), "America/New_York").date;
+  const projections: BoardingProjection[] = [];
+  for (const bl of boarded) projections.push(await onLoanBoardedProject(q, { events: ctx.events, timers: ctx.timers, clock: ctx.clock }, tapeBoardedFacts(bl.id, bl.staged, input.transfer_date, boardedOn), { registry: runtime.registry, escalations: rt.escalations, batchId: uuid }));
+  deferBefore(async (qq) => { for (const pj of projections) await onLoanBoardedPersist(qq, runtime.uow.decisions, pj); });
   const hardByLoan: Record<string, string[]> = {};
   for (const bl of staged) { const codes = bl.validations.filter((v) => v.severity === "hard" && v.result === "fail").map((v) => v.code); if (codes.length) hardByLoan[bl.staged.transferor_loan_number] = codes; }
   const upbTotal = staged.reduce((sum, bl) => sum + (bl.staged.upb_cents ?? 0n), 0n);

@@ -176,6 +176,23 @@ export const citedTextNames = (kind: ActionKind, citedText: string): boolean => 
   return CITED_TEXT_WORDS[kind].some((w) => t.includes(w));
 };
 
+// ---- rule 9: the liquidation / completion milestones (claims.ts; cycles.ts's `claims_sweep_daily` selector reads the keys) ---------
+/** The timeline events that are liquidation / completion milestones, as 15.2's `milestoneReached` spells the producing event. */
+export const MILESTONE_OF_EVENT: Readonly<Record<string, { event_type: string; kind: string; liquidation_type: string | null }>> = {
+  "foreclosure.sale.held": { event_type: "foreclosure.sale.held", kind: "foreclosure_sale", liquidation_type: "fcl_fnma" },
+  "foreclosure.sale.completed": { event_type: "foreclosure.sale.held", kind: "foreclosure_sale", liquidation_type: "fcl_fnma" },
+  "workout_plan.completed": { event_type: "lossmit.modification.completed", kind: "workout_completed", liquidation_type: null },
+  "reo.disposed_by_fnma": { event_type: "reo.disposed_by_fnma", kind: "reo_disposition", liquidation_type: null },
+  "mortgage_release.completed": { event_type: "mortgage_release.completed", kind: "mortgage_release", liquidation_type: "mortgage_release" },
+};
+export const CLAIM_MILESTONE_EVENT_TYPES: readonly string[] = Object.keys(MILESTONE_OF_EVENT);
+/** The `claim_candidates.status` values that keep a loan in the daily and claims universes (Inputs and triggers). */
+export const OPEN_CANDIDATE_STATUSES: readonly string[] = ["opened", "package_building", "package_built", "filed"];
+/** The `cases.case_type` values of rule 2's universe. */
+export const OPEN_CASE_TYPES: readonly string[] = ["lossmit", "foreclosure", "bankruptcy", "reo", "claim"];
+/** 14.1's open bankruptcy statuses (the entity store's `bankruptcy_cases` rows the docket sync selects). */
+export const OPEN_BK_STATUSES: readonly string[] = ["open", "active", "verifying", "pending", "stay_in_effect"];
+
 // ---- rules 5 and 9: the worked examples' figures (Business rules; asserted by 35-9.spec.test.ts) ---------------------------
 /** Worked example A (loan L-A, Florida judicial, allowable 720): 13.5's formula run daily. */
 export const EXAMPLE_A = {

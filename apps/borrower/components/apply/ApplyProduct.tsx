@@ -173,7 +173,9 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
   const awaiting = signedIn && tab === "apply" && applicationId !== null && (
     (step === "questions" && !pendingDeclaration(cards) && !cards.some((c) => c.copy_key.startsWith("declarations.") && c.status === "resolved")) ||
     (step === "demographics" && !pending(cards, "demographics.title") && !resolved(cards, "demographics.title")) ||
-    (step === "review" && !cards.some((c) => ["refi.value.confirm", "preapproval.target"].includes(c.copy_key))));
+    // Review: the flow sends the number cards one after another (refi.value.confirm, refi.loan_amount.confirm, then refi.product.choice; preapproval.target alone on the TBD path) — keep polling
+    // until the LAST of the set is on the page, or a poll between the first and the third leaves Still needed short of a card (CI 312/315, 32.19-T11 on a slow runner)
+    (step === "review" && !cards.some((c) => ["refi.product.choice", "preapproval.target"].includes(c.copy_key))));
   const watching = signedIn && ((tab === "apply" && step === "result") || tab === "tasks");
   useEffect(() => {
     if (!awaiting && !watching) return;

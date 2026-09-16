@@ -7,19 +7,21 @@
 import type { DomainEvent } from "../../kernel/events/index.ts";
 import type { EntityRecord } from "../../app/tools.ts";
 import { type OrchRecord, type Source, type Sourced, src, fromEvent, fromEntity, fromTable, derived, cents, RecordGap } from "./facts-35-6.ts";
+import { ronRule } from "../closing/ops-26-2.ts";
+import { FACILITY_FIXTURE } from "../warehouse/ops-27-1.ts";
 
 type Row = Record<string, unknown>;
 const S = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
 
 // ───────────────────────────── 26.2 closing row, the borrowers, the parties ─────────────────────────────
-export interface ClosingFacts { readonly row: EntityRecord; readonly closing_id: string; readonly scheduled_at: string; readonly time_zone: string; readonly scheduled_note_date: string; readonly closing_type: string; readonly note_form: string; readonly settlement_agent_party_id: string; readonly notary_party_id: string | null; readonly session_ids: readonly string[]; readonly document_set_id: string | null; readonly consummation_at: string | null; readonly execution_status: string; readonly rescindable: boolean; readonly state: string }
+export interface ClosingFacts { readonly row: EntityRecord; readonly closing_id: string; readonly scheduled_at: string; readonly time_zone: string; readonly scheduled_note_date: string; readonly closing_type: string; readonly note_form: string; readonly settlement_agent_party_id: string; readonly notary_party_id: string | null; readonly session_ids: readonly string[]; readonly document_set_id: string | null; readonly consummation_at: string | null; readonly execution_status: string; readonly rescindable: boolean; readonly state: string; readonly dry_state: boolean; readonly county_fips: string | null }
 /** 26.2's `closings` row for the scheduled slot (`closing.scheduled` opened it). */
 export function closingFacts(rec: OrchRecord): ClosingFacts | null {
   const ev = rec.last("closing.scheduled"); if (!ev) return null;
   const row = rec.entity("closings", String(ev.payload["closing_id"])) ?? rec.entities("closings").at(-1);
   if (!row) throw new RecordGap("closings", `closing.scheduled ${ev.id} names ${String(ev.payload["closing_id"])} but 26.2's closings row is not on the entity store`);
   const d = row.data;
-  return { row, closing_id: String(d["closing_id"]), scheduled_at: String(d["scheduled_at"]), time_zone: String(d["time_zone"] ?? rec.timeZone()), scheduled_note_date: String(d["scheduled_note_date"]), closing_type: String(d["closing_type"]), note_form: String(d["note_form"]), settlement_agent_party_id: String(d["settlement_agent_party_id"]), notary_party_id: S(d["notary_party_id"]), session_ids: (d["session_ids"] as string[] | undefined) ?? [], document_set_id: S(d["document_set_id"]), consummation_at: S(d["consummation_at"]), execution_status: String(d["execution_status"] ?? ""), rescindable: d["rescindable"] !== false, state: String(d["state"] ?? rec.state()) };
+  return { row, closing_id: String(d["closing_id"]), scheduled_at: String(d["scheduled_at"]), time_zone: String(d["time_zone"] ?? rec.timeZone()), scheduled_note_date: String(d["scheduled_note_date"]), closing_type: String(d["closing_type"]), note_form: String(d["note_form"]), settlement_agent_party_id: String(d["settlement_agent_party_id"]), notary_party_id: S(d["notary_party_id"]), session_ids: (d["session_ids"] as string[] | undefined) ?? [], document_set_id: S(d["document_set_id"]), consummation_at: S(d["consummation_at"]), execution_status: String(d["execution_status"] ?? ""), rescindable: d["rescindable"] !== false, state: String(d["state"] ?? rec.state()), dry_state: d["dry_state"] === true, county_fips: S(d["county_fips"]) };
 }
 export interface PartyFacts { readonly partner_legal_name: string; readonly partner_nmlsr_id: string; readonly partner_mers_org_id: string | null; readonly partner_id: string; readonly mlo_name: string; readonly mlo_nmlsr_id: string; readonly settlement_agent_name: string; readonly settlement_agent_license: string; readonly borrower_names: readonly string[]; readonly borrower_ids: readonly string[]; readonly property_address: string; readonly legal_description: string | null; readonly apn: string | null; readonly county: string | null; readonly sources: Record<string, Source> }
 /** The parties on the file: the partner (parties row), the MLO of record (21.1's assignment), the vetted settlement agent (24.4), the borrowers (21.1's interview). */
@@ -129,6 +131,7 @@ export function fundingConditionFacts(rec: OrchRecord, i: { as_of: string; fundi
   const compliance = rec.last("compliance.gate.opened", (p) => p["gate"] === "disbursement");
   const mi = rec.entities("mi_certificates").at(-1);
   const put = (k: string, s: Source) => { sources[k] = s; };
+  const ltv = ltvPct(rec); put("ltv", ltv.source);
   if (hazard) put("hazard_effective", src("event", `insurance.policy.verified:${hazard.id}`, "24.5")); else put("hazard_effective", src("derived", "no insurance.policy.verified on the record", "24.5"));
   if (cpl) put("cpl", src("event", `cpl.received:${cpl.id}`, "24.4")); else put("cpl", src("derived", "no cpl.received", "24.4"));
   if (commitment) put("commitment", src("event", `title.commitment.received:${commitment.id}`, "24.4")); else put("commitment", src("derived", "no title.commitment.received", "24.4"));
@@ -150,8 +153,9 @@ export function fundingConditionFacts(rec: OrchRecord, i: { as_of: string; fundi
   const facts: Row = {
     as_of: i.as_of, time_zone: rec.timeZone(),
     funding: { funding_type: i.funding_type, transaction_type: i.transaction_type, disbursement_date: i.disbursement_date, release_date: i.release_date, note_date: i.note_date, authorized: i.authorized, ...(i.stage ? { stage: i.stage } : {}) },
-    loan: { ltv_pct: Number(rec.payload("du.findings.received")?.["ltv_du"] ?? 70), sfha: flood ? flood.payload["in_sfha"] === true : false, project: false, enote: i.enote, tx_50a6: false, record_before_fund: false },
-    execution: execution ? { review_passed: true, all_docs_signed: true, blocking_defects: 0, package_returned: true } : executionFailed ? { review_passed: false, all_docs_signed: true, blocking_defects: Number(((executionFailed.payload["defects"] as unknown[] | undefined) ?? []).length), package_returned: true } : null,
+    loan: { ltv_pct: ltv.value, sfha: flood ? flood.payload["in_sfha"] === true : false, project: false, enote: i.enote, tx_50a6: false, record_before_fund: false },
+    // 26.2's post-signing review is the owner's finding over the executed package it received: `passed` means every required signer's signature was present, dated and attributable (no blocking defect); `failed` lists the defects
+    execution: execution ? { review_passed: true, all_docs_signed: true, blocking_defects: 0, package_returned: true } : executionFailed ? executionFromFailure(executionFailed) : null,
     cd: cd ? { consummated_version: consummated ? Number(consummated.payload["cd_version"] ?? cd.data["cd_version"]) : null, delivered_with_receipt: cdReceipts(rec, cd.id).some((r) => !!r.data["receipt_evidence"]), signed_copy_in_documents: consummated ? true : null } : null,
     identity: { all_signers_proofed: !!idv && (proofed.length > 0 || !!execution) },
     rescission: i.rescission, tx_rescission: null,
@@ -190,15 +194,21 @@ export function warehouseFacts(rec: OrchRecord, i: { funding_id: string; advance
   const cpl = rec.last("cpl.received"); const hazard = rec.last("insurance.policy.verified", (p) => p["policy_kind"] === "hazard" || p["kind"] === "hazard"); const flood = rec.last("flood.determination.received"); const floodCov = rec.last("flood.coverage.verified");
   const qcHold = rec.last("qc.hold.applied") && !rec.last("qc.hold.released"); const valuation = rec.last("valuation.received"); const period = rec.entities("rescission_periods").at(-1);
   const request: Row = { advance_id: i.advance_id, facility_id: i.facility_id, loan_id: null, application_id: rec.app.id, funding_id: i.funding_id, requested_at: i.requested_at, note_form: i.note_form, closing_type: i.closing_type, wet_dry: i.wet_dry, note_amount_cents: String(i.note_amount_cents), net_disbursement_cents: String(i.net_disbursement_cents), note_date: i.note_date, transaction_type: rec.app.transaction_type ?? "limited_cash_out", commitment_price: i.commitment_price, commitment_id_fnma: i.commitment_id_fnma, wire_verification_id: wire?.id ?? "", property_state: rec.state(), enote_registered_at: i.enote_registered_on, secured_party_added_at: i.secured_party_added_at, trust_receipt_at: null };
-  const facts: Row = { du_recommendation: String(findings?.payload["recommendation"] ?? ""), du_final_matches_closing: true, ctc_issued: !!ctc, disbursement_gate_opened: !!disb,
-    commitment: { commitment_id_fnma: i.commitment_id_fnma, live: true, expires_on: i.commitment_expires_on, type: "best_efforts" },
-    wire_verification: wire ? { id: wire.id, match_result: String(wire.data["match_result"] ?? "verified"), expires_at: S(wire.data["expires_at"]) ?? "", blocks_disbursement: wire.data["blocks_disbursement"] === true } : null,
-    transaction_type: rec.app.transaction_type ?? "limited_cash_out", rescission_gate_open: i.rescission_gate_open, wet_dry: i.wet_dry, dry_recording_condition_met: i.wet_dry === "dry" ? true : null,
-    note_amount_cents: String(i.note_amount_cents), units: rec.subject?.units ?? 1, program_in_scope: true, first_payment_date: i.first_payment_date, disbursement_date: i.disbursement_date,
-    qc_prefunding_blocking: !!qcHold, ltv_pct: Number(findings?.payload["ltv_du"] ?? 70), mi_active: rec.entities("mi_certificates", (d) => d["status"] === "active").length > 0, flood_gate_open: !flood || flood.payload["in_sfha"] !== true || !!floodCov, insurance_gate_open: !!hazard, cpl_names_partner: !!cpl && cpl.payload["cpl_addressee_ok"] !== false,
-    duplicate_advance: false, partner_suspended: false, facility_status: "active", appraisal_expires_at: S(valuation?.payload["age_4m_update_after"] ?? rec.entities("valuation_orders").at(-1)?.data["age_12m_expires_on"]), lock_extension_count: rec.all("lock.extended").length,
+  // the DU final match is 23.3's CTC_DU_FINAL_MATCH item (a passed CTC carries it); the commitment is live while 29.1's executed commitment has not expired by the disbursement date; the program is in scope for a conventional product with an approve/eligible recommendation; a dry-state recording condition is met only once 26.4/24.4 confirm the recording (null until then: 27.1 reads null as "not yet"); a duplicate advance is any other advance row on this application; the facility is 27.1's own row (status; suspended by kickout/covenant) or, when the id is the LSA fixture's, the fixture (sm.warehouse.v1)
+  const ltv = ltvPct(rec); const product = productFacts(rec, loanTerms(rec)); const commitmentEv = rec.last("commitment.executed"); const commitmentRow = rec.entities("commitments").at(-1) ?? null;
+  const commitmentLive = (!!commitmentEv || !!commitmentRow) && (i.commitment_expires_on === "" || i.commitment_expires_on >= i.disbursement_date);
+  const facility = rec.entities("warehouse_facilities", (d) => d["facility_id"] === i.facility_id).at(-1) ?? null;
+  const facilityStatus = facility ? String(facility.data["status"] ?? "") : i.facility_id === FACILITY_FIXTURE.facility_id ? FACILITY_FIXTURE.status : "";
+  const otherAdvances = rec.entities("warehouse_advances", (d) => d["advance_id"] !== i.advance_id && !["cancelled", "rejected", "unwound"].includes(String(d["status"])));
+  const facts: Row = { du_recommendation: String(findings?.payload["recommendation"] ?? ""), du_final_matches_closing: !!ctc, ctc_issued: !!ctc, disbursement_gate_opened: !!disb,
+    commitment: { commitment_id_fnma: i.commitment_id_fnma, live: commitmentLive, expires_on: i.commitment_expires_on, type: String(commitmentEv?.payload["type"] ?? commitmentRow?.data["type"] ?? commitmentRow?.data["commitment_type"] ?? "best_efforts") },
+    wire_verification: wire ? { id: wire.id, match_result: String(wire.data["match_result"] ?? ""), expires_at: S(wire.data["expires_at"]) ?? "", blocks_disbursement: wire.data["blocks_disbursement"] === true } : null,
+    transaction_type: rec.app.transaction_type ?? "limited_cash_out", rescission_gate_open: i.rescission_gate_open, wet_dry: i.wet_dry, dry_recording_condition_met: i.wet_dry === "dry" ? (rec.has("recording.confirmed") ? true : null) : null,
+    note_amount_cents: String(i.note_amount_cents), units: rec.subject?.units ?? 1, program_in_scope: findings?.payload["recommendation"] === "approve_eligible" && product.loan_type === "Conventional", first_payment_date: i.first_payment_date, disbursement_date: i.disbursement_date,
+    qc_prefunding_blocking: !!qcHold, ltv_pct: ltv.value, mi_active: rec.entities("mi_certificates", (d) => d["status"] === "active").length > 0, flood_gate_open: !flood || flood.payload["in_sfha"] !== true || !!floodCov, insurance_gate_open: !!hazard, cpl_names_partner: !!cpl && cpl.payload["cpl_addressee_ok"] !== false,
+    duplicate_advance: otherAdvances.length > 0, partner_suspended: facilityStatus === "suspended", facility_status: facilityStatus, appraisal_expires_at: S(valuation?.payload["age_4m_update_after"] ?? rec.entities("valuation_orders").at(-1)?.data["age_12m_expires_on"]), lock_extension_count: rec.all("lock.extended").length,
     evidence: { du_submission_id: S(findings?.payload["submission_id"]) ?? "", ctc_checklist_id: S(ctc?.payload["checklist_id"]) ?? "", compliance_test_run_id: S(disb?.payload["run_id"]) ?? "", commitment_id: i.commitment_id_fnma, wire_verification_id: wire?.id ?? "", rescission_id: period?.id ?? "", cpl_document_id: S(cpl?.payload["cpl_document_id"]) ?? "" } };
-  const sources: Record<string, Source> = { du: findings ? src("event", `du.findings.received:${findings.id}`, "23.1") : src("derived", "no findings", "23.1"), ctc: ctc ? src("event", `clear_to_close.issued:${ctc.id}`, "23.3") : src("derived", "no CTC", "23.3"), commitment: src("event", `commitment.executed:${rec.last("commitment.executed")?.id ?? ""}`, "29.1"), wire_verification: wire ? src("entity", `wire_verifications:${wire.id}:${wire.version}`, "24.4") : src("derived", "none", "24.4"), cpl: cpl ? src("event", `cpl.received:${cpl.id}`, "24.4") : src("derived", "none", "24.4"), hazard: hazard ? src("event", `insurance.policy.verified:${hazard.id}`, "24.5") : src("derived", "none", "24.5"), flood: flood ? src("event", `flood.determination.received:${flood.id}`, "24.5") : src("derived", "none", "24.5"), rescission: period ? src("entity", `rescission_periods:${period.id}:${period.version}`, "25.3") : src("derived", "not rescindable", "25.3") };
+  const sources: Record<string, Source> = { du: findings ? src("event", `du.findings.received:${findings.id}`, "23.1") : src("derived", "no findings", "23.1"), ctc: ctc ? src("event", `clear_to_close.issued:${ctc.id}`, "23.3") : src("derived", "no CTC", "23.3"), commitment: commitmentEv ? src("event", `commitment.executed:${commitmentEv.id}`, "29.1") : commitmentRow ? src("entity", `commitments:${commitmentRow.id}:${commitmentRow.version}`, "29.1") : src("derived", "no commitment on the record", "29.1"), ltv: ltv.source, product: product.source, facility: facility ? src("entity", `warehouse_facilities:${facility.id}:${facility.version}`, "27.1") : src("derived", `27.1 FACILITY_FIXTURE ${i.facility_id} (sm.warehouse.v1; no warehouse_facilities row)`, "27.1"), duplicate_advance: otherAdvances.length ? src("entity", `warehouse_advances:${otherAdvances.map((a) => a.id).join(",")}`, "27.1") : src("derived", "no other warehouse_advances row on the application", "27.1"), wire_verification: wire ? src("entity", `wire_verifications:${wire.id}:${wire.version}`, "24.4") : src("derived", "none", "24.4"), cpl: cpl ? src("event", `cpl.received:${cpl.id}`, "24.4") : src("derived", "none", "24.4"), hazard: hazard ? src("event", `insurance.policy.verified:${hazard.id}`, "24.5") : src("derived", "none", "24.5"), flood: flood ? src("event", `flood.determination.received:${flood.id}`, "24.5") : src("derived", "none", "24.5"), rescission: period ? src("entity", `rescission_periods:${period.id}:${period.version}`, "25.3") : src("derived", "not rescindable", "25.3") };
   return { request, facts, sources };
 }
 
@@ -210,3 +220,68 @@ export function rescissionFacts(rec: OrchRecord, now: string): { row: EntityReco
   return { row, facts: { status: String(d["status"] ?? "running"), expires_at: S(d["expires_at"]), reasonably_satisfied_at: S(d["reasonably_satisfied_at"] ?? confirmed?.payload["reasonably_satisfied_at"]), waiver_id: S(d["waiver_id"]), now }, source: confirmed ? src("event", `rescission.confirmed_not_rescinded:${confirmed.id}`, "25.3") : src("entity", `rescission_periods:${row.id}:${row.version}`, "25.3"), confirmed, started };
 }
 export { derived, fromTable };
+
+// ───────────────────────────── the lock's product, the decision's validity, the vesting review, the template and eClosing facts ─────────────────────────────
+export interface ProductFacts { readonly product_code: string; readonly amortization: "fixed" | "arm"; readonly loan_type: string; readonly cd_product: string; readonly lien_position: "first" | "subordinate"; readonly prepayment_penalty: boolean; readonly balloon: boolean; readonly source: Source }
+/** 21.4's lock row names the product (`product_code`, the quote's amortization); the CD's product and loan-type words, the lien position and the ARM/balloon/prepayment flags derive from it — never typed by this process. */
+export function productFacts(rec: OrchRecord, terms: LoanTerms): ProductFacts {
+  const lockRow = rec.entity("locks", String(terms.lock.payload["lock_id"])) ?? null;
+  const quote = (lockRow?.data["quote"] as Row | undefined) ?? null;
+  const code = String(lockRow?.data["product_code"] ?? quote?.["product_code"] ?? terms.lock.payload["product_code"] ?? "");
+  if (!code) throw new RecordGap("locks.product_code", `lock ${String(terms.lock.payload["lock_id"])} carries no product_code (21.4)`);
+  const amortization = String(quote?.["amortization"] ?? "").toLowerCase() === "arm" || /arm/i.test(code) ? "arm" : "fixed";
+  const loan_type = /fha/i.test(code) ? "FHA" : /(^|[^a-z])va([^a-z]|$)/i.test(code) ? "VA" : /usda|rhs/i.test(code) ? "USDA-RHS" : "Conventional";
+  return { product_code: code, amortization, loan_type, cd_product: amortization === "arm" ? "Adjustable Rate" : "Fixed Rate", lien_position: /heloc|second|2nd|subordinate/i.test(code) ? "subordinate" : "first", prepayment_penalty: quote?.["prepayment_penalty"] === true || lockRow?.data["prepayment_penalty"] === true, balloon: quote?.["balloon"] === true,
+    source: lockRow ? src("entity", `locks:${lockRow.id}:${lockRow.version}`, "21.4") : src("event", `lock.executed:${terms.lock.id}`, "21.4") };
+}
+/** 21.4's lock status as 26.1's gate reads it: a lock that is executed, committed or confirmed is `active`; anything else is the row's own word. */
+export function lockStatus(rec: OrchRecord, terms: LoanTerms): Sourced<string> {
+  const lockRow = rec.entity("locks", String(terms.lock.payload["lock_id"])) ?? null;
+  const raw = String(lockRow?.data["status"] ?? terms.lock.payload["status"] ?? "executed");
+  const status = ["executed", "committed", "confirmed", "locked", "active"].includes(raw) ? "active" : raw;
+  return lockRow ? fromEntity(status, lockRow, "21.4") : fromEvent(status, terms.lock, "21.4");
+}
+/** 24.4's SM_TRUST_POA_REVIEW_GATE: `vesting.reviews.completed{all_eligible}` when a trust or POA review ran; vacuously open when the title commitment vests no trust and no trust/POA review was opened. */
+export function trustPoaGate(rec: OrchRecord): Sourced<boolean> {
+  const done = rec.last("vesting.reviews.completed"); if (done) return fromEvent(done.payload["all_eligible"] === true, done, "24.4");
+  const commitment = rec.last("title.commitment.received"); const vesting = commitment?.payload["vesting"] as Row | undefined;
+  if (vesting?.["trust"] === true || rec.has("trust.reviewed") || rec.has("poa.reviewed")) return derived(false, "a trust vesting or a trust/POA review without vesting.reviews.completed{all_eligible}", "24.4");
+  return commitment ? fromEvent(true, commitment, "24.4") : derived(false, "no title.commitment.received", "24.4");
+}
+/** 23.3's decision validity: `decision.issued` whose expiry is on or after the day and no later `decision.expired`. */
+export function decisionStatus(rec: OrchRecord, today: string): Sourced<string> {
+  const dec = rec.last("decision.issued"); if (!dec) return derived("none", "no decision.issued", "23.3");
+  const expired = rec.last("decision.expired"); if (expired && expired.sequence > dec.sequence) return fromEvent("expired", expired, "23.3");
+  const exp = S(dec.payload["expires_on"] ?? dec.payload["valid_until"]);
+  return fromEvent(exp && exp < today ? "expired" : "active", dec, "23.3");
+}
+/** 26.1's SM_O71_TEMPLATE_VERSION_GATE from the set's own `closing.document_qc.check{DQC_TEMPLATE_VERSION}`. */
+export function templateVersionGate(rec: OrchRecord, setId: string): Sourced<boolean> {
+  const c = rec.last("closing.document_qc.check", (p) => p["set_id"] === setId && p["rule_code"] === "DQC_TEMPLATE_VERSION");
+  return c ? fromEvent(c.payload["result"] === "pass", c, "26.1") : derived(false, `no DQC_TEMPLATE_VERSION check for ${setId}`, "26.1");
+}
+/** DU's LTV (23.1 `du.findings.received{ltv_du}`), the figure 26.3's FC_MI and 27.1's k_mi_active read. */
+export function ltvPct(rec: OrchRecord): Sourced<number> {
+  const f = rec.last("du.findings.received"); const v = S(f?.payload["ltv_du"]);
+  if (!f || v === null || v === "" || Number.isNaN(Number(v))) throw new RecordGap("du.findings.received.ltv_du", "DU's findings carry no LTV (23.1)");
+  return fromEvent(Number(v), f, "23.1");
+}
+/** 26.2's execution review failure as 26.3's ExecutionFacts: the blocking defects and whether a signature is among them. */
+export function executionFromFailure(failed: DomainEvent): Row {
+  const defects = ((failed.payload["defects"] as Row[] | undefined) ?? []);
+  return { review_passed: false, all_docs_signed: !defects.some((d) => d["code"] === "signature_missing"), blocking_defects: defects.filter((d) => d["blocking"] === true).length, package_returned: true };
+}
+/** 26.2's electronic-closing facts for 26.1's snapshot: the closing-type decision (`closing.scheduled{enote, closing_type_reasons}`), the agent's `eclosing_eligibility` row and the jurisdiction's RON rule (26.2 `ronRule`). */
+export function eclosingFacts(rec: OrchRecord, closing: ClosingFacts): { facts: { enote_default: boolean; partner_emortgage_approved: boolean; ron_authorized_state: boolean; settlement_agent_eclosing_eligible: boolean; borrower_declined_electronic: boolean }; sources: Record<string, Source> } {
+  const scheduled = rec.last("closing.scheduled")!;
+  const reasons = ((scheduled.payload["closing_type_reasons"] as unknown[] | undefined) ?? []).map(String);
+  const agent = rec.entities("eclosing_eligibility", (d) => d["settlement_agent_party_id"] === closing.settlement_agent_party_id).at(-1) ?? null;
+  const rule = ronRule(closing.state);
+  const decision = src("event", `closing.scheduled:${scheduled.id}`, "26.2");
+  return { facts: { enote_default: scheduled.payload["enote"] === true, partner_emortgage_approved: scheduled.payload["enote"] === true, ron_authorized_state: rule.ron_authorized,
+      settlement_agent_eclosing_eligible: agent ? agent.data["ron_capable"] === true || agent.data["ipen_capable"] === true : closing.closing_type !== "wet",
+      borrower_declined_electronic: reasons.some((r) => r.startsWith("borrower_election:wet") || r.startsWith("consent_withdrawn")) },
+    sources: { enote: decision, partner_emortgage_approved: decision, ron_authorized_state: src("derived", `26.2 ronRule(${closing.state}).ron_authorized`, "26.2"), settlement_agent_eclosing_eligible: agent ? src("entity", `eclosing_eligibility:${agent.id}:${agent.version}`, "26.2") : src("derived", `no eclosing_eligibility row for ${closing.settlement_agent_party_id}; 26.2 scheduled a ${closing.closing_type} closing`, "26.2"), borrower_declined_electronic: decision } };
+}
+/** A dollar figure for a FAKE vendor payload from bigint cents — never through Number(bigint). */
+export const dollars = (c: bigint): string => { const neg = c < 0n; const a = neg ? -c : c; return `${neg ? "-" : ""}${a / 100n}.${String(a % 100n).padStart(2, "0")}`; };

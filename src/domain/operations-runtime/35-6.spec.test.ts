@@ -275,6 +275,15 @@ async function complianceAt(j: Journey, at: string, gate = "SM_O61_COMPLIANCE_PA
 }
 const complianceAtCd = (j: Journey, at: string) => complianceAt(j, at);
 /** A second journey driven through the chain the way T1–T8 drive the main line (the same passes at the same instants), stopping at `target` — the fixture for the branches that need their own row (T7's money mismatch, T13's stall, T15's unwind). */
+/** The partner's haircut reserve as the ledger carries it (27.1 SM_WH_HAIRCUT_RESERVE_GATE reads the balance of `partner_haircut_reserve`): the LSA fixture's $250,000.00 deposit, posted once per journey by an officer through 2.1 ledger.post on the corporate books — Cr partner_haircut_reserve / Dr sm_funding_cash (27.1's draw at the wire is the mirror image). In-process, so the cents stay bigint. */
+async function fundHaircutReserve(j: Journey): Promise<void> {
+  const memo = `partner haircut reserve deposit ${j.R}`;
+  if ((await db.query(`SELECT 1 FROM ledger_lines WHERE account = 'partner_haircut_reserve' AND memo = $1`, [memo])).length) return;
+  await runtime.execute({ process: "2.1", name: "ledger.post", loanId: "", actor: OFFICER, input: { entry_set: { effectiveDate: "2026-11-02", description: "LSA haircut reserve: partner deposit (fixture)", lines: [
+    { account: { scope: "corporate", account: "partner_haircut_reserve" }, amountCents: -25_000_000n, ruleRef: "27.1 LSA haircut reserve", memo },
+    { account: { scope: "corporate", account: "sm_funding_cash" }, amountCents: 25_000_000n, ruleRef: "27.1 LSA haircut reserve", memo }] } } });
+  assert.equal(await n(`FROM ledger_lines WHERE account = 'partner_haircut_reserve' AND memo = $1`, [memo]), 1, "the reserve deposit is a ledger_lines row");
+}
 async function driveTo(j: Journey, target: "execution_reviewed" | "wire_released"): Promise<Journey> {
   const appId = j.appId; const scope = { app: appId };
   await seedCreditAuthorizations(j);
@@ -301,7 +310,7 @@ async function driveTo(j: Journey, target: "execution_reviewed" | "wire_released
   clock.set(MST("2026-11-06", "14:46")); await pass(clock.now(), appId);
   assert.equal((await row(appId)).step, "execution_reviewed", `driveTo: ${JSON.stringify((await journal(appId)).slice(-6).map((x) => [x.step, x.kind, x.command_name, x.error_class, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? null]))} rejected: ${JSON.stringify((await events(appId, "enote.registration.rejected")).map((e) => e.payload))} enotes: ${JSON.stringify((await entitiesOf("enotes", appId)).map((e) => [e.id, e.data["min"], e.data["status"]]))} snapshots: ${JSON.stringify((await entitiesOf("closing_data_snapshots", appId)).map((e) => [e.id, e.data["min"], (e.data["payload"] as P | undefined)?.["min"]]))}`);
   if (target === "execution_reviewed") return j;
-  await rescissionSweep(j); await complianceAt(j, EST("2026-11-12", "07:30"), "SM_O61_COMPLIANCE_PASS_DISBURSE_GATE", "cd");
+  await rescissionSweep(j); await complianceAt(j, EST("2026-11-12", "07:30"), "SM_O61_COMPLIANCE_PASS_DISBURSE_GATE", "cd"); await fundHaircutReserve(j);
   clock.set(EST("2026-11-12", "08:05")); await pass(clock.now(), appId);
   clock.set(EST("2026-11-12", "08:20")); await pass(clock.now(), appId);
   assert.equal((await row(appId)).waiting_on, "funding_approver", `driveTo: ${JSON.stringify(await row(appId))}`);
@@ -671,6 +680,7 @@ test("35.6-T7: Given 25.3's `rescission.confirmed_not_rescinded` at Wed Nov 11 0
 
 test("35.6-T8: Given the advance approved, when the pass runs 08:20 ET, then 26.3 `prepareWire` as `funder` prepared a wire of 55,685,207 cents (`funding.wire.prepared`) and the row is `waiting_human{funding_approver}`; an agent actor's `prepareWire{op: release}` is refused `ROLE_DENIED` and the pass never calls it (contract: no `op: \"release\"` literal under `src/domain/operations-runtime/`); when the FAKE `funding_approver` releases at 09:40 ET, then `funding.wire.released`, the bank's `funding.wire.accepted{imad}`, 27.1's `warehouse.advance.funded{advance_date=2026-11-12}`, `notifySettlementAgent{op: agent_receipt}` and, on the uploaded final settlement statement, `confirmDisbursement` → `loan.funded{disbursement_date=2026-11-12, per_diem_cents=9397, prepaid_interest_cents=178543, prepaid_days=19}` keyed by the application only, and `SM_O73_DUAL_CONTROL_RELEASE_1H` and `SM_O73_WIRE_CUTOFF_1300ET` are satisfied.", { skip }, async () => {
   const j = await chainJourney(); const appId = j.appId; const scope = { app: appId };
+  await fundHaircutReserve(j);   // the partner's LSA haircut reserve on the ledger (27.1's gate reads its balance)
   // when the pass runs 08:20 ET: 26.3 prepareWire as funder prepared the wire; the row waits on the funding_approver
   clock.set(EST("2026-11-12", "08:20")); const r1 = await pass(clock.now(), appId);
   const jl1 = await journal(appId); const fail1 = JSON.stringify(jl1.filter((x) => x.step === "funding_authorized").map((x) => [x.kind, x.command_name, x.command_op, x.error_class, x.refusal_code, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? null])).slice(0, 3000);
@@ -681,7 +691,7 @@ test("35.6-T8: Given the advance approved, when the pass runs 08:20 ET, then 26.
   // an agent actor's prepareWire{op: release} is refused (26.3's role guard: the funder prepares, only a funding_approver releases) and the pass never calls it
   const refused = await call("POST", `/v1/applications/${appId}/tools/26.3/prepareWire`, { actor: { kind: "agent", id: "funder" }, input: { funding_id: fundingId, op: "release", wire_id: wireId, bank_ref: `TEST-${j.R}`, released_at: clock.now() } });
   assert.notEqual(refused.status, 200, JSON.stringify(refused.body).slice(0, 400));
-  const code = String(refused.body["code"] ?? (refused.body["error"] as P | undefined)?.["code"] ?? refused.body["refusal_code"] ?? JSON.stringify(refused.body)); assert.ok(["ROLE_DENIED", "AGENT_NEVER_RELEASES"].includes(code), code);
+  const code = String(refused.body["code"] ?? (refused.body["error"] as P | undefined)?.["code"] ?? refused.body["refusal_code"] ?? JSON.stringify(refused.body)); assert.equal(code, "AGENT_NEVER_RELEASES");
   assert.equal(await n(`FROM loan_events WHERE application_id = $1 AND type = 'funding.wire.released'`, [appId]), 0);
   // contract: no `op: "release"` literal under src/domain/operations-runtime/ (recursively) — the release is the approver's act in reviewers.ts / the console
   const dir = fileURLToPath(new URL("./", import.meta.url));

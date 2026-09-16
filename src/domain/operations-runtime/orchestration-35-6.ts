@@ -225,6 +225,8 @@ async function claim(rt: Runtime, holder: string, limit: number, applicationId: 
 }
 async function releaseLeases(rt: Runtime, holder: string, ids: readonly string[]): Promise<void> { if (ids.length) await rt.db.query(`UPDATE closing_orchestrations SET lease_holder = NULL, lease_until = NULL WHERE id = ANY($1::uuid[]) AND lease_holder = $2`, [ids, holder]).catch(() => undefined); }
 
+/** Holds a new owner's fact may clear (rule: "or the condition clears"); a `money_mismatch` (rule 7: never adjusted) and a `warehouse_kickout` are the officer's `orchestration.release` only. */
+const AUTO_RELEASE_HOLDS = ["gate_closed", "unavailable"];
 interface Pending { step: string; status: OrchStatus; waiting_on: string | null; hold_reason: string | null; attempts: number; patch: Record<string, unknown>; events: { type: string; payload: Record<string, unknown> }[]; journal: JournalEntry[]; commands: number; escalations: { kind: string; ownerRole: string; severity: string; payload: Record<string, unknown> }[]; actions: string[]; entered: Set<string> }
 
 /** A row is due when the record carries a fact newer than `last_event_sequence`, or when its wait is one that time or a poll resolves (an open row, a vendor, a statutory window, a person a FAKE fills); a borrower's wait and a hold are not due (rule 1: "a pass with no new fact and no due wait writes nothing"). */
@@ -261,7 +263,7 @@ export async function processRow(rt: Runtime, row: OrchRow, nowIso: string, runI
     const substantive = rec.after(row.last_event_sequence).some((e) => !NOT_A_FACT.some((prefix) => e.type.startsWith(prefix)));
     p.entered = new Set((await ctx.q!.query<{ step: string }>(`SELECT step FROM closing_orchestration_steps WHERE orchestration_id = $1 AND kind = 'entered'`, [row.id])).map((r) => r.step));
     if (row.status === "held") {
-      if (!(substantive && row.hold_reason && ["gate_closed", "money_mismatch", "unavailable"].includes(row.hold_reason))) { recOut = rec; return; }
+      if (!(substantive && row.hold_reason && AUTO_RELEASE_HOLDS.includes(row.hold_reason))) { recOut = rec; return; }
       p.status = "open"; p.hold_reason = null; p.waiting_on = null; p.journal.push({ step: row.step, kind: "released", detail: { by: "pass", reason: "new facts after " + row.hold_reason } }); p.events.push({ type: EV.released, payload: { step: row.step, by: "pass", hold_reason: row.hold_reason } });
     }
     const fakes = fakesFor(rt);
@@ -281,30 +283,11 @@ export async function processRow(rt: Runtime, row: OrchRow, nowIso: string, runI
       }
     };
     const sctx: StepContext = { rt: view, rec, row, now: nowIso, runId, journal: p.journal, fakes, run: runCommand, refresh: async () => { rec = await loadRecord(view, app, rec.loanId ?? (await view.applications.get(app.id))?.loan_id ?? loanIdAtStart); (sctx as { rec: OrchRecord }).rec = rec; return rec; }, halt: (o) => { throw new StepHalt(o); } };
-    // an unwinding row folds the owners' unwind events (26.3's completion closes it `unwound`) and writes like any other pass
-    if (row.status === "unwinding") await foldUnwind(sctx, p);
-    else for (let i = 0; i < MAX_TRANSITIONS_PER_PASS; i++) {
-      const def = stepDef(p.step);
-      const off = offPath(rec, p.step);
-      if (off) { applyOffPath(p, off); if (off.kind === "unwinding") await foldUnwind(sctx, p); break; }
-      const exitEv = def.exit(rec);
-      if (exitEv) {
-        const next = STEPS[stepIndex(def.name) + 1];
-        if (!next) { complete(p, def, exitEv, rec, nowIso); break; }
-        const wait = next.enter?.(rec, sctx) ?? null;
-        if (wait) { setWait(p, wait); break; }
-        complete(p, def, exitEv, rec, nowIso);
-        if (next.name === "clear_to_close") p.events.push({ type: EV.opened, payload: { orchestration_id: row.id, application_id: row.application_id, transaction_type: rec.transactionType(), funding_type: rec.fundingType(), note_form: rec.noteForm() } });
-        enter(p, next, rec, nowIso);
-        if (next.terminal) { p.status = "completed"; p.patch["completed_at"] = nowIso; p.events.push({ type: EV.done, payload: { orchestration_id: row.id, loan_id: rec.loanId, purchased_at: rec.last("loan.purchased")?.occurredAt ?? null } }); break; }
-        continue;
-      }
-      if (!def.actions || p.actions.includes(def.name)) { if (!def.actions && p.status === "open") { const w = def.idleWait?.(rec) ?? null; if (w) setWait(p, w); } break; }
-      p.actions.push(def.name);
+    // rule 10: one step's actions are one savepoint on the row's transaction — a command that throws rolls back every command the step ran before it (nothing else of that unit of work is written); a refusal (StepHalt) keeps what ran and holds; three failures hold the row `failed` — the same block for a step and for the `unwinding` step (rule 11)
+    const runActions = async (def: StepDef): Promise<StepOutcome> => {
       let outcome: StepOutcome = {};
-      // rule 10: one step's actions are one savepoint on the row's transaction — a command that throws rolls back every command the step ran before it (nothing else of that unit of work is written); a refusal (StepHalt) keeps what ran and holds
       const mark = { journal: p.journal.length, events: p.events.length, nested: nested.length, commands: p.commands, escalations: p.escalations.length };
-      const actions = def.actions;
+      const actions = def.actions!;
       try { await view.db.tx(async () => { try { outcome = (await actions(sctx)) ?? {}; } catch (e) {
         if (e instanceof StepHalt) { outcome = e.outcome; return; }
         // a fact the record does not carry yet (facts-35-6.ts RecordGap): the row waits on the owner named by the gap — open, clocked (the stall clock backstops the owner's own) — and journals the gap once
@@ -324,6 +307,29 @@ export async function processRow(rt: Runtime, row: OrchRow, nowIso: string, runI
           rt.logger?.warn("35.6 step command failed", { application_id: row.application_id, step: p.step, error_class: cls, attempts: p.attempts });
         }
       }
+      return outcome;
+    };
+    // an unwinding row folds the owners' unwind events (26.3's completion closes it `unwound`) and writes like any other pass
+    if (row.status === "unwinding") await foldUnwind(sctx, p, runActions);
+    else for (let i = 0; i < MAX_TRANSITIONS_PER_PASS; i++) {
+      const def = stepDef(p.step);
+      const off = offPath(rec, p.step);
+      if (off) { applyOffPath(p, off); if (off.kind === "unwinding") await foldUnwind(sctx, p, runActions); break; }
+      const exitEv = def.exit(rec);
+      if (exitEv) {
+        const next = STEPS[stepIndex(def.name) + 1];
+        if (!next) { complete(p, def, exitEv, rec, nowIso); break; }
+        const wait = next.enter?.(rec, sctx) ?? null;
+        if (wait) { setWait(p, wait); break; }
+        complete(p, def, exitEv, rec, nowIso);
+        if (next.name === "clear_to_close") p.events.push({ type: EV.opened, payload: { orchestration_id: row.id, application_id: row.application_id, transaction_type: rec.transactionType(), funding_type: rec.fundingType(), note_form: rec.noteForm() } });
+        enter(p, next, rec, nowIso);
+        if (next.terminal) { p.status = "completed"; p.patch["completed_at"] = nowIso; p.events.push({ type: EV.done, payload: { orchestration_id: row.id, loan_id: rec.loanId, purchased_at: rec.last("loan.purchased")?.occurredAt ?? null } }); break; }
+        continue;
+      }
+      if (!def.actions || p.actions.includes(def.name)) { if (!def.actions && p.status === "open") { const w = def.idleWait?.(rec) ?? null; if (w) setWait(p, w); } break; }
+      p.actions.push(def.name);
+      const outcome = await runActions(def);
       if (outcome.hold) { hold(p, outcome.hold, rec); break; }
       if (outcome.wait) setWait(p, outcome.wait); else { p.status = "open"; p.waiting_on = null; }
       if (outcome.retry) break;
@@ -421,14 +427,16 @@ function applyOffPath(p: Pending, off: OffPath): void {
   p.status = "unwinding"; p.waiting_on = "26.3"; p.journal.push({ step: p.step, kind: "unwound", trigger_event_id: off.ev.id, detail: { reason: off.reason, stage: "opened" } });
 }
 /** Rule 11: the unwind is the owners' work in the owners' order — 26.3 openUnwind (and 26.4's MIN reversal) run once through the `unwinding` step's actions; `funding.unwind.completed` closes the row `unwound`. */
-async function foldUnwind(sctx: StepContext, p: Pending): Promise<void> {
+async function foldUnwind(sctx: StepContext, p: Pending, runActions: (def: StepDef) => Promise<StepOutcome>): Promise<void> {
   const rec = sctx.rec;
   const done = rec.last("funding.unwind.completed");
   if (done) { p.status = "unwound"; p.waiting_on = null; p.journal.push({ step: p.step, kind: "unwound", trigger_event_id: done.id, detail: { stage: "completed", outcome: (done.payload as Row)["outcome"] ?? null } }); p.events.push({ type: EV.unwound, payload: { reason: (rec.last("rescission.exercised") ?? rec.last("funding.cancelled"))?.type ?? "unwind", step: p.step } }); return; }
   const unwindDef = STEPS.find((x) => x.name === "unwinding");
   if (!unwindDef?.actions) return;
-  try { const o = await unwindDef.actions(sctx); if (o?.wait) setWait(p, o.wait); }
-  catch (e) { if (e instanceof StepHalt) { if (e.outcome.wait) setWait(p, e.outcome.wait); } else { p.journal.push({ step: p.step, kind: "command_failed", error_class: e instanceof Error ? e.name : "Error", detail: { message: (e instanceof Error ? e.message : String(e)).slice(0, 500) } }); } }
+  // the unwinding step's actions run under the same savepoint, attempt count and hold rules as any step (rule 10) — a held unwind is the ops_analyst's; released, the row is `unwinding` again
+  const outcome = await runActions(unwindDef);
+  if (outcome.hold) { hold(p, outcome.hold, rec); return; }
+  if (outcome.wait) setWait(p, outcome.wait); else if (!outcome.retry) { p.status = "unwinding"; p.waiting_on = "26.3"; }
 }
 
 function report(row: OrchRow, p: Pending, wrote: boolean): PassRowReport { return { application_id: row.application_id, orchestration_id: row.id, from: row.step, to: p.step, status: p.status, waiting_on: p.waiting_on, commands: p.commands, journal: p.journal.length, wrote }; }

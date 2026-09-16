@@ -16,11 +16,12 @@
  *                  metro2MonthlyRunner       8.1's own cycle runner (credit-reporting/ops.ts CreditCycleRunner) as `credit-reporting`:
  *                                            open → build from typed rows → transmit through the FAKE bureau port when validated;
  *                                            `credit.cycle.snapshot_completed` is 8.1's code's, in the unit's transaction (T16)
+ *                  cashieringDailyRunner     35.5's unit (cycles-35-5.ts): one loan's cashiering day — 2.1 posting, 2.7 daily_run,
+ *                                            2.3 amount-change check as in-process commands on the unit command's own store and
+ *                                            ledger (35.5 rule 6: one transaction per loan per day); `cashieringDailyReceipt` puts
+ *                                            35.5's fields on the day's receipt literal
  *   pass         a runtime pass that opens its own units of work, called un-nested by the executor, followed by one global
  *                bookkeeping unit of work (service.ts runClaimed):
- *                  cashieringDailyRunner     one loan's cashiering day (servicing.ts servicingLoanUnit: 2.1 posting, 2.7 daily_run,
- *                                            2.3 amount-change check through their owners' bus tools); the originated-only scope
- *                                            stays until 35.5 lifts it (`skipped_not_originated`)
  *                  form496MonthlyRunner      the interim Form 496 unit (T6): section I from the FAKE custodial bank's prior-day
  *                                            statement for the period end, the cashbook from the custodial account's ledger cash,
  *                                            then 6.3's own `form496.generate` command as `custodial-recon` — the money figures are
@@ -45,7 +46,8 @@ import { buildSnapshot } from "../credit-reporting/metro2.ts";
 import type { CreditLoanState } from "../credit-reporting/types.ts";
 import type { Bureau } from "../credit-reporting/disputes.ts";
 import type { AppliedInstallment } from "../boarding/delinquency.ts";
-import { loanCashState, servicingLoanUnit, statementUnitIn, form1098UnitIn, unitIoOf } from "../../runtime/servicing.ts";
+import { loanCashState, statementUnitIn, form1098UnitIn, unitIoOf } from "../../runtime/servicing.ts";
+import { cashieringDailyRunner, cashieringDailyReceipt } from "./cycles-35-5.ts";
 import { delinquencyUnitIn } from "../../runtime/delinquency.ts";
 import { refiDailyRun } from "../../runtime/refi-daily.ts";
 import { partnerBookReviewRun } from "../../runtime/partner-book-review.ts";
@@ -87,7 +89,9 @@ export const form1098Runner: NamedRunner = { name: "form1098Runner", runner: { m
 
 export const delinquencyCountersRunner: NamedRunner = { name: "delinquencyCountersRunner", runner: { mode: "in_command", run: async (toolRt, ctx, unit) => {
   const rt = runtimeOf(toolRt); const loanId = loanOf(unit);
-  return delinquencyUnitIn(rt, toolRt, ctx, loanId, unit.as_of_date);
+  // 35.5 rule 9: the loan's day is its configuration row's zone at the run's planned instant (the run's opened_at — rule 10's as_of), never the ET date
+  const opened = (await rt.db.query<{ at: Date | string | null }>(`SELECT opened_at AS at FROM cycle_runs WHERE id = $1`, [unit.run_id]))[0]?.at ?? null;
+  return delinquencyUnitIn(rt, toolRt, ctx, loanId, opened ? new Date(opened).toISOString() : ctx.now);
 } } };
 
 /** The FAKE bureau furnisher configuration (8.1's tests' shape): one program identifier and subscriber code per bureau, the file naming with the cycle and bureau tokens. */
@@ -147,10 +151,6 @@ export const metro2MonthlyRunner: NamedRunner = { name: "metro2MonthlyRunner", r
 } } };
 
 // ───────────────────────────── pass runners (un-nested)
-export const cashieringDailyRunner: NamedRunner = { name: "cashieringDailyRunner", runner: { mode: "pass", run: async (rt, unit) => {
-  const r = await servicingLoanUnit(rt, loanOf(unit), unit.as_of_date);
-  return { outcome: r.outcome, posted: r.posted, late_charge_run: r.late_charge_run, amount_change_checks: r.amount_change_checks };
-} } };
 
 /** The interim Form 496 unit (T6): section I from the FAKE bank's prior-day statement, the cashbook from the custodial ledger, 6.3's `form496.generate` as `custodial-recon`. */
 export const form496MonthlyRunner: NamedRunner = { name: "form496MonthlyRunner", runner: { mode: "pass", run: async (rt, unit) => {
@@ -189,7 +189,8 @@ export const partnerBookDailyReportRunner: NamedRunner = { name: "partnerBookDai
 /** The generic unit of a sibling process's cycle: its bus tool as the owner agent with the unit's ids and dates, when the pair is registered; else `runner_missing` (the cycle is visible on the board, never silent). */
 export const busToolRunner = (process: string, name: string, extra: Record<string, unknown> = {}): NamedRunner => ({ name: `busToolRunner(${process} ${name})`, runner: { mode: "pass", run: async (rt, unit) => {
   if (!rt.tool(process, name)) throw runnerMissing(`no bus tool (${process}, ${name}) is registered for cycle ${unit.cycle_code}`);
-  const r = await rt.execute({ process, name, loanId: unit.loan_id ?? "", ...(unit.application_id ? { applicationId: unit.application_id } : {}), actor: unit.actor, input: { ...extra, ...unit.input, as_of_date: unit.as_of_date, period_key: unit.period_key } });
+  // ids and dates only (rule 8): the unit's input, the day, the period, and the job / run the tool's own receipt names (35.5's file cycles)
+  const r = await rt.execute({ process, name, loanId: unit.loan_id ?? "", ...(unit.application_id ? { applicationId: unit.application_id } : {}), actor: unit.actor, input: { ...extra, ...unit.input, as_of_date: unit.as_of_date, period_key: unit.period_key, run_id: unit.run_id, job_id: unit.job_id } });
   return { outcome: `${process} ${name} executed`, output: r.output };
 } } });
 
@@ -206,5 +207,8 @@ const RUNNERS: Readonly<Record<string, NamedRunner>> = {
   warehouse_daily_accrual: busToolRunner("27.1", "accrueInterest"), warehouse_borrowing_base: busToolRunner("27.1", "computeBorrowingBase"),
 };
 
-/** The registry: every row of rule 2's table plus `month_end`, each with the runner that has landed (or null). */
-export const CYCLES: readonly CycleDef[] = CYCLE_ROWS.map((row) => ({ ...row, runner: RUNNERS[row.cycle_code] ?? row.runner }));
+/** The owner-supplied fields on a receipt literal (cycles.ts `receipt_payload`) — 35.5's daily receipt. */
+const RECEIPT_PAYLOADS: Readonly<Record<string, NonNullable<CycleDef["receipt_payload"]>>> = { cashiering_daily: cashieringDailyReceipt };
+
+/** The registry: every row of rule 2's table plus `month_end`, each with the runner that has landed (or null) and its owner's receipt fields. */
+export const CYCLES: readonly CycleDef[] = CYCLE_ROWS.map((row) => ({ ...row, runner: RUNNERS[row.cycle_code] ?? row.runner, ...(RECEIPT_PAYLOADS[row.cycle_code] ? { receipt_payload: RECEIPT_PAYLOADS[row.cycle_code] } : {}) }));

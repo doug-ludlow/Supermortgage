@@ -14,7 +14,8 @@ export type PartnerParty = { id: string; legal_name: string };
 type Db = Queryable;
 
 export const SUPERMORTGAGE_PARTY_NAME = "Supermortgage";
-export const isSupermortgage = (legalName: string | null | undefined): boolean => (legalName ?? "").trim().toLowerCase() === SUPERMORTGAGE_PARTY_NAME.toLowerCase();
+/** The platform's own parties: the servicing batch's "Supermortgage" rows (src/runtime/transfers.ts) and the servicing party of 35.5's servicer profile, "Supermortgage LLC" (db/migrations/0143) — never the lender. */
+export const isSupermortgage = (legalName: string | null | undefined): boolean => { const n = (legalName ?? "").trim().toLowerCase(); return n === SUPERMORTGAGE_PARTY_NAME.toLowerCase() || n.startsWith(SUPERMORTGAGE_PARTY_NAME.toLowerCase() + " "); };
 const isUuid = (s: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
 /** A named party as the partner: any non-borrower party by id, never Supermortgage itself. */
@@ -30,5 +31,5 @@ export async function entryPartner(db: Db, configuredId: string | null | undefin
   const configured = await partnerById(db, configuredId);
   if (configured) return configured;
   if ((configuredId ?? "").trim()) return null;   // configured but missing: refuse rather than guess (DELTA-15)
-  return (await db.query<PartnerParty>(`SELECT id, legal_name FROM parties WHERE party_type = 'servicer' AND lower(legal_name) <> lower($1) ORDER BY created_at DESC LIMIT 1`, [SUPERMORTGAGE_PARTY_NAME]))[0] ?? null;
+  return (await db.query<PartnerParty>(`SELECT id, legal_name FROM parties WHERE party_type = 'servicer' AND lower(legal_name) <> lower($1) AND lower(legal_name) NOT LIKE lower($1) || ' %' ORDER BY created_at DESC LIMIT 1`, [SUPERMORTGAGE_PARTY_NAME]))[0] ?? null;
 }

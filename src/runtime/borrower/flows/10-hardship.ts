@@ -35,7 +35,9 @@ import { plainDate as D, addDays, type PlainDate } from "../../../kernel/calenda
 import { wallClock } from "../../../kernel/calendar/zoned.ts";
 import { EntityStore } from "../../../app/tools.ts";
 import type { Recipient } from "../../../notices/channel.ts";
-import { delinquencyDailySweep, LOAN_LOCAL_TZ } from "../../delinquency.ts";
+import { delinquencyDailySweep } from "../../delinquency.ts";
+import { CommandRefused } from "../../../app/commands.ts";
+import { loanLocalDate, servicingConfigFor } from "../../../domain/operations-runtime/servicing-config.ts";
 import { registerFlowTimers, timerLabel } from "../record.ts";
 import { FLOW_10_TIMER_ROWS, TPP_OFFER_TEMPLATE } from "./10-hardship-record.ts";
 import type { BorrowerFlow, FlowDeps, FlowReply, InboundMessage } from "./index.ts";
@@ -86,7 +88,11 @@ async function context(deps: FlowDeps, loanId: string): Promise<Ctx> {
   const store = new EntityStore(); store.seed(records);
   return { loanId, events, store, parties, facts, now: deps.runtime.clock.now() };
 }
-const civilToday = (nowIso: string): PlainDate => wallClock(Date.parse(nowIso), LOAN_LOCAL_TZ).date;
+/** The loan's civil date — 35.5 rule 9: `wallClock(instant, config.time_zone).date` from its `loan_servicing_configs` row in force on the planner's ET day; a loan with no row is refused CONFIG_REQUIRED (servicingConfigFor), never read under a default zone. */
+async function civilToday(deps: FlowDeps, loanId: string, nowIso: string): Promise<PlainDate> {
+  const cfg = await servicingConfigFor(deps.runtime.db, loanId, wallClock(Date.parse(nowIso), "America/New_York").date);
+  return loanLocalDate(cfg, nowIso);
+}
 const endOfDay = (d: string): string => new Date(`${d}T23:59:59-07:00`).toISOString();   // the loan-local day's end (America/Phoenix, no DST)
 const emailOf = (p: Party): string | undefined => { const c = p.contact ?? {}; const e = typeof c["email"] === "string" ? c["email"] : Array.isArray(c["emails"]) ? (c["emails"] as unknown[])[0] : undefined; return typeof e === "string" && e ? e : undefined; };
 /** A Notice Registry recipient for a loan party: the borrower at the property, a portal user (the channel decision is the registry's). */
@@ -239,7 +245,7 @@ async function offerCards(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<voi
     const amount = String(terms["trial_payment_cents"] ?? n?.payload["trial_payment_cents"] ?? "0"); const dueDates = (Array.isArray(terms["due_dates"]) ? terms["due_dates"] : Array.isArray(n?.payload["due_dates"]) ? n!.payload["due_dates"] : []) as unknown[];
     const firstDue = String(terms["first_due"] ?? n?.payload["first_due"] ?? dueDates[0] ?? acceptBy); const count = Number(terms["trial_count"] ?? n?.payload["trial_count"] ?? dueDates.length ?? 3);
     await sendToAll(deps, ctx, NoticeCard("hardship.tpp.notice", `tpp.notice:${noticeId}`, code, { ...base, copy_tokens: { money: money(amount), date: firstDue }, trial_payment_cents: amount, first_due: firstDue, trial_count: count }));
-    const today = civilToday(ctx.now); const dates: string[] = []; for (let d = today; d <= D(firstDue) && dates.length < 31; d = addDays(d, 1)) dates.push(d); if (!dates.length) dates.push(firstDue);
+    const today = await civilToday(deps, ctx.loanId, ctx.now); const dates: string[] = []; for (let d = today; d <= D(firstDue) && dates.length < 31; d = addDays(d, 1)) dates.push(d); if (!dates.length) dates.push(firstDue);
     await sendToAll(deps, ctx, { kind: "PaymentCard", copy_key: "hardship.tpp.pay", flow_key: `tpp.pay:${noticeId}:1`, command_ref: "payment.makeOneTime", expires_at: endOfDay(firstDue),
       props: { mode: "one_time", amount_default_cents: amount, amount_editable: false, date_options: dates, accounts: [{ id: "acct-0001", last4: "0001", label: "Checking ····0001" }], add_account: false, copy_tokens: { n: "1", count: String(count) }, trial_number: 1, trial_count: count, due_on: firstDue, evaluation_id: ev?.["id"] ?? null, command_args: { designation: "trial", account: { last4: "0001" }, trial_number: 1, evaluation_id: ev?.["id"] ?? null } } });
     return;
@@ -364,7 +370,7 @@ async function partyOf(deps: FlowDeps, partyId: string): Promise<Party | undefin
 async function onMessage(deps: FlowDeps, m: InboundMessage): Promise<FlowReply | null> {
   const c = classifyHardship(m.text); const loanId = m.subject?.loan_id ?? null;
   if (!c.kind || !loanId) return null;
-  const ctx = await context(deps, loanId); const today = civilToday(m.at);
+  const ctx = await context(deps, loanId); const today = await civilToday(deps, loanId, m.at);
   const party = ctx.parties.find((x) => x.party_id === m.party_id) ?? (await partyOf(deps, m.party_id)); if (!party) return null;
   const loanRow = ctx.store.get("loans", loanId)?.data ?? {};
   switch (c.kind) {
@@ -415,7 +421,6 @@ async function onMessage(deps: FlowDeps, m: InboundMessage): Promise<FlowReply |
 async function tick(deps: FlowDeps, nowIso: string): Promise<void> {
   // 11.1 / 13.1: the counter job over every delinquent loan (src/runtime/delinquency.ts)
   await delinquencyDailySweep(deps.runtime, nowIso);
-  const today = civilToday(nowIso);
   // 12.2: silence past accept_by — the borrower's cards expire and the Record says what the offer said (the copy of the day it was sent); the owning process deems the rejection after its own policy grace (`deemed_rejection`)
   const pending = await deps.runtime.db.query<{ card_instance_id: string; subject_loan_id: string; props: P }>(`SELECT card_instance_id, subject_loan_id, props FROM card_instances WHERE status = 'pending' AND props->>'flow' = $1 AND props->>'flow_key' LIKE 'offer.compare:%' AND expires_at IS NOT NULL AND expires_at < $2`, [FLOW_ID, nowIso]);
   const byLoan = new Map<string, { card_instance_id: string; props: P }[]>();
@@ -432,6 +437,9 @@ async function tick(deps: FlowDeps, nowIso: string): Promise<void> {
       AND NOT EXISTS (SELECT 1 FROM loan_events r WHERE r.loan_id = s.loan_id AND r.type IN ('lossmit.offer.responded', 'lossmit.offer.deemed_rejected') AND r.sequence > s.sequence AND (r.payload->>'evaluation_id' = s.payload->>'evaluation_id' OR r.payload->>'evaluation_id' IS NULL OR s.payload->>'evaluation_id' IS NULL))`);
   for (const o of open) {
     const ctx = await context(deps, o.loan_id); const ev = latestEvaluation(ctx, o.payload["evaluation_id"]); const acceptBy = typeof ev?.["accept_by"] === "string" ? String(ev["accept_by"]) : "";
+    // 35.5 rule 9: the day is the loan's own; a loan without a configuration row has no civil date — its offer is left open and the refusal logged, never counted under a default zone
+    let today: PlainDate;
+    try { today = await civilToday(deps, o.loan_id, nowIso); } catch (err) { if (!(err instanceof CommandRefused)) throw err; deps.logger?.warn("borrower.flow.32-10.deemed_rejection.skipped", { loan_id: o.loan_id, code: err.code, error: err.message }); continue; }
     if (!acceptBy || today <= D(acceptBy)) continue;
     try { await exec(deps, o.loan_id, "12.2", "lossmit.evaluation.*", LOSSMIT, { op: "deemed_rejection", loan_id: o.loan_id, evaluation_id: ev?.["id"] ?? null, option: o.payload["option"] ?? ev?.["option"] ?? null, accept_by: acceptBy, window_days: ev?.["window_days"] ?? 14 }); }
     catch (err) { deps.logger?.error("borrower.flow.32-10.deemed_rejection", { loan_id: o.loan_id, error: err instanceof Error ? err.message : String(err) }); }

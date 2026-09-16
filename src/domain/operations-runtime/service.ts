@@ -398,10 +398,15 @@ export class CyclesService {
     const everDead = Number((await q.query<{ n: string }>(`SELECT count(DISTINCT e.job_id)::text AS n FROM job_events e JOIN jobs j ON j.id = e.job_id WHERE j.run_id = $1 AND e.kind = 'dead'`, [runId]))[0]!.n);
     return { sha, ever_dead: everDead };
   }
-  /** The receipt's events on the run's aggregate: the cycle's literal — unless its owner emits it (rule 2: 35.1's, 35.2's and 35.12's cycles keep their own; the election emits `cycle.run.completed` only) — then `cycle.run.completed{…, receipt_id}`; the hydrated stall clock is satisfied by the engine. */
-  private appendReceiptEvents(ctx: { readonly events: EventStore; readonly clock: Clock }, plan: ReceiptPlan, outcomes: { sha: string; ever_dead: number }, receiptId: string, emittedBy: string): { receipt: DomainEvent | null; generic: DomainEvent } {
+  /** The owner's fields on its receipt literal (cycles.ts `receipt_payload` — 35.5's `loans`, `posted`, …), read from the run's rows; none for a cycle without the hook. */
+  private async receiptExtra(q: Queryable, plan: ReceiptPlan): Promise<Record<string, unknown>> {
+    return plan.def?.receipt_payload ? plan.def.receipt_payload(q, { run_id: plan.run_id, period_key: plan.period_key, as_of_date: plan.as_of_date, units_total: plan.counters.units_total }) : {};
+  }
+  /** The receipt's events on the run's aggregate: the cycle's literal as the owning agent (rule 8: the events of a cycle name its owner — `cashiering`, `disclosures`, … — never `ops-steward`; the owner's fields beside rule 5's) — unless its owner emits it (rule 2: 35.1's, 35.2's, 35.12's and 35.5's file cycles keep their own; the election emits `cycle.run.completed` only) — then `cycle.run.completed{…, receipt_id}` as the engine; the hydrated stall clock is satisfied by the engine. */
+  private appendReceiptEvents(ctx: { readonly events: EventStore; readonly clock: Clock }, plan: ReceiptPlan, outcomes: { sha: string; ever_dead: number }, receiptId: string, emittedBy: string, extra: Record<string, unknown> = {}): { receipt: DomainEvent | null; generic: DomainEvent } {
     const payload = { run_id: plan.run_id, cycle_code: plan.cycle_code, period_key: plan.period_key, as_of_date: plan.as_of_date, units_total: plan.counters.units_total, units_done: plan.counters.units_done, units_dead: outcomes.ever_dead, units_skipped: plan.counters.units_skipped, outcomes_sha256: outcomes.sha, completed_at: ctx.clock.now(), emitted_by: emittedBy, origination: true };
-    const receipt = plan.def?.receipt_emitted_by === "owner" ? null : ctx.events.append({ type: plan.def?.receipt_event ?? `${plan.cycle_code}.run_completed`, aggregate: { kind: "cycle_run", id: plan.run_id }, actor: OPS_STEWARD, payload });
+    const owner: Actor = plan.def ? { kind: "agent", id: plan.def.owner_agent } : OPS_STEWARD;
+    const receipt = plan.def?.receipt_emitted_by === "owner" ? null : ctx.events.append({ type: plan.def?.receipt_event ?? `${plan.cycle_code}.run_completed`, aggregate: { kind: "cycle_run", id: plan.run_id }, actor: owner, payload: { ...extra, ...payload } });
     const generic = ctx.events.append({ type: EVT.RUN_COMPLETED, aggregate: { kind: "cycle_run", id: plan.run_id }, actor: OPS_STEWARD, ...(receipt ? { causationId: receipt.id } : {}), payload: { ...payload, receipt_id: receiptId, receipt_event: plan.def?.receipt_event ?? null, receipt_emitted_by: plan.def?.receipt_emitted_by ?? "election" } });
     return { receipt, generic };
   }
@@ -425,7 +430,7 @@ export class CyclesService {
       await rt.uow.run({}, async (ctx) => {
         const p = await this.receiptPlan(rt.db, runId);
         if (!p.ok) { st.reason = p.reason; return; }
-        const ev = this.appendReceiptEvents(ctx, p.plan, await this.receiptOutcomes(rt.db, runId), receiptId, emittedBy);
+        const ev = this.appendReceiptEvents(ctx, p.plan, await this.receiptOutcomes(rt.db, runId), receiptId, emittedBy, await this.receiptExtra(rt.db, p.plan));
         st.plan = p.plan; st.ids = { receipt: ev.receipt?.id ?? null, generic: ev.generic.id }; st.reason = "elected";
       }, { clock: rt.clock, commit: async (q) => { if (st.plan && st.ids) await this.receiptRows(q, st.plan, st.ids, receiptId, emittedBy, wall); } });
     } catch (e) {
@@ -442,7 +447,7 @@ export class CyclesService {
     if (!p.ok) return { elected: false, run_id: runId, receipt_id: null, reason: p.reason };
     const known = new Set(ctx.timers.forSubject("cycle_run", runId).map((t) => t.id));
     ctx.timers.restore((await rt.uow.timers.forSubject("cycle_run", runId)).filter((t) => (t.status === "armed" || t.status === "breached") && !known.has(t.id)));
-    const ev = this.appendReceiptEvents(ctx, p.plan, await this.receiptOutcomes(rt.db, runId), receiptId, emittedBy);
+    const ev = this.appendReceiptEvents(ctx, p.plan, await this.receiptOutcomes(rt.db, runId), receiptId, emittedBy, await this.receiptExtra(rt.db, p.plan));
     const plan = p.plan; const ids = { receipt: ev.receipt?.id ?? null, generic: ev.generic.id };
     this.deferWrite(toolRt, (q) => this.receiptRows(q, plan, ids, receiptId, emittedBy, wall));
     return { elected: true, run_id: runId, receipt_id: receiptId, reason: "elected" };
@@ -733,7 +738,7 @@ export async function runUnitByHand(rt: Runtime, i: { readonly job_id: string; r
   return { claimed, result, job };
 }
 
-export interface ExecutorOptions { readonly holder?: string; readonly budgetMs?: number; readonly claimLimit?: number; readonly drain?: "all" | "budget"; readonly electReceipt?: boolean; }
+export interface ExecutorOptions { readonly holder?: string; readonly budgetMs?: number; readonly claimLimit?: number; readonly drain?: "all" | "budget"; readonly electReceipt?: boolean; /** claim only these cycles' units (a pass that drains one cycle — 35.5's cashieringDailyRun); absent, the whole queue */ readonly cycleCodes?: readonly string[]; }
 /** Rule 6: claim by wall clock until the queue is empty or the budget is spent; every claimed unit finishes (a claimed unit is never released early). */
 export async function runExecutor(rt: Runtime, opts: ExecutorOptions = {}): Promise<ExecutorReport> {
   const holder = opts.holder ?? `sweep:${randomUUID()}`; const started = Date.now();
@@ -756,7 +761,7 @@ export async function runExecutor(rt: Runtime, opts: ExecutorOptions = {}): Prom
   for (;;) {
     if (Date.now() - started >= budget) { budgetSpent = true; break; }
     const wall = wallClockOf(rt).now();
-    const batch = await claimJobs(rt.db, holder, limit, wall);
+    const batch = await claimJobs(rt.db, holder, limit, wall, opts.cycleCodes);
     if (!batch.length) break;
     claimed += batch.length;
     await rt.uow.run({}, (ctx) => { for (const j of batch) ctx.events.append({ type: EVT.CLAIMED, aggregate: { kind: "job", id: j.id }, actor: OPS_STEWARD, payload: { job_id: j.id, run_id: j.run_id, cycle_code: j.cycle_code, period_key: j.period_key, unit_id: j.unit_id, holder, lease_until: j.lease_until, attempt: j.attempts } }); },

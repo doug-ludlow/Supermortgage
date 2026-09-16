@@ -45,12 +45,12 @@ export function wallClockOf(rt: Pick<Runtime, "clock">): Clock {
 }
 export const plusMs = (iso: string, ms: number): string => new Date(Date.parse(iso) + ms).toISOString();
 
-/** Rule 6's claim, verbatim but for `$wall` in place of `now()`: `FOR UPDATE SKIP LOCKED LIMIT n` — three claimants take disjoint rows (T3). */
-export async function claimJobs(q: Queryable, holder: string, n: number, wall: string): Promise<JobRow[]> {
+/** Rule 6's claim, verbatim but for `$wall` in place of `now()`: `FOR UPDATE SKIP LOCKED LIMIT n` — three claimants take disjoint rows (T3). `cycleCodes` narrows the queue to those cycles (a pass that drains one cycle — 35.5's cashieringDailyRun); absent, the whole queue. */
+export async function claimJobs(q: Queryable, holder: string, n: number, wall: string, cycleCodes?: readonly string[]): Promise<JobRow[]> {
   return q.query<JobRow>(
     `UPDATE jobs SET status = 'running', lease_holder = $1, lease_until = $2::timestamptz + interval '5 minutes', heartbeat_at = $2::timestamptz, attempts = attempts + 1
-       WHERE id IN (SELECT id FROM jobs WHERE status = 'queued' AND (run_after IS NULL OR run_after <= $2::timestamptz) ORDER BY priority, created_at FOR UPDATE SKIP LOCKED LIMIT $3)
-       RETURNING ${JOB_COLS}`, [holder, wall, n]);
+       WHERE id IN (SELECT id FROM jobs WHERE status = 'queued' AND (run_after IS NULL OR run_after <= $2::timestamptz) AND ($4::text[] IS NULL OR cycle_code = ANY($4::text[])) ORDER BY priority, created_at FOR UPDATE SKIP LOCKED LIMIT $3)
+       RETURNING ${JOB_COLS}`, [holder, wall, n, cycleCodes ? [...cycleCodes] : null]);
 }
 /** The executor's heartbeat: `heartbeat_at` and `lease_until` move by wall clock while the holder still owns the lease (a reclaimed job is not touched). */
 export async function heartbeat(q: Queryable, jobId: string, holder: string, wall: string): Promise<boolean> {

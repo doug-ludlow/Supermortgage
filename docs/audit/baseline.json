@@ -1,32 +1,32 @@
 {
  "totals": {
   "tids": {
-   "spec": 2458,
-   "built": 2259
+   "spec": 2489,
+   "built": 2292
   },
   "tables": {
-   "spec": 848,
-   "built": 774
+   "spec": 852,
+   "built": 784
   },
   "timers": {
    "spec": 2097,
-   "built": 2045
+   "built": 2059
   },
   "notices": {
-   "spec": 308,
+   "spec": 309,
    "built": 308
   },
   "tools": {
-   "spec": 1578,
-   "built": 1441
+   "spec": 1579,
+   "built": 1461
   },
   "figures": {
-   "spec": 1467,
-   "built": 1277
+   "spec": 1470,
+   "built": 1282
   },
   "units": {
-   "spec": 8756,
-   "built": 8104
+   "spec": 8796,
+   "built": 8186
   }
  },
  "done": [
@@ -222,6 +222,8 @@
   "34.2",
   "34.3",
   "34.4",
-  "35.1"
+  "35.1",
+  "35.3",
+  "35.7"
  ]
 }

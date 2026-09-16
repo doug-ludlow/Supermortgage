@@ -79,6 +79,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   const desktop = useMedia("(min-width: 768px)");
   const streamRef = useRef<ReturnType<typeof openStream> | null>(null);
   const signedOutLanded = useRef(false);
+  const signedInLanded = useRef(false);
 
   const timezone = record?.timezone ?? "America/Phoenix";
   const partner = me?.partner.legal_name || PARTNER_LEGAL_NAME;
@@ -278,6 +279,13 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       setTab("account");
     }
   }, [mobileTabs, needsSignIn]);
+  // 32.16 §2.0: a session lands in its thread — on the phone that is the Chat tab (no session keeps landing on Account, P0b)
+  useEffect(() => {
+    if (mobileTabs && me && !signedInLanded.current) {
+      signedInLanded.current = true;
+      setTab("chat");
+    }
+  }, [mobileTabs, me]);
 
   const thread = showSignIn && desktop ? (
     <>
@@ -335,7 +343,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
         subject={subject}
         onSubjectChange={setSubject}
         streamLabel={!fixturesMode && stream !== "open" && stream !== "closed" ? (stream === "reconnecting" ? "reconnecting…" : "connecting…") : undefined}
-        onOpenRecord={() => setRecordOpen(true)}
+        onOpenRecord={showSignIn ? undefined : () => setRecordOpen(true)}
         showSignIn={!me || fixturesMode}
         onSignIn={() => { if (mobileTabs) setTab("account"); else setSignInOpen(true); }}
         onSignOut={() => { void api.signOut().catch(() => undefined).then(() => window.location.assign("/app")); }}
@@ -343,7 +351,13 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       {mobileTabs || showSignIn ? <div className="sm-strip-slot" /> : <StatusStrip record={record} onOpen={() => (desktop ? setRecordOpen(true) : setTab("tasks"))} />}
       <div className="sm-body">
         {mobileTabs ? (
-          mobileBody
+          <>
+            {mobileBody}
+            {/* the record sheet is the rail (32.16 §2.2): the same Record, hidden until "Your record", a Tasks row, a reference chip or ?card= opens it */}
+            {showSignIn ? null : (
+              <Record record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)} />
+            )}
+          </>
         ) : (
           <>
             <main className="sm-thread" aria-label="Conversation">

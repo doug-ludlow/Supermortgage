@@ -247,15 +247,7 @@ export async function closeoutBreachActions(rt: Runtime, nowIso: string): Promis
 }
 
 /** The escalation payload the sweep's breach pass adds for a closeout clock: the arming event's ids (T13: `application_id`, `prior_loan_id`, `step`, `waiting_on`). */
-export const BREACH_PAYLOAD_KEYS = ["application_id", "prior_loan_id", "closeout_id", "step", "waiting_on", "servicer_loan_number", "tape_status"] as const;
-export function breachPayloadOf(armingPayload: Row | null): Row {
-  if (!armingPayload) return {};
-  const out: Row = {};
-  for (const k of BREACH_PAYLOAD_KEYS) if (armingPayload[k] !== undefined && armingPayload[k] !== null) out[k] = armingPayload[k];
-  // a clocked wait entered on a transition (the port the step waits on) names it: `awaiting_schedule → quote`
-  if (typeof armingPayload["transition"] === "string") out["step"] = armingPayload["transition"];
-  return out;
-}
+export { BREACH_PAYLOAD_KEYS, breachPayloadOf } from "../domain/operations-runtime/closeout-35-10/breach.ts";
 export const civilDate = (iso: string): PlainDate => D(iso.slice(0, 10));
 export type { DomainEvent };
 export { fundingIdFor };

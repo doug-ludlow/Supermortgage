@@ -56,6 +56,15 @@ export class PgTimerRepository {
   async dueForUpdate(nowIso: string, q: Queryable = this.db): Promise<TimerInstance[]> {
     return (await q.query<TimerRow>(`SELECT * FROM timers WHERE status = 'armed' AND due_at <= $1 ORDER BY due_at FOR UPDATE SKIP LOCKED`, [nowIso])).map(rowToInstance);
   }
+  /**
+   * One page of the due timers, locked for this transaction (35.3 rule 9: `… ORDER BY due_at LIMIT 500 FOR UPDATE SKIP LOCKED`
+   * — 35.1's clause plus the LIMIT). `q` must be a transaction: the locks are its, so a second pass started concurrently
+   * skips the rows this one holds and the two take disjoint pages (src/domain/operations-runtime/breach.ts pagedBreachPass).
+   * A page shorter than `limit` is the last one.
+   */
+  async duePage(nowIso: string, limit: number, q: Queryable): Promise<TimerInstance[]> {
+    return (await q.query<TimerRow>(`SELECT * FROM timers WHERE status = 'armed' AND due_at <= $1 ORDER BY due_at LIMIT $2 FOR UPDATE SKIP LOCKED`, [nowIso, limit])).map(rowToInstance);
+  }
   async forApplication(applicationId: string): Promise<TimerInstance[]> {
     return (await this.db.query<TimerRow>(`SELECT * FROM timers WHERE application_id = $1 ORDER BY armed_at`, [applicationId])).map(rowToInstance);
   }

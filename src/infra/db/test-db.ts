@@ -6,7 +6,7 @@
  *   const { url: DB_URL, skip } = await testDatabase(import.meta.url);
  *
  * - The per-file database is named from the file's path under src/ (stable across machines and worktrees, ≤ 63
- *   chars, lowercase): `<base>_t_<8 hex of the path>_<dir>_<file>`, e.g. `supermortgage_t_1f2e3d4c_underwriting_23_6_spec`.
+ *   chars, lowercase): `<base>_t_<8 hex of the checkout root + the path under src/>_<dir>_<file>`, e.g. `supermortgage_t_1f2e3d4c_underwriting_23_6_spec`.
  *   `<base>` is the database named by TEST_DATABASE_URL (default postgresql://sm:sm@localhost/supermortgage_test)
  *   with a trailing `_test` dropped, so two checkouts sharing one server keep apart by pointing TEST_DATABASE_URL at
  *   different names; the URL's host and credentials are what every connection uses.
@@ -19,6 +19,9 @@
  *   migration sets differ share the catalogue, and a build here that retired "the others" would pull the template out
  *   from under the other checkout mid-run (CREATE DATABASE … TEMPLATE then fails with 3D000, which nobody retries).
  *   Stale templates are retired only by `pruneTemplates`, run on request: `tools/test-db-template.mts --prune`.
+ * - The clone is the file's for the length of its process and is dropped on `beforeExit` — after the last test, the
+ *   file's own `after` hooks and its pool's `end()` — so a suite run leaves no `_t_` database on the server (a full run
+ *   used to leave ~90 clones, 45 MB each, and filled the disk); `close()` drops it earlier, KEEP_TEST_DB=1 keeps it.
  * - The skip semantics are the ones every suite had: the server unreachable → `skip` carries "no Postgres at …" for
  *   the `{ skip }` option, unless REQUIRE_DB is set, in which case the call throws and the file fails.
  */
@@ -71,7 +74,8 @@ export function testDatabaseName(fileUrl: string, opts: { suffix?: string; base?
   const path = fileUrl.startsWith("file:") ? fileURLToPath(fileUrl) : fileUrl;
   const i = path.lastIndexOf("/src/");
   const rel = i >= 0 ? path.slice(i + 1) : path;
-  const hash = createHash("sha256").update(rel).digest("hex").slice(0, 8);
+  // the hash covers the checkout root too (the prefix before /src/), so the same file in two worktrees on one server never shares a clone
+  const hash = createHash("sha256").update(`${i >= 0 ? path.slice(0, i) : ""}|${rel}`).digest("hex").slice(0, 8);
   const parts = rel.split("/");
   const file = (parts[parts.length - 1] ?? "").replace(/\.test\.(ts|js|mts|mjs)$/, "");
   const dir = parts.length >= 2 ? parts[parts.length - 2]! : "";
@@ -194,6 +198,11 @@ export async function testDatabase(fileUrl: string, opts: TestDatabaseOptions = 
   const up = await reachable(adminUrl);
   if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${adminUrl} is not reachable`);
   const skip = up ? false : `no Postgres at ${adminUrl}`;
-  if (!skip && opts.provision !== false) await provisionDatabase(url, opts.template === false ? { template: false } : {});
+  if (!skip && opts.provision !== false) {
+    await provisionDatabase(url, opts.template === false ? { template: false } : {});
+    // the clone is dropped when the file's process has nothing left to run (after every test and `after` hook, once
+    // the pools are closed) — the run leaves no database behind; KEEP_TEST_DB=1 keeps it for a look afterwards
+    if (!process.env["KEEP_TEST_DB"]) process.once("beforeExit", () => { void dropDatabase(url).catch(() => undefined); });
+  }
   return { url, name, adminUrl, skip, close: async () => { if (!skip) await dropDatabase(url).catch(() => undefined); } };
 }

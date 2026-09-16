@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { FooterDisclosure } from "@/components/shell/FooterDisclosure";
 import { api, ApiRequestError } from "@/lib/api/client";
 import { copy, copyExtra, copyOptions } from "@/lib/copy";
-import type { AnyCardInstance } from "@/lib/types/cards";
+import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
 import type { BorrowerMe, BorrowerRecord, ThreadMessage } from "@/lib/types/record";
 import { EMPTY, doneFrom, stepOfCopyKey, type Door, type Draft, type Step, type Tab } from "./apply-model";
 import { DoorScreens, TabScreens } from "./door";
@@ -110,9 +110,15 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
   const onContinue = () => run(async () => {
     const fresh = signedIn ? await loadCards() : cards;
     const r = await flush(step, { draft, cards: fresh, applicationId });
+    if (r.patch) patch(r.patch);   // the SSN leaves the draft once its card is written (never echoed, never kept)
     setStep(r.next);
     if (r.outcomes.length) await refresh();
   });
+
+  /** A card hosted inside a step (a caution row's lift card): the same resolve call as the steps' taps, then the page's view of the file re-read. */
+  const onResolveCard = async (cardInstanceId: string, req: ResolveRequest): Promise<void> => {
+    await run(async () => { await api.resolveCard(cardInstanceId, req); await refresh(); });
+  };
 
   const onSignOut = () => run(async () => {
     await api.signOut();
@@ -140,7 +146,7 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
     if (!me) return <DoorScreens door={door} accountMode={accountMode} setDoor={setDoor} setAccountMode={setAccountMode} onSession={() => void run(landed)} />;
     if (tab !== "apply") return <TabScreens tab={tab} me={me} record={record} cards={cards} messages={messages} draft={draft} done={done} focusedCard={focusedCard} setTab={setTab} setStep={setStep} onSignOut={onSignOut} />;
     if (!applicationId) return null;   // a loan-only party (33.x): no step and no goal card on Apply (owner decision 6)
-    return <StepScreen step={step} draft={draft} cards={cards} record={record} busy={busy} patch={patch} onContinue={onContinue} setStep={setStep} />;
+    return <StepScreen step={step} draft={draft} cards={cards} record={record} busy={busy} patch={patch} onContinue={onContinue} setStep={setStep} onResolveCard={onResolveCard} />;
   };
 
   return (

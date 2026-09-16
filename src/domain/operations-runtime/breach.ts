@@ -28,6 +28,8 @@
  * with no run at all (a demo advance that sweeps once a day at noon is not an outage). A page leaves that instance armed
  * (`deferred`) and it is not counted as due.
  */
+import { breachPayloadOf } from "./closeout-35-10/breach.ts";
+type Row = Record<string, unknown>;
 import type { DomainEvent } from "../../kernel/events/index.ts";
 import { MemoryEventStore } from "../../kernel/events/index.ts";
 import { TimerEngine, type TimerInstance } from "../../kernel/timers/engine.ts";
@@ -99,7 +101,9 @@ async function breachPage(rt: Runtime, nowIso: string, pageSize: number, asOfDat
       const enriched = enrich ? await enrich(q, { id: b.instance.id, code: b.instance.code, subject: b.instance.subject }, nowIso).catch((e: unknown) => { rt.logger?.error("breach enricher failed", { code: b.instance.code, timer_id: b.instance.id, error: e }); return null; }) : null;
       const sev = enriched?.severity ?? b.severity ?? 4;
       const owner = enriched?.ownerRole ?? (cycles ? await breachRoleFor_35_3(q, b.instance, fallback) : fallback);
-      const extra = cycles ? await enrichBreach_35_3(q, b.instance) : (enriched?.payload ?? {});
+      // 35.10 T13: a closeout clock's escalation names its closeout (the arming step event's application_id, prior_loan_id, step, waiting_on)
+      const refi = !cycles && b.instance.code.startsWith("SM_REFI_") ? breachPayloadOf((await q.query<{ payload: Row }>(`SELECT payload FROM loan_events WHERE id = $1`, [b.instance.armedByEventId]))[0]?.payload ?? null) : null;
+      const extra = cycles ? await enrichBreach_35_3(q, b.instance) : (refi ?? enriched?.payload ?? {});
       escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), severity: String(sev), slaTimerId: b.instance.id,
         payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText, ...extra } }, { kind: "system", id: "sweep" });
       breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });

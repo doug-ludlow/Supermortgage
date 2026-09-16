@@ -111,6 +111,8 @@ export interface LoanFundedPayload {
   readonly interest_credit: boolean; readonly rescission_expires_at: string | null;
   /** The id of 26.3's event when it is already on the store; absent → `ingestFunded` appends the fallback event. */
   readonly event_id?: string | null;
+  /** 35.10 rule 6 / 30.3 rule 8: the prior loan's escrow balance the borrower elected to credit to this loan (§1024.34(b)(2)(iii)); the opening escrow set collects the CD deposit less this from cash to close — the credit itself posts through 30.3 `postCreditTransfer` in the refinance closeout's settlement. Read from the prior loan's ledger by 35.10, never from a caller's figure. */
+  readonly escrow_credit_from_prior_loan_cents?: Cents | null;
 }
 export interface OrigExternal {
   licensed(state: string): boolean;
@@ -618,10 +620,14 @@ export class OriginationBoardingService {
     const r = this.record(applicationId);
     if (r.opening_entry_set_id) throw new RangeError(`opening entries already posted for ${r.loan_id} (${r.opening_entry_set_id}); corrections are reversing entries`);
     const s = r.snapshot;
-    const lines = openingLedgerLines(r.loan_id, this.d.prepurchaseTiAccountId, { principal_cents: r.mapped.loans.original_loan_amount_cents, escrow_deposit_cents: s.escrow_analysis ? s.final_cd.initial_escrow_deposit_cents : 0n, prepaid_interest_cents: r.funded.interest_credit ? 0n : r.prepaid.prepaid_interest_cents });
-    const set = this.d.ledger.post({ effectiveDate: r.funded.disbursement_date, description: `opening balances ${r.servicing_loan_number} (origination)`, lines }, this.now());
+    const credit = r.funded.escrow_credit_from_prior_loan_cents ?? 0n;
+    const deposit = s.escrow_analysis ? s.final_cd.initial_escrow_deposit_cents : 0n;
+    if (credit < 0n || credit > deposit) throw new RangeError(`escrow_credit_from_prior_loan_cents ${credit} must lie within the CD initial deposit ${deposit} (30.3 rule 8: any excess is refunded under §1024.34(b)(1))`);
+    // 35.10 rule 6: with a same-servicer credit the cash collected at closing is the CD deposit less the credit (30.3's `borrower_closing_escrow_funds_cents`); 30.3's credit set posts the rest to `escrow` in the closeout's settlement
+    const lines = openingLedgerLines(r.loan_id, this.d.prepurchaseTiAccountId, { principal_cents: r.mapped.loans.original_loan_amount_cents, escrow_deposit_cents: deposit - credit, prepaid_interest_cents: r.funded.interest_credit ? 0n : r.prepaid.prepaid_interest_cents });
+    const set = this.d.ledger.post({ effectiveDate: r.funded.disbursement_date, description: `opening balances ${r.servicing_loan_number} (origination)${credit > 0n ? ` — escrow deposit ${deposit} less the prior loan's credit ${credit} (§1024.34(b)(2); 30.3 posts the credit)` : ""}`, lines }, this.now());
     r.opening_entry_set_id = set.id;
-    this.append(r, "ledger.opening_posted", { entry_set_id: set.id, principal_cents: r.mapped.loans.original_loan_amount_cents.toString(), escrow_cents: (s.escrow_analysis ? s.final_cd.initial_escrow_deposit_cents : 0n).toString(), prepaid_interest_cents: r.prepaid.prepaid_interest_cents.toString(), interest_paid_through_date: r.mapped.loans.interest_paid_through_date });
+    this.append(r, "ledger.opening_posted", { entry_set_id: set.id, principal_cents: r.mapped.loans.original_loan_amount_cents.toString(), escrow_cents: (deposit - credit).toString(), escrow_credit_from_prior_loan_cents: credit.toString(), cd_initial_escrow_deposit_cents: deposit.toString(), prepaid_interest_cents: r.prepaid.prepaid_interest_cents.toString(), interest_paid_through_date: r.mapped.loans.interest_paid_through_date });
     return set;
   }
   /** Rule 7: origination consents re-keyed with `provenance='origination'`; servicing scope only when the disclosure version listed the classes and the demonstration passed. Never inferred. */

@@ -1,13 +1,13 @@
 {
- "run_id": "7ec13fd7-ce9d-4e47-b8df-0fbcc5050edd",
+ "run_id": "12be7408-774e-4067-851c-d4d3b44c30f6",
  "target": "probe",
- "database_name": "sm_s3511_int2_probe",
+ "database_name": "sm_s3511_int3_probe",
  "migration_head": "0231_seed_inventories.sql",
- "git_sha": "83c8c8fa558b4ebc65ad0006d46a9ef6f317de64",
+ "git_sha": "00928370c0f7b5fabd27d014e4a85d7dd9c35687",
  "as_of_date": "2026-09-16",
- "tools_total": 1499,
- "executed": 355,
- "refused_typed": 1144,
+ "tools_total": 1512,
+ "executed": 358,
+ "refused_typed": 1154,
  "not_wired": 0,
  "errored": 0,
  "results": [
@@ -8929,6 +8929,84 @@
   },
   {
    "process": "35.9",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.board",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.confirm_partner",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.escrow",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.hold",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.lien_release",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.notify_partner",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.open",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.pass",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.quote",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.resume",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.retire",
+   "status": "refused_typed",
+   "code": "NO_SETTLEMENT"
+  },
+  {
+   "process": "35.10",
+   "name": "closeout.settle",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.10",
    "name": "writeDecision",
    "status": "executed",
    "code": null

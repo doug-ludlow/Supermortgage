@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8380/8787 (95.4%): tids 2321/2480, tables 805/852, timers 2075/2097, notices 308/309, tools 1499/1579, figures 1372/1470; processes at 100%: 198/212; retired 27; hosted 1499/1579, persisted 97/852",
+ "brief": "spec units built 8448/8787 (96.1%): tids 2339/2480, tables 810/852, timers 2080/2097, notices 308/309, tools 1512/1579, figures 1399/1470; processes at 100%: 199/212; retired 27; hosted 1512/1579, persisted 97/852",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2321
+   "built": 2339
   },
   "tables": {
    "spec": 852,
-   "built": 805
+   "built": 810
   },
   "timers": {
    "spec": 2097,
-   "built": 2075
+   "built": 2080
   },
   "notices": {
    "spec": 309,
@@ -19,21 +19,21 @@
   },
   "tools": {
    "spec": 1579,
-   "built": 1499
+   "built": 1512
   },
   "figures": {
    "spec": 1470,
-   "built": 1372
+   "built": 1399
   },
   "units": {
    "spec": 8787,
-   "built": 8380
+   "built": 8448
   }
  },
  "exec_totals": {
   "hosted": {
    "spec": 1579,
-   "built": 1499
+   "built": 1512
   },
   "persisted": {
    "spec": 852,
@@ -446,7 +446,7 @@
   },
   "32": {
    "spec": 350,
-   "built": 337,
+   "built": 340,
    "processes": 18,
    "done": 17
   },
@@ -464,9 +464,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 378,
+   "built": 443,
    "processes": 12,
-   "done": 6
+   "done": 7
   },
   "36": {
    "spec": 40,
@@ -673,6 +673,7 @@
   "35.5",
   "35.7",
   "35.9",
+  "35.10",
   "35.11"
  ],
  "processes": [
@@ -10332,12 +10333,9 @@
    "title": "The Apply product",
    "tids": {
     "spec": 18,
-    "built": 5,
-    "todo": 13,
+    "built": 8,
+    "todo": 10,
     "missing": [
-     6,
-     7,
-     8,
      9,
      10,
      11,
@@ -10388,9 +10386,9 @@
    },
    "units": {
     "spec": 18,
-    "built": 5
+    "built": 8
    },
-   "pct": 27.8,
+   "pct": 44.4,
    "retired": []
   },
   {
@@ -11275,7 +11273,7 @@
    },
    "figures": {
     "spec": 40,
-    "built": 6,
+    "built": 9,
     "missing": [
      "$1,067.72",
      "$1,096.67",
@@ -11284,10 +11282,8 @@
      "$1,415.00",
      "$1,665.00",
      "$10,052.69",
-     "$2,062.50",
      "$2,774.00",
      "$3,485.00",
-     "$4,090.12",
      "$403,760.00",
      "$404,852.72",
      "$410,339.52",
@@ -11302,7 +11298,6 @@
      "$564,503.33",
      "$566,300.00",
      "$6,579.52",
-     "$687.50",
      "$7,732.38",
      "$70.10",
      "$700.00",
@@ -11325,9 +11320,9 @@
    },
    "units": {
     "spec": 80,
-    "built": 9
+    "built": 12
    },
-   "pct": 11.2,
+   "pct": 15.0,
    "retired": []
   },
   {
@@ -11458,10 +11453,9 @@
    },
    "figures": {
     "spec": 22,
-    "built": 12,
+    "built": 13,
     "missing": [
      "$1,665.00",
-     "$2,062.50",
      "$2,412.90",
      "$250,390.82",
      "$34.00",
@@ -11484,9 +11478,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 13
+    "built": 14
    },
-   "pct": 20.6,
+   "pct": 22.2,
    "retired": []
   },
   {
@@ -11546,48 +11540,20 @@
    "title": "The refinance close of the loop: the prior loan's payoff quote, settlement and ledger zeroing, lien release, escrow disposition and retirement \u2014 whether Supermortgage services it or a partner does \u2014 the partner's notification and the new loan linked, replacing the status flip",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "partner_retirement_notifications",
-     "prior_loan_retirements",
-     "refinance_closeout_daily_receipts",
-     "refinance_closeout_steps",
-     "refinance_closeouts"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 0,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_REFI_CLOSEOUT_BOARD_DAILY",
-     "SM_REFI_CLOSEOUT_STALLED_2BD",
-     "SM_REFI_ESCROW_CREDIT_0",
-     "SM_REFI_PARTNER_CONFIRM_21",
-     "SM_REFI_PRIOR_SETTLE_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -11596,55 +11562,17 @@
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "closeout.open",
-     "closeout.pass",
-     "closeout.quote",
-     "closeout.settle",
-     "closeout.escrow",
-     "closeout.lien_release",
-     "closeout.retire",
-     "closeout.notify_partner",
-     "closeout.confirm_partner",
-     "closeout.hold",
-     "closeout.resume",
-     "closeout.board",
-     "writeDecision"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 27,
-    "built": 4,
-    "missing": [
-     "$107.30",
-     "$2,062.50",
-     "$2,521.38",
-     "$2,540.11",
-     "$2,628.68",
-     "$2,666.59",
-     "$2,750.00",
-     "$2,802.88",
-     "$3,069.79",
-     "$3,219.83",
-     "$3,437.50",
-     "$403.20",
-     "$440,962.93",
-     "$441,366.13",
-     "$443,503.04",
-     "$443,765.81",
-     "$450,000.00",
-     "$561,977.09",
-     "$562,084.39",
-     "$575,000.00",
-     "$687.50",
-     "$87.59",
-     "$93.88"
-    ]
+    "built": 27,
+    "missing": []
    },
    "hosted": {
     "spec": 13,
-    "built": 0,
+    "built": 13,
     "measured": true
    },
    "persisted": {
@@ -11654,9 +11582,9 @@
    },
    "units": {
     "spec": 65,
-    "built": 4
+    "built": 65
    },
-   "pct": 6.2,
+   "pct": 100.0,
    "retired": []
   },
   {

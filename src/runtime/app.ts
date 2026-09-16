@@ -85,6 +85,7 @@ import type { AnalystLlm } from "./partner-book-analyst.ts";
 import { notifyPartnerBookTapeLate, sendPartnerBookReminders } from "./partner-book.ts";
 import { sweepDailyReports, type SweepDailyReportsResult } from "./book-ops/routes.ts";
 import { escalateLongTrips, expireKillSwitchRequests } from "./controls/ai.ts";
+import { closeoutPass, closeoutBoardRun, closeoutBreachActions, closeoutPortsOf, withCloseoutAdapters, type CloseoutPorts, type CloseoutPassReport, type BoardRunReport } from "./refinance-closeout.ts";
 import { cyclesSweepPass, type CyclesSweepReport } from "../domain/operations-runtime/service.ts";
 import { pagedBreachPass, type BreachSummary } from "../domain/operations-runtime/breach.ts";
 import { rolesSweepPass, type RolesSweepReport } from "../domain/operations-runtime/roles-35-7/sweep.ts";
@@ -118,6 +119,8 @@ export interface RuntimeDeps {
   readonly outboxCompletions?: ReadonlyMap<string, OutboxCompletion>;
   /** The application database's connection string (main.ts passes config.databaseUrl): a job that needs a dedicated `pg.Client` for a session-level lock opens it here — 35.3's planner lock `35_003` (D12 / A2; the pool exposes no client); 35.1's sweep lease `35_001` uses the pool's own dedicated session. Absent → `cycles.plan` throws PortUnavailable("databaseUrl") and the sweep's cycles pass reports itself skipped. */
   readonly databaseUrl?: string;
+  /** 35.10: the closeout's ports on its neighbours (24.4's partner statement channel, 35.6's hand-off, the partner-book.notify adapter) — every default an in-repo FAKE (src/runtime/refinance-closeout.ts). */
+  readonly closeoutPorts?: Partial<CloseoutPorts>;
 }
 /** A command is scoped to a loan (`loanId`), to an application before funding (`applicationId`), or to both during the 30.2 hand-off. */
 export interface ExecuteRequest { readonly process: string; readonly name: string; readonly loanId: string; readonly applicationId?: string; readonly actor: Actor; readonly input: ToolInput; readonly run?: AgentRunInfo; readonly approvedBy?: Actor; }
@@ -155,6 +158,12 @@ export interface SweepReport {
   readonly partner_book_tape_late: number;
   /** 34.3 rule 6: the daily report per partner-day once 33.3's receipt exists, and from 07:45 ET the ops_analyst escalation for a day without its receipts (src/runtime/book-ops/routes.ts sweepDailyReports) — after the readiness pass; null when the hook failed. */
   readonly partner_book_daily_reports: SweepDailyReportsResult | null;
+  /** 35.10 rule 10: the refinance closeout pass (src/runtime/refinance-closeout.ts closeoutPass) — after the orchestration, before the breach pass; null when the pass failed. */
+  readonly refinance_closeout: CloseoutPassReport | null;
+  /** 35.10 rule 11: the Refinance board's daily receipt once a day at/after 06:45 ET (closeoutBoardRun). */
+  readonly refinance_board: BoardRunReport | null;
+  /** 35.10: the closeout clocks breached on this pass, journaled once each beside the sweep's escalation (closeoutBreachActions). */
+  readonly refinance_breaches: number;
   /** 34.4 rule 4: kill-switch requests no admin confirmed within 10 minutes expired on this pass, and the compliance escalations opened for switches tripped more than 24 hours (src/runtime/controls/ai.ts). */
   readonly controls: { readonly kill_requests_expired: number; readonly long_trips_escalated: number };
   /** 35.3: the cycles pass — `cycles.plan` under its planner lock, then the executor (src/domain/operations-runtime/service.ts cyclesSweepPass); after 35.1's lease and outbox drain, before the section passes; `skipped: true` when the lock is held or no databaseUrl is configured; null when the caller asked for `{cycles: "skip"}` (the demo step runs it inline before the flows' tick) or the run was skipped. */
@@ -223,6 +232,8 @@ export class Runtime {
   readonly outboxAdapters: ReadonlyMap<string, OutboundAdapter> | undefined;
   readonly instanceId: string;
   readonly outboxCompletions: ReadonlyMap<string, OutboxCompletion> | undefined;
+  /** 35.10's ports with their in-repo defaults (the FAKE partner statement channel, the fund-bridge hand-off, the FAKE partner-book.notify adapter). */
+  readonly closeoutPorts: CloseoutPorts;
   /** The application database's connection string for a dedicated session-lock client (35.3 D12: the planner lock); null when the deps carry none. */
   readonly databaseUrl: string | null;
   /** The running sweep's `sweep_runs` id while `sweep` holds the lease (35.3's `cycle_runs.planned_by` reads `sweep:<id>` — service.ts plannedByOf); null outside a run. */
@@ -246,7 +257,8 @@ export class Runtime {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
     this.rateFeed = deps.rateFeed ?? null; this.reviewers = deps.reviewers ?? null; this.analystLlm = deps.analystLlm ?? null; this.logger = deps.logger;
     this.env = deps.env ?? process.env; this.environment = deps.environment ?? this.env["ENVIRONMENT"] ?? "nonprod";
-    this.outboxAdapters = deps.outboxAdapters; this.instanceId = deps.instanceId ?? defaultHolder(); this.outboxCompletions = deps.outboxCompletions; this.databaseUrl = deps.databaseUrl ?? null;
+    this.closeoutPorts = closeoutPortsOf(deps.closeoutPorts);
+    this.outboxAdapters = withCloseoutAdapters(deps.outboxAdapters, this.closeoutPorts); this.instanceId = deps.instanceId ?? defaultHolder(); this.outboxCompletions = deps.outboxCompletions; this.databaseUrl = deps.databaseUrl ?? null;
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
     this.root = this;
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
@@ -410,7 +422,7 @@ export class Runtime {
     const notRun = (reason: string) => ({ refi: null as RefiDailyReport | null, reviewers: null as FakeReviewerReport | null,
       partner_book_review: { at: nowIso, as_of_date: asOfDate as ReviewRunReport["as_of_date"], ran: false, reason, monitored_loans: 0, programs: [], line: `partner book review: not run (${reason})` } as ReviewRunReport,
       partner_book_readiness: { checked: 0, ready: 0, not_ready: 0, skipped: reason, as_of_date: asOfDate, ran: false, loans_skipped: [], line: `partner book readiness: not run (${reason})` } as ReadinessRunReport,
-      partner_book_reminders: 0, partner_book_tape_late: 0, partner_book_daily_reports: null, controls: { kill_requests_expired: 0, long_trips_escalated: 0 } });
+      partner_book_reminders: 0, partner_book_tape_late: 0, partner_book_daily_reports: null, refinance_closeout: null, refinance_board: null, refinance_breaches: 0, controls: { kill_requests_expired: 0, long_trips_escalated: 0 } });
     const leased = await acquireSweepLease(this.db, nowIso, holder);
     if (!leased.ok) {
       // rule 12: a firing that finds the lease held writes skipped{lease_held} and sweep.run_skipped, and exits 0; a lease that cannot be taken at all is failed{lease_unavailable}
@@ -447,6 +459,9 @@ export class Runtime {
       const partnerBookDailyReports = await logged("partner_book.daily_reports", () => sweepDailyReports(this, nowIso), () => null as SweepDailyReportsResult | null, (r) => ({ ran: r !== null }));
       // 34.4 rule 4: an unconfirmed kill-switch request expires at 10 minutes (logged, nothing trips); a switch tripped more than 24 hours opens one compliance escalation — errors logged, never thrown
       const controls = await logged("controls", async () => ({ kill_requests_expired: await expireKillSwitchRequests(this, nowIso), long_trips_escalated: (await escalateLongTrips(this, nowIso)).length }), () => ({ kill_requests_expired: 0, long_trips_escalated: 0 }), (c) => ({ ...c }));
+      // 35.10 rule 10: the refinance closeout pass after 35.6's orchestration (when it lands) and before the breach pass — every open closeout re-evaluated, the owners' tools run from the record; then the daily board once at/after 06:45 ET — errors logged, never thrown
+      const refinanceCloseout = await logged("refinance.closeout", () => closeoutPass(this, nowIso, { logger: this.logger }), () => null as CloseoutPassReport | null, (r) => (r ? { opened: r.opened, examined: r.examined, commands: r.commands, failed: r.failed } : { failed: true }));
+      const refinanceBoard = await logged("refinance.board", () => closeoutBoardRun(this, nowIso), () => null as BoardRunReport | null, (r) => ({ ran: r?.ran ?? false }));
       const reviewers = this.reviewers ? await logged("fake_reviewers", () => this.reviewers!.tick(this, nowIso), () => null as FakeReviewerReport | null, (r) => ({ ran: r !== null })) : null;
       // 35.7: the roles pass after the FAKE reviewers (a FAKE approval of the day is counted by the daily scan that follows) and before the verify and breach passes (a day's scan receipt never breaches) — errors logged, never thrown; runId = this run's sweep_runs id
       const roles = await logged("roles.sweep", () => rolesSweepPass(this, nowIso, { runId }), () => null as RolesSweepReport | null, (r) => (r ? { daily_scan: r.daily_scan, rescanned: r.rescanned, unstaffed_raised: r.unstaffed_raised.length, staffed_raised: r.staffed_raised.length } : { failed: true }));
@@ -479,13 +494,15 @@ export class Runtime {
       const partnerBookReminders = await logged("partner_book.reminders", async () => (await sendPartnerBookReminders(this, nowIso)).sent, () => 0, (n) => ({ sent: n }));
       // 33.1 T12 / rule 8: the breach action of SM_PARTNER_BOOK_TAPE_EXPECTED_7 — once per breached clock `partner_book.tape.late` beside the ops_analyst escalation the breach pass opened; a second sweep adds nothing
       const partnerBookTapeLate = await logged("partner_book.tape_late", async () => (await notifyPartnerBookTapeLate(this, nowIso)).late, () => 0, (n) => ({ late: n }));
+      // 35.10: each breached closeout clock journaled once on its closeout beside the sweep's escalation — never fails the sweep
+      const refinanceBreaches = await logged("refinance.breach_actions", async () => (await closeoutBreachActions(this, nowIso)).journaled, () => 0, (n) => ({ journaled: n }));
       const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
       // rule 12: the receipt in its own final transaction — SM_SWEEP_HEARTBEAT_DAILY is satisfied and re-armed by the run that completes; the row is `completed`
       const durationMs = Date.now() - startedMs;
       const outboxCounts = { claimed: outboxDispatch.claimed, sent: outboxDispatch.sent, retried: outboxDispatch.retried, dead: outboxDispatch.dead };
       await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_completed", aggregate: { kind: "sweep_run", id: runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: runId, as_of_date: asOfDate, holder, duration_ms: durationMs, passes: passes.map((p) => p.name), due: breach.due, breaches: breaches.length, breach_pages: breach.pages, outbox: outboxCounts } }),
         { clock: this.clock, commit: async (q) => { await q.query(`UPDATE sweep_runs SET outcome = 'completed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, outbox = $4::jsonb WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), JSON.stringify(outboxCounts)]); } });
-      return { at: nowIso, due: breach.due, breaches, breach_pages: breach.pages, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, cycles, roles, stewardship, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls,
+      return { at: nowIso, due: breach.due, breaches, breach_pages: breach.pages, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, cycles, roles, stewardship, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, refinance_closeout: refinanceCloseout, refinance_board: refinanceBoard, refinance_breaches: refinanceBreaches, controls,
         run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify, breach_recon: breachRecon, default_case_daily: defaultCaseDaily };
     } catch (e) {
       await this.db.query(`UPDATE sweep_runs SET outcome = 'failed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, skipped_reason = $4 WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), (e instanceof Error ? e.message : String(e)).slice(0, 500)]).catch(() => undefined);

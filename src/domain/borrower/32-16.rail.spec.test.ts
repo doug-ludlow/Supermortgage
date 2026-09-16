@@ -108,7 +108,7 @@ function reviveCents(v: unknown): unknown {
 
 // ---------------------------------------------------------------- the shell: the built Next.js app on this test's API, driven with Playwright (src/domain/borrower/harness.ts, shared with 32.13 and 32.19)
 const H = createHarness({ apiBase: () => base });
-const { pageFor, inViewportSel: inViewport, stopShell, appLog } = H;
+const { pageFor, openApply, inViewportSel: inViewport, stopShell, appLog } = H;
 /** The shell rendered from this test's API: the shell region, the conversation with at least one line (on a phone the Chat tab), the rail with Needed from you (on a phone mounted behind the tabs as the record sheet). */
 async function openShell(token: string, width: number, path = "/app"): Promise<{ page: Page; ctx: Context }> {
   const p = await pageFor(token, width, path);
@@ -169,29 +169,39 @@ test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` show
   await ctx.close();
 });
 
-test("32.16-T14: Given `credit_reports.frozen_repositories` non-empty, then the You step shows the caution row with the lift-instructions card, and no toast or modal exists in the DOM.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
-  assert.ok(J, "T13 drove the journey to R8");
-  // 22.2's freeze workflow on the report: `frozen_repositories` non-empty → credit.freeze.detected with the borrower notice (the platform's fact). The borrower-facing lift
-  // instructions are the `credit.freeze.lift` StatusCard 32.14's flow sends on a frozen soft pull; no origination flow raises it from the 22.2 detection yet, so the harness
-  // sends the same card through 32.1's send_card (the flows' own seam) and the shell is measured on what it does with it: a caution row, never a toast, never a modal.
-  await fresh();
-  const report = await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'credit_reports' AND id = $1`, [J.j.creditReportId]);
-  assert.ok(report[0], `the credit report entity (${J.j.creditReportId})`);
+test("32.16-T14: Given `credit_reports.frozen_repositories` non-empty, then the You step shows the caution row with the lift-instructions card, and no toast or modal exists in the DOM.", { skip }, async () => {
+  // Re-driven against the Apply product (32.19 §2.2 you; docs/ux/17 T14 as amended 2026-09-16): the refinance journey to R2 — the application, the 21.1 interview, the quote,
+  // the credit report ordered and parsed (the `credit_reports` entity the sentence names). 22.2's freeze workflow on the report: `frozen_repositories` non-empty →
+  // credit.freeze.detected with the borrower notice (the platform's fact). The borrower-facing lift instructions are the `credit.freeze.lift` StatusCard 32.14's flow sends
+  // on a frozen soft pull; no origination flow raises it from the 22.2 detection yet, so the harness sends the same card through 32.1's send_card (the flows' own seam)
+  // and the Apply product is measured on what it does with it: a caution row on the You step (the credit step), the card inside — never a toast, never a modal.
+  const app = await openApp();
+  await app.j.quoteOnly(); await app.j.orderCredit(MST("2026-10-05", "10:52")); await settle();
+  const tok = (await signIn(app.A)).token;
+  const report = await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'credit_reports' AND id = $1`, [app.j.creditReportId]);
+  assert.ok(report[0], `the credit report entity (${app.j.creditReportId})`);
   const frozenBefore = ((report[0]!.data as Json)["frozen_repositories"] as unknown[] | undefined) ?? [];
-  const liftCard = await sendCard(J, J.partyA, "StatusCard", "credit.freeze.lift", { state_label: "", detail: "" });
-  const rec = await record(tokA, J.j.appId);
+  const liftCard = await sendCard(app, app.partyA, "StatusCard", "credit.freeze.lift", { state_label: "", detail: "" });
+  const rec = await record(tok, app.j.appId);
   assert.ok(Array.isArray(rec["needed_from_you"]));
-  const { page, ctx } = await openShell(tokA, 1280);
-  const row = page.locator(`[data-testid="record"] [data-record-section="needed"] [data-rail-card="${liftCard}"]`);
+  const pendingKeys = (await cardsOf(app.partyA, `AND status = 'pending'`)).map((c) => c.copy_key); assert.ok(pendingKeys.includes("credit.freeze.lift"), `the lift card is pending: ${pendingKeys.join(",")}`);
+  // the Apply product: Tasks → "Credit check" → the You step; the lift card is its caution row (STEP_OF_COPY_KEY: credit.freeze.lift → you)
+  const { page, ctx } = await openApply(tok, 1280);
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-you"]', { timeout: 30_000 });
+  await page.getByTestId("apply-task-you").first().click(); await page.waitForSelector('[data-testid="apply"][data-step="you"]', { timeout: 30_000 });
+  const row = page.locator(`[data-testid="apply"][data-step="you"] [data-testid="apply-caution"][data-rail-card="${liftCard}"]`);
   await row.waitFor({ timeout: 15_000, state: "attached" });
-  assert.equal(await row.getAttribute("data-tone"), "caution", "a caution row under Needed from you");
-  await row.locator("> button").click();
+  assert.equal(await row.getAttribute("data-tone"), "caution", "a caution row on the You step");
+  assert.equal(await page.locator('[data-testid="apply-caution"]').count(), 1, "one caution row: the lift card, not every pending card");
   const article = row.locator(`article[data-card-id="${liftCard}"]`); await article.waitFor({ timeout: 15_000 });
+  assert.equal(await article.getAttribute("data-card-kind"), "StatusCard", "the card component itself, inside the row");
   assert.match(await article.innerText(), /credit file is frozen|Lift the freeze/i, "the lift-instructions card (copy `credit.freeze.lift`)");
+  assert.equal(await page.getByTestId("apply-tab-tasks").count(), 1, "the tabs stay beneath (no modal took the screen)");
   // never a toast, never a modal: nothing with a dialog role, nothing modal, nothing announced as a live status beyond the cards' own polite region
   assert.equal(await page.locator('[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open], .sm-toast, [data-testid="toast"]').count(), 0, "no toast or modal in the DOM");
   assert.equal(await page.locator('[role="alert"]:not(#__next-route-announcer__)').count(), 0, "no alert bar either (Next's route announcer is the one role=alert on every page)");
-  assert.equal(await page.locator('[data-testid="thread"] article[data-card-kind]').count(), 0);
+  assert.equal(await page.locator('[data-testid="thread"] article[data-card-kind]').count(), 0, "no thread on the Apply product");
+  assert.equal(await page.getByTestId("apply-error").count(), 0, "the caution row is not an error line");
   assert.ok(frozenBefore.length >= 0);
   await page.screenshot({ path: `${SCREENSHOTS}/t14-caution-1280.png`, fullPage: false }).catch(() => undefined);
   await ctx.close();

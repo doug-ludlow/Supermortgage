@@ -235,13 +235,13 @@ async function countTables(q: Queryable, tables: readonly string[]): Promise<Map
   for (const t of tables) { const s = present.get(t); if (!s || !/^[a-z_][a-z0-9_]*$/.test(t)) { out.set(t, null); continue; } const [r] = await q.query<{ n: string }>(`SELECT count(*)::text AS n FROM ${s}.${t}`); out.set(t, BigInt(r?.n ?? "0")); }
   return out;
 }
-export interface PersistedInput { readonly journeys?: readonly JourneyDeclaration[] | readonly string[] | null; /** counts every journey on this database (a test's own) unless a declaration names its own */ readonly databaseUrl?: string | null; readonly baseUrl?: string | null; readonly auditDir?: string | null; readonly writeAuditFile?: boolean; readonly clock?: Clock; readonly logger?: Logger; readonly takeLock?: boolean }
+export interface PersistedInput { readonly journeys?: readonly JourneyDeclaration[] | readonly string[] | null; /** the manifest rows to measure — the registry's (manifestTables()) unless a test declares its own list (35.11-T17 adds a table no migration creates, to see missing_ddl once every registry table has DDL) */ readonly tables?: readonly { section: number; process: string; table: string }[] | null; /** counts every journey on this database (a test's own) unless a declaration names its own */ readonly databaseUrl?: string | null; readonly baseUrl?: string | null; readonly auditDir?: string | null; readonly writeAuditFile?: boolean; readonly clock?: Clock; readonly logger?: Logger; readonly takeLock?: boolean }
 export async function runPersistedCount(i: PersistedInput = {}): Promise<PersistedRun> {
   const clock = i.clock ?? systemClock; const logger = i.logger ?? createLogger("json", () => undefined);
   const base = i.baseUrl ?? baseTestDatabaseUrl();
   const decls: JourneyDeclaration[] = (i.journeys ?? JOURNEY_WRITES).map((j) => (typeof j === "string" ? (JOURNEY_WRITES.find((d) => d.name === j) ?? { name: j, steps: [] }) : j));
   const run_id = randomUUID(); const migration_head = newestMigration(); const git_sha = gitSha(); const as_of_date = wallClock(Date.parse(clock.now()), ET).date;
-  const tables = manifestTables(); const names = tables.map((t) => t.table);
+  const tables = i.tables ?? manifestTables(); const names = tables.map((t) => t.table);
   let failure: string | null = null; let postAt = clock.now(); let post = new Map<string, bigint | null>(); const after = new Map<string, bigint>(); let gaps = 0n; const gapsBy = new Map<string, bigint>();
   const journeyDbs: { name: string; database: string; present: boolean }[] = [];
   const lock = i.takeLock === false ? null : await acquireJourneyLock(base).catch(() => null);

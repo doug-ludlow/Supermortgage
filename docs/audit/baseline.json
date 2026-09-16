@@ -3,11 +3,11 @@
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2435
+   "built": 2443
   },
   "tables": {
    "spec": 852,
-   "built": 848
+   "built": 852
   },
   "timers": {
    "spec": 2097,
@@ -15,11 +15,11 @@
   },
   "notices": {
    "spec": 309,
-   "built": 308
+   "built": 309
   },
   "tools": {
    "spec": 1579,
-   "built": 1574
+   "built": 1575
   },
   "figures": {
    "spec": 1470,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8787,
-   "built": 8729
+   "built": 8743
   }
  },
  "done": [
@@ -234,7 +234,8 @@
   "35.9",
   "35.10",
   "35.11",
-  "35.12"
+  "35.12",
+  "36.1"
  ],
  "exec_totals": {
   "hosted": {

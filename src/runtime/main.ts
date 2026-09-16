@@ -30,6 +30,7 @@ import { registerReprojectionReactor } from "../domain/operations-runtime/instal
 import { encodeTransferBatch } from "../domain/boarding/tape-codec.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 import { seedPartnerBookDemo } from "./partner-book.ts";
+import { seedPartnerPortalDemo } from "./partner-portal/seed.ts";
 import { copyLibraryFile } from "./borrower/channels.ts";
 import { systemClock } from "../kernel/events/index.ts";
 import { loadDemoClock } from "./demo-clock.ts";
@@ -98,6 +99,9 @@ if (mode === "seed-demo") {
     // 33.1 rule 7: the fixture partner book under the demo partner (FAKE, idempotent — already_loaded on a rerun) so every deployed demo can sign a homeowner in
     const book = await seedPartnerBookDemo(runtime, { partner_id: entry.partner_id });
     logger.info("seed-demo partner book", { import_id: book.import_id, status: book.status, partner_party_id: book.partner_party_id, rows_total: book.rows_total, rows_loaded: book.rows_loaded, loans_created: book.loans_created, parties_created: book.parties_created, parties_linked: book.parties_linked, invitations_sent: book.invitations_sent });
+    // 36.1 Operational prerequisites: the demo partner's first partner_admin, seeded beside the book (idempotent; the act refuses the system actor in production)
+    const portal = await seedPartnerPortalDemo(runtime, { partner_id: book.partner_party_id });
+    logger.info("seed-demo partner portal", { partner_party_id: portal.partner_party_id, partner_user_id: portal.partner_user_id, status: portal.status, roles: portal.roles, created: portal.created });
     await db.end();
     process.exit(0);
   } catch (e) { logger.error("seed-demo failed", { error: e }); await db.end().catch(() => undefined); process.exit(1); }

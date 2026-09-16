@@ -34,7 +34,7 @@ import { messagePayload, type DispatchRow } from "./firm.ts";
 import type { Row } from "./store.ts";
 
 export interface UnitReport { readonly unit_id: string; readonly loan_id: string | null; readonly outcome: UnitOutcome; readonly detail?: Row }
-export interface CycleReport { readonly cycle_code: string; readonly run_id: string; readonly recorded: boolean; readonly period_key: string; readonly units: UnitReport[]; readonly receipt_event_id: string | null; readonly failed: number; readonly done: number; readonly skipped: number }
+export interface CycleReport { readonly cycle_code: string; readonly run_id: string; readonly recorded: boolean; readonly period_key: string; readonly units: UnitReport[]; readonly receipt_event_id: string | null; readonly failed: number; readonly done: number; readonly skipped: number; readonly already?: boolean }
 export interface DailyRunReport {
   readonly as_of_date: PlainDate; readonly already: boolean; readonly run_id: string | null; readonly outcome: "completed" | "partial" | "failed" | null;
   readonly cycles: CycleReport[]; readonly loans_scanned: number; readonly report_document_id: string | null; readonly receipt_event_id: string | null; readonly counts: Row;
@@ -77,6 +77,11 @@ async function selectClaimsLoans(q: Queryable, asOf: PlainDate): Promise<string[
 /** One cycle: open the run, run every unit (a throw is `failed`, the later units still run), elect the receipt in one global unit of work (35.3 rule 5). */
 async function runCycle(rt: Runtime, ports: Required<DefaultOpsPorts>, i: { cycle_code: string; receipt: string | null; as_of: PlainDate; now: string; planned_by: string; loans: readonly (string | null)[]; unit: (loanId: string | null) => Promise<Row | void> }): Promise<CycleReport> {
   const periodKey = i.as_of;
+  // 35.3 rule 5, exactly once: a cycle whose receipt for the period is already on the log (an earlier pass of the day failed after it) is not re-run
+  if (i.receipt) {
+    const prior = (await rt.db.query<{ id: string; payload: Row }>(`SELECT id::text AS id, payload FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = $2 ORDER BY sequence DESC LIMIT 1`, [i.receipt, i.as_of]))[0];
+    if (prior) return { cycle_code: i.cycle_code, run_id: String(prior.payload["run_id"] ?? ""), recorded: false, period_key: periodKey, units: [], receipt_event_id: prior.id, failed: 0, done: Number(prior.payload["units_done"] ?? 0), skipped: Number(prior.payload["units_skipped"] ?? 0), already: true };
+  }
   const run: CycleRunHandle = await ports.cycles.openRun(rt.db, { cycle_code: i.cycle_code, period_key: periodKey, as_of_date: i.as_of, planned_by: i.planned_by, units_total: i.loans.length, now: i.now });
   const units: UnitReport[] = [];
   for (const loanId of i.loans) {
@@ -98,7 +103,7 @@ async function runCycle(rt: Runtime, ports: Required<DefaultOpsPorts>, i: { cycl
   return { cycle_code: i.cycle_code, run_id: run.run_id, recorded: run.recorded, period_key: periodKey, units, receipt_event_id: receiptId, failed, done, skipped };
 }
 
-/** The `law-firm` port's DRA rows for the day: every milestone the port has reported on a delivered referral by `asOf`, grouped by firm (13.6's snapshot is per firm). */
+/** The `law-firm` port's DRA rows for the day: every milestone the port has reported on a delivered referral by `asOf`, grouped by `<firm_id>|<loan_id>` (13.6's snapshot is per firm; its matters, exceptions and prior rows live under the loan, so the import runs loan-scoped). */
 async function draRowsByFirm(rt: Runtime, asOf: PlainDate): Promise<Map<string, Row[]>> {
   const out = new Map<string, Row[]>();
   const port = rt.ports.lawFirm; if (!port) return out;
@@ -106,12 +111,12 @@ async function draRowsByFirm(rt: Runtime, asOf: PlainDate): Promise<Map<string, 
   const dispatches = await rt.db.query<DispatchRow>(`SELECT ${SEL} FROM firm_dispatches WHERE kind = 'referral_package' AND sent_at IS NOT NULL ORDER BY created_at, id`);
   for (const d of dispatches) {
     const m = await messagePayload(rt.db, d); if (!m) continue;
-    const rows = out.get(d.firm_id) ?? [];
+    const key = `${d.firm_id}|${d.loan_id}`; const rows = out.get(key) ?? [];
     for (const r of port.repliesFor(m, asOf)) {
       if (r.kind === "milestone") rows.push({ loan_id: d.loan_id, event_name: String(r.payload["code"] ?? "").toLowerCase(), event_date: String(r.payload["occurred_on"] ?? r.due_on), entered_by_firm: d.firm_id });
       if (r.kind === "sale") rows.push({ loan_id: d.loan_id, event_name: "sale_scheduled", event_date: String(r.payload["scheduled_on"] ?? r.due_on), entered_by_firm: d.firm_id });
     }
-    out.set(d.firm_id, rows);
+    out.set(key, rows);
   }
   return out;
 }
@@ -126,9 +131,21 @@ export async function runDefaultCaseDay(rt: Runtime, nowIso: string, o: DailyRun
   const existing = await dailyRunOf(rt.db, asOf);
   if (existing) return { as_of_date: asOf, already: true, run_id: existing.id, outcome: existing.outcome as DailyRunReport["outcome"], cycles: [], loans_scanned: 0, report_document_id: null, receipt_event_id: existing.receipt_event_id, counts: {} };
   const now = nowIso; const plannedBy = o.plannedBy ?? (o.runId ? `sweep:${o.runId}` : `sweep:${rt.instanceId}`);
+  const cycles: CycleReport[] = [];
+  try { return await runDay(rt, ports, { asOf, now, plannedBy, cycles }); }
+  catch (e) {
+    // the day is recorded as failed (unique as_of_date: the day does not re-run; no receipt, so SM_DEFAULT_CASE_DAILY breaches to `officer` and the row names the failure); the cycles that elected their receipts stay elected
+    const msg = e instanceof Error ? e.message : String(e);
+    rt.logger?.error("35.9 daily pass failed", { at: now, as_of_date: asOf, error: msg, cycles: cycles.map((c) => `${c.cycle_code}:${c.receipt_event_id ? "receipted" : "open"}`) });
+    const ins = await rt.db.query<{ id: string }>(`INSERT INTO default_case_daily_runs (as_of_date, cycle_run_ids, loans_scanned, outcome, created_at) VALUES ($1::date, $2::uuid[], $3, 'failed', $4::timestamptz) ON CONFLICT (as_of_date) DO NOTHING RETURNING id::text AS id`, [asOf, cycles.filter((c) => c.recorded).map((c) => c.run_id), cycles.find((c) => c.cycle_code === CYCLES_35_9.dailyCase)?.units.length ?? 0, now]).catch(() => [] as { id: string }[]);
+    return { as_of_date: asOf, already: false, run_id: ins[0]?.id ?? null, outcome: "failed", cycles, loans_scanned: 0, report_document_id: null, receipt_event_id: null, counts: { error: msg } };
+  }
+}
+
+async function runDay(rt: Runtime, ports: Required<DefaultOpsPorts>, d: { asOf: PlainDate; now: string; plannedBy: string; cycles: CycleReport[] }): Promise<DailyRunReport> {
+  const { asOf, now, plannedBy, cycles } = d;
   const dayStart = toIso(zonedEpochMs(asOf, "00:00", ET));
   await rt.caseFolder.settle();
-  const cycles: CycleReport[] = [];
   const cycle = (c: Parameters<typeof runCycle>[2]) => runCycle(rt, ports, c).then((r) => { cycles.push(r); return r; });
   const exec = async (process: string, name: string, loanId: string, agent: string, input: Row): Promise<Row> => {
     const r = await rt.execute({ process, name, loanId, actor: AGENT(agent), input });
@@ -147,9 +164,13 @@ export async function runDefaultCaseDay(rt: Runtime, nowIso: string, o: DailyRun
   // 3. dra_import_daily (global): 13.6's import per firm from the port's reported milestones; the receipt also satisfies nothing of 13.6's — SM_DRA_RECONCILE_DAILY is 13.6's own, armed by its import
   await cycle({ cycle_code: CYCLES_35_9.draImport, receipt: EV.draImportRunCompleted, as_of: asOf, now, planned_by: plannedBy, loans: [null],
     unit: async () => {
-      const byFirm = await draRowsByFirm(rt, asOf); const imports: Row[] = [];
-      for (const [firmId, rows] of byFirm) imports.push(await exec("13.6", "dra.snapshot.import", "", STEP_AGENTS.foreclosure, { id: `dra-${firmId}-${asOf}`, firm_id: firmId, as_of: asOf, source: "portal_export", rows, today: asOf }));
-      return { firms: byFirm.size, rows: [...byFirm.values()].reduce((a, r) => a + r.length, 0), imports: imports.length };
+      const byFirmLoan = await draRowsByFirm(rt, asOf); const imports: Row[] = [];
+      // one loan-scoped `firm.inbound{kind: dra_snapshot}` per (firm, loan) → 13.6 `dra.snapshot.import` under the loan, where its matters and exceptions live (rule 6's reconciliation, the `ack_source: dra` edge case)
+      for (const [key, rows] of byFirmLoan) {
+        const [firmId, loanId] = key.split("|") as [string, string];
+        imports.push(await exec(PROCESS_35_9, "firm.inbound", loanId, STEP_AGENTS.foreclosure, { loan_id: loanId, firm_id: firmId, kind: "dra_snapshot", source: "fake", reply_id: `firm:${firmId}:dra_snapshot:${loanId}:${asOf}`, payload: { id: `dra-${firmId}-${loanId}-${asOf}`, as_of: asOf, source: "portal_export", rows, today: asOf } }));
+      }
+      return { firms: new Set([...byFirmLoan.keys()].map((k) => k.split("|")[0])).size, loans: byFirmLoan.size, rows: [...byFirmLoan.values()].reduce((a, r) => a + r.length, 0), imports: imports.length };
     } });
   // 4. default_case_daily: rule 2 per loan of the universe
   const universe = await selectDefaultCaseLoans(rt.db);
@@ -167,7 +188,8 @@ export async function runDefaultCaseDay(rt: Runtime, nowIso: string, o: DailyRun
   // the run's counters: the units' own reports plus the day's rows (the breach side is the sweep's, read from the tables)
   const sum = (key: string): number => daily.units.reduce((a, u) => a + n(u.detail?.[key]), 0);
   const stepCount = (step: string, key: string): number => daily.units.reduce((a, u) => { const st = (u.detail?.["steps"] as Record<string, { detail?: Row }> | undefined)?.[step]; return a + n(st?.detail?.[key]) + (Array.isArray(st?.detail?.[key]) ? (st!.detail![key] as unknown[]).length : 0); }, 0);
-  const reconRow = (await rt.db.query<{ payload: Row }>(`SELECT payload FROM loan_events WHERE type = $1 ORDER BY sequence DESC LIMIT 1`, [EV.breachReconCompleted]))[0];
+  // rule 7's count on the run row is the previous day's reconciliation (the day's own `breach.recon` runs after this pass, before the breach pass; its receipt is the day's record)
+  const reconRow = (await rt.db.query<{ payload: Row }>(`SELECT payload FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = $2 ORDER BY sequence DESC LIMIT 1`, [EV.breachReconCompleted, addDays(asOf, -1)]))[0];
   const counts: Row = {
     loans_scanned: universe.length, events_folded: sum("events_folded"), milestones_due: sum("milestones_due"),
     milestones_expected: await count(rt.db, `FROM case_milestone_expectations WHERE created_at >= $1::timestamptz`, [dayStart]),
@@ -175,7 +197,7 @@ export async function runDefaultCaseDay(rt: Runtime, nowIso: string, o: DailyRun
     docket_events_reacted: stepCount("docket", "reacted"), docket_events_deferred: stepCount("docket", "deferred"),
     breach_actions_executed: await count(rt.db, `FROM breach_actions WHERE outcome = 'executed' AND created_at >= $1::timestamptz`, [dayStart]),
     breach_actions_deferred: await count(rt.db, `FROM breach_actions WHERE outcome = 'deferred' AND created_at >= $1::timestamptz`, [dayStart]),
-    breach_actions_missing: n(reconRow?.payload["missing"]),
+    breach_actions_missing: n(reconRow?.payload["missing"]), breach_actions_missing_as_of: reconRow ? addDays(asOf, -1) : null,
     claims_opened: cycles.filter((c) => c.cycle_code === CYCLES_35_9.claimsSweep).flatMap((c) => c.units).reduce((a, u) => a + n(u.detail?.["opened"]), 0) + stepCount("claims", "opened"),
     claims_packaged: cycles.filter((c) => c.cycle_code === CYCLES_35_9.claimsSweep).flatMap((c) => c.units).reduce((a, u) => a + n(u.detail?.["packaged"]), 0) + stepCount("claims", "packaged"),
     firm_dispatches: await count(rt.db, `FROM firm_dispatches WHERE created_at >= $1::timestamptz`, [dayStart]),

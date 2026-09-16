@@ -14,13 +14,15 @@
  *   never emitted twice; the 13.1 sweep is its own idempotent record.
  *
  *   35.9's `delinquency_counters` cycle unit (35.3 rule 2 assigns the runner to 35.9) calls this per loan with `opts`:
- *   `zoneOf` resolves the loan's civil day from 35.5's `loan_servicing_configs.time_zone` (35.5 rule 9, "in place of
- *   LOAN_LOCAL_TZ"), and `oncePerDay` makes the unit idempotent per loan-day (35.3 rule 3: a loan whose counters already
- *   ran for its civil day is skipped, so a second run of the day's unit adds no event). A window the job opens is also
- *   projected into 11.1's `regx_ei_windows` row (the table 35.9's daily universe and 35.8's screens read), with the two legs'
- *   deadlines at 23:59 loan-local — the window's own facts, never a synthesized delinquency.
+ *   `oncePerDay` makes the unit idempotent per loan-day (35.3 rule 3: a loan whose counters already ran for its civil day is
+ *   skipped, so a second run of the day's unit adds no event). Every caller resolves the loan's civil day from 35.5's
+ *   `loan_servicing_configs.time_zone` (`loanZoneOf`; 35.5 rule 9, "in place of LOAN_LOCAL_TZ"; LOAN_LOCAL_TZ until 35.5 boards
+ *   the loan). The loan's `regx_ei_windows` rows (the table 35.9's daily universe and 35.8's screens read) are projected from
+ *   its log on every run (`projectWindows`): the windows opened with their legs' statuses and deadlines at 23:59 loan-local, then
+ *   paid / satisfied / exempt — the window's own facts, never a synthesized delinquency.
  */
 import { EntityStore } from "../app/tools.ts";
+import type { Queryable } from "../infra/db/client.ts";
 import { EscalationService } from "../app/escalations.ts";
 import type { Actor } from "../kernel/events/index.ts";
 import { plainDate as D, type PlainDate } from "../kernel/calendar/date.ts";
@@ -40,8 +42,43 @@ export interface DelinquencySweepReport {
   /** Loans the run skipped and why (`already_ran_today` under `oncePerDay`; `not_yet_due` when the loan's own civil day has not passed the installment). */
   readonly skipped?: { loan_id: string; reason: string }[];
 }
+/** 35.5 rule 9: the loan's civil time zone from `loan_servicing_configs.time_zone` when 35.5's table is in the tree, else LOAN_LOCAL_TZ — every caller of the runner resolves through this unless it passes its own. */
+export async function loanZoneOf(db: Queryable, loanId: string, asOf: PlainDate): Promise<string> {
+  const t = await db.query<{ r: string | null }>(`SELECT to_regclass('public.loan_servicing_configs')::text AS r`);
+  if (t[0]?.r === null) return LOAN_LOCAL_TZ;
+  const rows = await db.query<{ tz: string | null }>(`SELECT time_zone AS tz FROM loan_servicing_configs WHERE loan_id = $1::uuid AND effective_from <= $2::date ORDER BY effective_from DESC LIMIT 1`, [loanId, asOf]);
+  return rows[0]?.tz ?? LOAN_LOCAL_TZ;
+}
+const LIVE_STATUSES = new Set(["open", "satisfied_live", "satisfied_good_faith", "satisfied_ongoing_lossmit", "cancelled_paid", "exempt_bk", "exempt_fdcpa_cease", "exempt_discharge", "not_applicable"]);
+const NOTICE_STATUSES = new Set(["open", "sent", "satisfied_by_prior_180", "cancelled_paid", "exempt_bk_no_option", "exempt_bk_cease", "exempt_fdcpa_no_option", "exempt_fdcpa_bk", "deferred_transferee", "not_applicable"]);
+const LIVE_BASIS: Readonly<Record<string, string>> = { "contact.live.established": "satisfied_live", "good_faith_efforts.determined": "satisfied_good_faith", "lossmit.ongoing_contact": "satisfied_ongoing_lossmit" };
+/**
+ * 11.1's `regx_ei_windows` rows for the loan as its log leaves them: a window the job opened (statuses from the event), then the
+ * closing facts — the installment credited (`cancelled_paid`), `regx.ei_window.live.satisfied{basis}`, an active bankruptcy or a
+ * written FDCPA cease — folded onto a still-open row. The table is what 35.9's daily universe and 35.8's screens read.
+ */
+export async function projectWindows(q: Queryable, i: { loanId: string; zone: string; opened: readonly Record<string, unknown>[]; spine: readonly { type: string; payload: Record<string, unknown> }[]; bankruptcy: boolean; fdcpaCease: boolean; unpaid: readonly PlainDate[] }): Promise<void> {
+  const at = (d: unknown): string => toIso(zonedEpochMs(D(String(d).slice(0, 10)), "23:59", i.zone));
+  for (const w of i.opened) {
+    const live = LIVE_STATUSES.has(String(w["live_status"])) ? String(w["live_status"]) : "open", notice = NOTICE_STATUSES.has(String(w["notice_status"])) ? String(w["notice_status"]) : "open";
+    await q.query(`INSERT INTO regx_ei_windows (loan_id, due_date, principal_residence, live_due_at, notice_due_at, live_status, notice_status) VALUES ($1::uuid, $2::date, $3, $4::timestamptz, $5::timestamptz, $6, $7) ON CONFLICT (loan_id, due_date) DO NOTHING`,
+      [i.loanId, String(w["due_date"]), w["principal_residence"] !== false, at(w["live_due_at"] ?? w["due_date"]), at(w["notice_due_at"] ?? w["due_date"]), live, notice]);
+  }
+  const open = await q.query<{ due_date: string; live_status: string; notice_status: string }>(`SELECT due_date::text AS due_date, live_status, notice_status FROM regx_ei_windows WHERE loan_id = $1::uuid AND (live_status = 'open' OR notice_status = 'open')`, [i.loanId]);
+  const satisfied = i.spine.filter((e) => e.type === "regx.ei_window.live.satisfied");
+  for (const w of open) {
+    let live = w.live_status, notice = w.notice_status;
+    const paid = !i.unpaid.some((d) => d === w.due_date);
+    if (paid) { if (live === "open") live = "cancelled_paid"; if (notice === "open") notice = "cancelled_paid"; }
+    else if (i.bankruptcy) { if (live === "open") live = "exempt_bk"; }
+    else if (i.fdcpaCease) { if (live === "open") live = "exempt_fdcpa_cease"; }
+    const sat = satisfied.find((e) => e.payload["due_dates"] === null || (Array.isArray(e.payload["due_dates"]) && (e.payload["due_dates"] as unknown[]).includes(w.due_date)));
+    if (live === "open" && sat) live = LIVE_BASIS[String(sat.payload["basis"])] ?? "satisfied_live";
+    if (live !== w.live_status || notice !== w.notice_status) await q.query(`UPDATE regx_ei_windows SET live_status = $3, notice_status = $4, cancelled_at = CASE WHEN $3 = 'cancelled_paid' THEN now() ELSE cancelled_at END, cancel_reason = CASE WHEN $3 = 'cancelled_paid' THEN 'paid' ELSE cancel_reason END WHERE loan_id = $1::uuid AND due_date = $2::date`, [i.loanId, w.due_date, live, notice]);
+  }
+}
 export interface DelinquencySweepOptions {
-  /** The loan's civil time zone (35.5 rule 9); LOAN_LOCAL_TZ when absent. */
+  /** The loan's civil time zone (35.5 rule 9); `loanZoneOf` (the 35.5 table, else LOAN_LOCAL_TZ) when absent. */
   readonly zoneOf?: (loanId: string, today: PlainDate) => Promise<string>;
   /** Skip a loan whose `delinquency.counters.updated{on: today}` is already on its log (35.3 rule 3). */
   readonly oncePerDay?: boolean;
@@ -58,10 +95,11 @@ export async function delinquencyDailySweep(rt: Runtime, nowIso: string = rt.clo
   const rows = await rt.db.query<Row>(
     `SELECT l.id AS loan_id, l.principal_residence, l.fdcpa_debt_collector_flag, pr.state, pr.occupancy::text AS occupancy, array_agg(i.due_date::text ORDER BY i.due_date) AS unpaid
        FROM loans l JOIN loan_installments i ON i.loan_id = l.id AND i.status = 'due' AND i.due_date < $1::date LEFT JOIN properties pr ON pr.id = l.property_id
-      WHERE l.status = 'active' AND ($2::uuid[] IS NULL OR l.id = ANY($2::uuid[])) GROUP BY l.id, pr.state, pr.occupancy ORDER BY l.created_at`, [opts.zoneOf ? latestDay : defaultToday, only && only.length ? [...only] : null]);
+      WHERE l.status = 'active' AND ($2::uuid[] IS NULL OR l.id = ANY($2::uuid[])) GROUP BY l.id, pr.state, pr.occupancy ORDER BY l.created_at`, [latestDay, only && only.length ? [...only] : null]);
+  const zoneOf = opts.zoneOf ?? ((l: string, d: PlainDate) => loanZoneOf(rt.db, l, d));
   for (const row of rows) {
     const loanId = row.loan_id;
-    const zone = opts.zoneOf ? await opts.zoneOf(loanId, defaultToday) : LOAN_LOCAL_TZ;
+    const zone = await zoneOf(loanId, defaultToday);
     const today = zone === LOAN_LOCAL_TZ ? defaultToday : wallClock(Date.parse(nowIso), zone).date;
     if (!(row.unpaid ?? []).some((d) => D(d) < today)) { skipped.push({ loan_id: loanId, reason: "not_yet_due" }); continue; }
     const spine = await rt.uow.events.byLoan(loanId);
@@ -92,12 +130,8 @@ export async function delinquencyDailySweep(rt: Runtime, nowIso: string = rt.clo
       opened = r.events.filter((e) => e.type === "loan.delinquency.window_opened").map((e) => e.payload);
     }, { clock: rt.clock, commit: async (q) => {
       await rt.entities.save(store.versionsSince(mark), { loanId }, q); for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q);
-      // 11.1's `regx_ei_windows` row for each window the job opened: the legs' deadlines at 23:59 loan-local (11.1 timer table), unique per (loan, due_date)
-      for (const w of opened) {
-        const at = (d: unknown): string => toIso(zonedEpochMs(D(String(d).slice(0, 10)), "23:59", zone));
-        await q.query(`INSERT INTO regx_ei_windows (loan_id, due_date, principal_residence, live_due_at, notice_due_at, live_status, notice_status) VALUES ($1::uuid, $2::date, $3, $4::timestamptz, $5::timestamptz, 'open', 'open') ON CONFLICT (loan_id, due_date) DO NOTHING`,
-          [loanId, String(w["due_date"]), w["principal_residence"] !== false, at(w["live_due_at"] ?? w["due_date"]), at(w["notice_due_at"] ?? w["due_date"])]);
-      }
+      // 11.1's `regx_ei_windows` rows: the windows the job opened (deadlines at 23:59 loan-local) and the closing facts folded onto the open ones
+      await projectWindows(q, { loanId, zone, opened, spine, bankruptcy: bankruptcy === "active", fdcpaCease, unpaid });
     } });
     if (out) report.loans.push(out);
   }

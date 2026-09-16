@@ -16,7 +16,8 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { Queryable } from "../../../infra/db/client.ts";
-import { LOAN_LOCAL_TZ } from "../../../runtime/delinquency.ts";
+import { loanZoneOf } from "../../../runtime/delinquency.ts";
+import { plainDate } from "../../../kernel/calendar/date.ts";
 
 const exists = async (q: Queryable, table: string): Promise<boolean> => (await q.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${table}`]))[0]?.r !== null;
 
@@ -108,13 +109,7 @@ export const defaultDocuments: DocumentsPort = {
 
 // ---- 35.5 -------------------------------------------------------------------------------------------------------------------
 export interface ServicingConfigPort { zoneOf(q: Queryable, loanId: string, asOf: string): Promise<string> }
-export const defaultServicingConfig: ServicingConfigPort = {
-  async zoneOf(q, loanId, asOf) {
-    if (!(await exists(q, "loan_servicing_configs"))) return LOAN_LOCAL_TZ;
-    const rows = await q.query<{ tz: string | null }>(`SELECT time_zone AS tz FROM loan_servicing_configs WHERE loan_id = $1::uuid AND effective_from <= $2::date ORDER BY effective_from DESC LIMIT 1`, [loanId, asOf]);
-    return rows[0]?.tz ?? LOAN_LOCAL_TZ;
-  },
-};
+export const defaultServicingConfig: ServicingConfigPort = { zoneOf: (q, loanId, asOf) => loanZoneOf(q, loanId, plainDate(asOf)) };
 
 export interface DefaultOpsPorts { readonly cycles?: CyclesPort; readonly workItems?: WorkItemsPort; readonly documents?: DocumentsPort; readonly servicingConfig?: ServicingConfigPort }
 export const portsOf = (p: DefaultOpsPorts | undefined): Required<DefaultOpsPorts> =>

@@ -413,8 +413,8 @@ async function onMessage(deps: FlowDeps, m: InboundMessage): Promise<FlowReply |
 
 // ---------------------------------------------------------------- the scheduled pass
 async function tick(deps: FlowDeps, nowIso: string): Promise<void> {
-  // 11.1 / 13.1: the counter job over every delinquent loan (src/runtime/delinquency.ts)
-  await delinquencyDailySweep(deps.runtime, nowIso);
+  // 11.1 / 13.1: the counter job over every delinquent loan (src/runtime/delinquency.ts) — once per loan-day; 35.9's `delinquency_counters` unit is the same runner in the sweep
+  await delinquencyDailySweep(deps.runtime, nowIso, undefined, { oncePerDay: true });
   const today = civilToday(nowIso);
   // 12.2: silence past accept_by — the borrower's cards expire and the Record says what the offer said (the copy of the day it was sent); the owning process deems the rejection after its own policy grace (`deemed_rejection`)
   const pending = await deps.runtime.db.query<{ card_instance_id: string; subject_loan_id: string; props: P }>(`SELECT card_instance_id, subject_loan_id, props FROM card_instances WHERE status = 'pending' AND props->>'flow' = $1 AND props->>'flow_key' LIKE 'offer.compare:%' AND expires_at IS NOT NULL AND expires_at < $2`, [FLOW_ID, nowIso]);

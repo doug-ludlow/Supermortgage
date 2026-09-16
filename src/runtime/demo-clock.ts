@@ -239,9 +239,10 @@ export function refiDailyOutcome(sweep: SweepReport): HookOutcome {
 
 /**
  * One sweep minute at `step.at`, in the order the wall clock runs it (main.ts `sweep`, POST /v1/sweep): the flows' tick and
- * settle (or, without flows, the three runtime-level daily sweeps in the flows' order), then Runtime.sweep (the refinance
- * daily run and the FAKE reviewers when wired, then the breach pass), then settle again so the reactions the breaches
- * queued post-commit have run before the step is reported.
+ * settle (or, without flows, the origination and servicing daily sweeps), then Runtime.sweep (the refinance daily run and the
+ * FAKE reviewers when wired, 35.9's daily default pass — whose `delinquency_counters` unit is 11.1's counter in the loan's zone —
+ * then the breach pass), then the counter's once-per-loan-day catch-up for a step the pass did not cover, then settle again so
+ * the reactions the breaches queued post-commit have run before the step is reported.
  */
 async function runSweepMinute(deps: DemoAdvanceDeps, step: PlannedStep): Promise<StepReport> {
   const started = Date.now(); const { runtime, logger } = deps;
@@ -253,11 +254,12 @@ async function runSweepMinute(deps: DemoAdvanceDeps, step: PlannedStep): Promise
     const o = await originationDailySweep(runtime, step.at); origination = { deemed: o.deemed.length, warned: o.warned.length, expired: o.expired.length };
     const s = await servicingDailySweep(runtime, step.at); servicing = { loans: s.loans, posted: s.posted.length, late_charge_runs: s.late_charge_runs.length, errors: s.errors.length };
     for (const err of s.errors) logger?.warn("demo clock: servicing sweep error", { at: step.at, ...err });
-    const d = await delinquencyDailySweep(runtime, step.at); delinquency = { loans: d.loans.length, windows_opened: d.loans.reduce((a, l) => a + l.windows_opened.length, 0) };
   }
   let sweep: StepReport["sweep"]; let refi: HookOutcome = "absent";
   try { const r: SweepReport = await runtime.sweep(step.at); sweep = { due: r.due, breaches: r.breaches.length }; refi = refiDailyOutcome(r); }
   catch (e) { sweep = { error: e instanceof Error ? e.message : String(e) }; logger?.error("demo clock: sweep failed", { at: step.at, error: sweep.error }); }
+  // 11.1's counter for the loans the sweep's 35.9 `delinquency_counters` unit did not reach today (a step before 05:30 ET): the same runner, once per loan-day
+  if (!deps.flows) { const d = await delinquencyDailySweep(runtime, step.at, undefined, { oncePerDay: true }); delinquency = { loans: d.loans.length, windows_opened: d.loans.reduce((a, l) => a + l.windows_opened.length, 0) }; }
   if (deps.flows?.settle && flows !== "failed") { try { await deps.flows.settle(); } catch (e) { flows = failed("settle", e); } }
   return { at: step.at, date: step.date, kind: step.kind, refi_daily: refi, flows, servicing_sweep: servicing, origination_sweep: origination, delinquency_sweep: delinquency, sweep, ms: Date.now() - started };
 }

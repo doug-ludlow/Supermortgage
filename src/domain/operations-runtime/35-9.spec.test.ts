@@ -222,11 +222,12 @@ async function bookBankruptcyCase(b: Book, f: Fixture, caseNumber: string): Prom
 async function bookEiWindow(b: Book, f: Fixture, dueDate: string): Promise<void> {
   await b.db.query(`INSERT INTO regx_ei_windows (loan_id, due_date, principal_residence, live_due_at, notice_due_at, live_status, notice_status) VALUES ($1::uuid, $2::date, true, ($2::date + 36)::timestamptz, ($2::date + 45)::timestamptz, 'open', 'open')`, [f.loanId, dueDate]);
 }
-/** One sweep minute as the hosted runtime runs it (main.ts `sweep`: the runtime-level daily sweeps, then Runtime.sweep, then the folder settled). */
+/** One sweep minute as the hosted runtime runs it (main.ts `sweep`: the origination and servicing daily sweeps, then Runtime.sweep — whose 35.9 pass runs 11.1's counter as the `delinquency_counters` unit — then the counter's once-per-loan-day catch-up, then the folder settled). */
 async function hostedSweep(b: Book, iso: string): Promise<SweepReport> {
   b.clock.set(iso);
-  await originationDailySweep(b.runtime, iso); await servicingDailySweep(b.runtime, iso); await delinquencyDailySweep(b.runtime, iso);
+  await originationDailySweep(b.runtime, iso); await servicingDailySweep(b.runtime, iso);
   const r = await b.runtime.sweep(iso);
+  await delinquencyDailySweep(b.runtime, iso, undefined, { oncePerDay: true });
   await b.runtime.caseFolder.settle();
   return r;
 }
@@ -921,10 +922,14 @@ test("35.9-T17: Given loan L-B boarded on the hosted runtime with 35.5's `loan_i
     await rt.caseFolder.settle();
     assert.equal(adv.complete, true); assert.equal(adv.days_crossed, 36);
     // cycle_runs: one delinquency_counters run per crossed day, period_key = the day, a cycle_receipts row each
-    const runs = await brows<{ period_key: string; as_of_date: string; status: string; receipts: string }>(b, `SELECT r.period_key, r.as_of_date::text AS as_of_date, r.status, count(c.id)::text AS receipts FROM cycle_runs r LEFT JOIN cycle_receipts c ON c.run_id = r.id WHERE r.cycle_code = 'delinquency_counters' GROUP BY r.id ORDER BY r.as_of_date`);
+    const runs = await brows<{ period_key: string; as_of_date: string; status: string; units_done: number; units_skipped: number; receipts: string }>(b, `SELECT r.period_key, r.as_of_date::text AS as_of_date, r.status, r.units_done, r.units_skipped, count(c.id)::text AS receipts FROM cycle_runs r LEFT JOIN cycle_receipts c ON c.run_id = r.id WHERE r.cycle_code = 'delinquency_counters' GROUP BY r.id ORDER BY r.as_of_date`);
     assert.equal(runs.length, 36, "one run per crossed day");
     assert.deepEqual(runs.map((r) => r.period_key), Array.from({ length: 36 }, (_, i) => addDays(D("2026-10-02"), i)));
     assert.ok(runs.every((r) => r.period_key === r.as_of_date && r.status === "completed" && r.receipts === "1"), "period_key = the day, completed, one receipt each");
+    assert.ok(runs.every((r) => r.units_done === 1 && r.units_skipped === 0), `the unit did the day's work each day (${runs.map((r) => `${r.as_of_date}:${r.units_done}/${r.units_skipped}`).join(",")})`);
+    // the counter's row for L-B carries the loan's zone (35.5 rule 9)
+    const unit = (await brows<{ payload: Record<string, unknown> }>(b, `SELECT payload FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2026-10-02'`, [EV.countersRunCompleted]))[0]!;
+    assert.equal(unit.payload["units_done"], 1);
     assert.equal(await bcount(b, `FROM loan_events WHERE type = $1`, [EV.countersRunCompleted]), 36);
     // 11.1's window opened exactly once, by the counter's actor
     const opened = await brows<{ actor_kind: string; actor_id: string; payload: Record<string, unknown>; occurred_at: string }>(b, `SELECT actor_kind, actor_id, payload, occurred_at::text AS occurred_at FROM loan_events WHERE type = 'loan.delinquency.window_opened' AND loan_id = $1::uuid`, [lb.loanId]);

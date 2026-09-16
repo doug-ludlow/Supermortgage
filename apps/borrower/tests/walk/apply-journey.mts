@@ -28,10 +28,12 @@ export const MOBILE = { viewport: { width: 390, height: 844 }, isMobile: true, h
 
 const ROOT = '[data-testid="apply"]';
 export const attr = (page: Page, name: string): Promise<string | null> => page.locator(ROOT).first().getAttribute(name);
-export const errorText = async (page: Page): Promise<string> => ((await page.locator('[data-testid="apply-error"]').first().innerText().catch(() => "")) ?? "").trim();
-export const badgeText = async (page: Page): Promise<string> => ((await page.locator('[data-testid="apply-badge"]').first().innerText().catch(() => "")) ?? "").trim();
+/** The text of an element that may be absent: "" at once when it is not on the page (innerText() on a missing element waits Playwright's 30 s action timeout before failing — read on every Continue and every screenshot, that wait was the walk's whole running time: 60 s a screenshot, 30 s a step, 29 minutes for seven outcomes on run 184). */
+const textOf = async (page: Page, selector: string): Promise<string> => { const el = page.locator(selector).first(); if ((await el.count()) === 0) return ""; return ((await el.innerText({ timeout: 5_000 }).catch(() => "")) ?? "").trim(); };
+export const errorText = (page: Page): Promise<string> => textOf(page, '[data-testid="apply-error"]');
+export const badgeText = (page: Page): Promise<string> => textOf(page, '[data-testid="apply-badge"]');
 /** The whole Apply screen's text (what the borrower reads). */
-export const screenText = (page: Page): Promise<string> => page.locator(ROOT).first().innerText().catch(() => "");
+export const screenText = (page: Page): Promise<string> => textOf(page, ROOT);
 
 export async function waitForStep(page: Page, step: string, what: string, o: DriveOptions = {}): Promise<void> {
   try { await page.waitForSelector(`${ROOT}[data-step="${step}"]`, { timeout: o.stepTimeoutMs ?? 90_000 }); }

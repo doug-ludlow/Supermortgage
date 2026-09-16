@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8304/8787 (94.5%): tids 2299/2480, tables 797/852, timers 2070/2097, notices 308/309, tools 1485/1579, figures 1345/1470; processes at 100%: 197/212; retired 27; hosted 1485/1579, persisted 97/852",
+ "brief": "spec units built 8380/8787 (95.4%): tids 2321/2480, tables 805/852, timers 2075/2097, notices 308/309, tools 1499/1579, figures 1372/1470; processes at 100%: 198/212; retired 27; hosted 1499/1579, persisted 97/852",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2299
+   "built": 2321
   },
   "tables": {
    "spec": 852,
-   "built": 797
+   "built": 805
   },
   "timers": {
    "spec": 2097,
-   "built": 2070
+   "built": 2075
   },
   "notices": {
    "spec": 309,
@@ -19,21 +19,21 @@
   },
   "tools": {
    "spec": 1579,
-   "built": 1485
+   "built": 1499
   },
   "figures": {
    "spec": 1470,
-   "built": 1345
+   "built": 1372
   },
   "units": {
    "spec": 8787,
-   "built": 8304
+   "built": 8380
   }
  },
  "exec_totals": {
   "hosted": {
    "spec": 1579,
-   "built": 1485
+   "built": 1499
   },
   "persisted": {
    "spec": 852,
@@ -446,7 +446,7 @@
   },
   "32": {
    "spec": 350,
-   "built": 332,
+   "built": 337,
    "processes": 18,
    "done": 17
   },
@@ -464,9 +464,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 307,
+   "built": 378,
    "processes": 12,
-   "done": 5
+   "done": 6
   },
   "36": {
    "spec": 40,
@@ -672,6 +672,7 @@
   "35.3",
   "35.5",
   "35.7",
+  "35.9",
   "35.11"
  ],
  "processes": [
@@ -10331,14 +10332,9 @@
    "title": "The Apply product",
    "tids": {
     "spec": 18,
-    "built": 0,
-    "todo": 18,
+    "built": 5,
+    "todo": 13,
     "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
      6,
      7,
      8,
@@ -10392,9 +10388,9 @@
    },
    "units": {
     "spec": 18,
-    "built": 0
+    "built": 5
    },
-   "pct": 0.0,
+   "pct": 27.8,
    "retired": []
   },
   {
@@ -10964,9 +10960,8 @@
    },
    "figures": {
     "spec": 11,
-    "built": 4,
+    "built": 5,
     "missing": [
-     "$1,234.56",
      "$1,912.65",
      "$1,914.67",
      "$1,916.67",
@@ -10987,9 +10982,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 7
+    "built": 8
    },
-   "pct": 12.1,
+   "pct": 13.8,
    "retired": []
   },
   {
@@ -11499,53 +11494,20 @@
    "title": "Default operations over time: cases progressed by the cycles and the screens \u2014 referral, milestones, docket reactions, executed breach actions, claims filed",
    "tids": {
     "spec": 17,
-    "built": 0,
-    "todo": 17,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17
-    ]
+    "built": 17,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "breach_action_registry",
-     "breach_actions",
-     "case_milestone_expectations",
-     "case_timelines",
-     "claim_candidates",
-     "default_case_daily_runs",
-     "docket_reactions",
-     "firm_dispatches"
-    ]
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 6,
-    "built": 1,
+    "built": 6,
     "armable": 6,
-    "missing": [
-     "SM_BREACH_ACTION_RECON_DAILY",
-     "SM_CASE_MILESTONE_OVERDUE_5BD",
-     "SM_CASE_REFERRAL_DECISION_2BD",
-     "SM_CLAIM_PACKAGE_5BD",
-     "SM_DOCKET_REACTION_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -11554,59 +11516,17 @@
    },
    "tools": {
     "spec": 14,
-    "built": 0,
-    "missing": [
-     "case.timeline",
-     "case.progress",
-     "case.refer",
-     "case.milestone.expect",
-     "case.milestone.record",
-     "docket.sync",
-     "docket.react",
-     "firm.dispatch",
-     "firm.inbound",
-     "breach.execute",
-     "breach.recon",
-     "claims.sweep",
-     "claims.package",
-     "writeDecision"
-    ]
+    "built": 14,
+    "missing": []
    },
    "figures": {
     "spec": 27,
-    "built": 1,
-    "missing": [
-     "$1,062.00",
-     "$129.12",
-     "$163,920.44",
-     "$178,525.21",
-     "$180.00",
-     "$187,450.00",
-     "$2,300.00",
-     "$2,865.00",
-     "$2,914.60",
-     "$3,263.68",
-     "$3,461.64",
-     "$385.00",
-     "$4,527.05",
-     "$53,557.56",
-     "$565.00",
-     "$6,000.00",
-     "$7,069.05",
-     "$7,198.17",
-     "$7,406.60",
-     "$7,569.46",
-     "$750.67",
-     "$785.45",
-     "$8,196.02",
-     "$8,320.13",
-     "$883.53",
-     "$98.17"
-    ]
+    "built": 27,
+    "missing": []
    },
    "hosted": {
     "spec": 14,
-    "built": 0,
+    "built": 14,
     "measured": true
    },
    "persisted": {
@@ -11616,9 +11536,9 @@
    },
    "units": {
     "spec": 72,
-    "built": 2
+    "built": 72
    },
-   "pct": 2.8,
+   "pct": 100.0,
    "retired": []
   },
   {

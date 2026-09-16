@@ -5,7 +5,8 @@
  * events, decisions and escalations, and nothing else (rule 12): a money field changes only inside the owner's command.
  *
  *   plan / planIn        the `cycles.plan` command's body (D10): the planner lock on a dedicated client (planner-lock.ts), the
- *                        registry upsert, per active cycle the period keys due and one transaction per (cycle, period) —
+ *                        registry upsert, per active cycle (an owner-planned one — cycles.ts `plan_mode: owner` — only when
+ *                        `cycle_codes` names it) the period keys due and one transaction per (cycle, period) —
  *                        `cycle_runs` ON CONFLICT DO NOTHING, `jobs` ON CONFLICT (idempotency_key) DO NOTHING (`blocked` when a
  *                        dependency is unmet), `job_events{planned}`, `cycle.run.opened` through a local TimerEngine restored with
  *                        `timers.openGlobal()` so SM_CYCLE_RUN_STALLED_1D arms in the same transaction (the breach pass's pattern,
@@ -197,7 +198,8 @@ export class CyclesService {
       await rt.db.tx((q) => this.upsertRegistry(q, wall));
       const active = new Set((await rt.db.query<{ cycle_code: string }>(`SELECT cycle_code FROM cycle_registry WHERE status = 'active'`)).map((r) => r.cycle_code));
       for (const def of this.defs) {
-        if (!active.has(def.cycle_code) || (codes && !codes.has(def.cycle_code))) continue;
+        // an owner-planned cycle (cycles.ts `plan_mode: owner` — 35.9's case cycles, planned by its daily pass in dependency order) is planned only by a call that names it
+        if (!active.has(def.cycle_code) || (codes ? !codes.has(def.cycle_code) : def.plan_mode === "owner")) continue;
         let periods: PeriodDue[];
         try { periods = await periodKeysDue(rt.db, def, asOfDate); }
         catch (e) { const msg = e instanceof Error ? e.message : String(e); errors.push({ cycle_code: def.cycle_code, period_key: null, error: msg }); await this.registryError(def.cycle_code, "selector_error", wall); this.log?.error("cycles.plan: period keys failed", { cycle_code: def.cycle_code, error: msg }); continue; }

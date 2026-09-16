@@ -27,6 +27,7 @@ import type { Runtime } from "../../runtime/app.ts";
 import { type PlainDate, plainDate as D, addDays, endOfMonth, startOfMonth, parts } from "../../kernel/calendar/date.ts";
 import { addBusinessDays, defaultCalendars, type CalendarSet, type DayUnit } from "../../kernel/calendar/business.ts";
 import { zonedEpochMs } from "../../kernel/calendar/zoned.ts";
+import { CLAIM_MILESTONE_EVENT_TYPES, OPEN_BK_STATUSES, OPEN_CANDIDATE_STATUSES, OPEN_CASE_TYPES } from "./default-35-9.ts";
 
 /** The export's semver — `cycle_registry.registry_version`. */
 export const CYCLES_VERSION = "1.0.0";
@@ -104,6 +105,14 @@ export interface CycleDef {
   readonly serves_timer: string | null;
   readonly escalation_role: string;
   readonly expected_by_rule: string | null;
+  /**
+   * Who plans the cycle's runs: the sweep's cycles pass and the demo step (`sweep`, the default — every pass at the as-of date plans the
+   * period keys due), or the owner's own pass (`owner`: planned only by a `cycles.plan{cycle_codes}` that names the code — 35.9's four case
+   * cycles, which its daily pass plans in dependency order at/after 05:30 ET, each after the previous one's receipt, so rule 2's universe
+   * is read after the day's counters opened their windows; src/domain/operations-runtime/default-35-9/daily-run.ts). The row's `schedule`
+   * states it; the registry table carries no column for it.
+   */
+  readonly plan_mode?: "sweep" | "owner";
 }
 
 // ─────────────────────────── period keys (rule 3, rule 10)
@@ -244,20 +253,19 @@ export const selectors = {
   /** 35.5: every lockbox with a batch row (the table lands with 35.5; absent → no unit) */
   lockboxes: { name: "lockboxes", select: async (q, w) => (await rowsOf<{ id: string }>(q, `SELECT DISTINCT lockbox_id::text AS id FROM lockbox_batches ORDER BY id`)).map((r) => ({ unit_id: r.id, input: { lockbox_id: r.id, as_of_date: w.as_of_date } })) } satisfies NamedSelector,
   /** 27.1: every open warehouse advance (absent table → no unit) */
-  // 27.1's warehouse_advances is keyed advance_id (db/migrations: no `id` column); open = not yet repaid
+  // 27.1's warehouse_advances is keyed advance_id (0097_warehouse_facility.sql: no `id` column); open = not yet repaid
   open_warehouse_advances: { name: "open_warehouse_advances", select: async (q, w) => (await rowsOf<{ id: string }>(q, `SELECT advance_id::text AS id FROM warehouse_advances WHERE repaid_at IS NULL ORDER BY advance_id`)).map((r) => ({ unit_id: r.id, input: { advance_id: r.id, as_of_date: w.as_of_date } })) } satisfies NamedSelector,
-  /** 35.9: every loan with an open bankruptcy case (absent table → no unit) */
-  open_bankruptcy_loans: { name: "open_bankruptcy_loans", select: async (q) => loanUnits(await rowsOf<{ id: string }>(q, `SELECT DISTINCT loan_id AS id FROM bankruptcy_cases WHERE closed_at IS NULL ORDER BY id`)) } satisfies NamedSelector,
-  /** 35.9: every loan with an open `regx_ei_windows`, `cases` or `claim_candidates` row (absent tables → no unit) */
-  // an open Reg X window is 0013_early_intervention.sql's: not cancelled and its live or notice leg still `open` (the table has no closed_at)
+  /** 35.9: every loan with an open bankruptcy case — 14.1's `bankruptcy_cases` rows as the entity store holds them (the typed table stays 14.x's record of what its tools wrote; the open statuses are default-35-9.ts OPEN_BK_STATUSES) */
+  open_bankruptcy_loans: { name: "open_bankruptcy_loans", select: async (q) => loanUnits((await rowsOf<{ id: string | null }>(q, `SELECT DISTINCT coalesce(loan_id::text, data->>'loan_id') AS id FROM entity_current WHERE kind = 'bankruptcy_cases' AND coalesce(data->>'status', 'open') = ANY($1::text[]) ORDER BY 1`, [OPEN_BK_STATUSES])).filter((r): r is { id: string } => !!r.id)) } satisfies NamedSelector,
+  /** 35.9 rule 2's universe: every loan with an open `regx_ei_windows` row (live leg open), an open `cases` row of type lossmit / foreclosure / bankruptcy / reo / claim, or an open `claim_candidates` row (absent tables → no unit) */
   default_case_loans: { name: "default_case_loans", select: async (q) => {
     const ids = new Set<string>();
-    for (const sql of [`SELECT DISTINCT loan_id AS id FROM regx_ei_windows WHERE cancelled_at IS NULL AND (live_status = 'open' OR notice_status = 'open')`, `SELECT DISTINCT loan_id AS id FROM cases WHERE closed_at IS NULL AND loan_id IS NOT NULL`, `SELECT DISTINCT loan_id AS id FROM claim_candidates WHERE resolved_at IS NULL`])
-      for (const r of await rowsOf<{ id: string }>(q, sql)) if (r.id) ids.add(String(r.id));
+    for (const [sql, params] of [[`SELECT DISTINCT loan_id::text AS id FROM regx_ei_windows WHERE live_status = 'open'`, []], [`SELECT DISTINCT loan_id::text AS id FROM cases WHERE loan_id IS NOT NULL AND closed_at IS NULL AND case_type = ANY($1::text[]) AND status NOT LIKE 'closed%'`, [OPEN_CASE_TYPES]], [`SELECT DISTINCT loan_id::text AS id FROM claim_candidates WHERE status = ANY($1::text[])`, [OPEN_CANDIDATE_STATUSES]]] as const)
+      for (const r of await rowsOf<{ id: string | null }>(q, sql, params)) if (r.id) ids.add(String(r.id));
     return loanUnits([...ids].sort().map((id) => ({ id })));
   } } satisfies NamedSelector,
-  /** 35.9 / 15.x: loans with an open claim candidate (absent table → no unit) */
-  claim_loans: { name: "claim_loans", select: async (q) => loanUnits(await rowsOf<{ id: string }>(q, `SELECT DISTINCT loan_id AS id FROM claim_candidates WHERE resolved_at IS NULL ORDER BY id`)) } satisfies NamedSelector,
+  /** 35.9 / 15.x: loans with a liquidation or completion milestone on the timeline in the last 120 calendar days, or an open claim candidate (absent tables → no unit) */
+  claim_loans: { name: "claim_loans", select: async (q, w) => loanUnits(await rowsOf<{ id: string }>(q, `SELECT DISTINCT loan_id::text AS id FROM (SELECT loan_id FROM case_timelines WHERE event_type = ANY($1::text[]) AND occurred_on >= $2::date UNION SELECT loan_id FROM claim_candidates WHERE status = ANY($3::text[])) u ORDER BY 1`, [CLAIM_MILESTONE_EVENT_TYPES, addDays(w.as_of_date, -120), OPEN_CANDIDATE_STATUSES])) } satisfies NamedSelector,
   /** 35.12: one global unit while a `parallel_runs` row is open (absent table → no unit) */
   open_parallel_runs: { name: "open_parallel_runs", select: async (q, w) => (await rowsOf<{ id: string }>(q, `SELECT id::text AS id FROM parallel_runs WHERE closed_at IS NULL ORDER BY id`)).map((r) => ({ unit_id: r.id, input: { parallel_run_id: r.id, as_of_date: w.as_of_date } })) } satisfies NamedSelector,
 } as const;
@@ -303,10 +311,11 @@ export const CYCLE_ROWS: readonly CycleDef[] = [
   def({ cycle_code: "warehouse_borrowing_base", owner_process: "35.6", owner_agent: "warehouse", unit_scope: "global", schedule: "07:00 ET each business_days_servicer", period_grammar: "day", calendar: "business_days_servicer", selector: selectors.global, receipt_event: "warehouse.borrowing_base.run_completed", depends_on: [{ cycle_code: "warehouse_daily_accrual" }], serves_timer: "SM_WH_BORROWING_BASE_DAILY", expected_by_rule: "07:00 ET" }),
   def({ cycle_code: "roles.queue_scan", owner_process: "35.7", owner_agent: "security-records", unit_scope: "global", schedule: "daily 06:30 ET", period_grammar: "day", selector: selectors.global, receipt_event: "role.queue.scan_completed", serves_timer: "SM_HANDOVER_BOARD_DAILY", expected_by_rule: "same_day 23:59 ET" }),
   def({ cycle_code: "work_log_recon", owner_process: "35.8", owner_agent: "case", unit_scope: "global", schedule: "once per calendar day", period_grammar: "day", selector: selectors.global, receipt_event: "work.log.recon.run_completed", serves_timer: "SM_WORK_LOG_RECON_DAILY", expected_by_rule: "same_day 23:59 ET" }),
-  def({ cycle_code: "bk_docket_sync_daily", owner_process: "35.9", owner_agent: "bankruptcy-ops", unit_scope: "loan", schedule: "daily, every open bankruptcy_cases row, before default_case_daily", period_grammar: "day", selector: selectors.open_bankruptcy_loans, receipt_event: "bk_docket_sync.run_completed", depends_on: [{ cycle_code: "delinquency_counters" }], serves_timer: "SM_DOCKET_REACTION_1BD", expected_by_rule: "same_day 23:59 ET" }),
-  def({ cycle_code: "dra_import_daily", owner_process: "35.9", owner_agent: "foreclosure-ops", unit_scope: "global", schedule: "07:00 ET, 13.6 dra.snapshot.import from the law-firm port", period_grammar: "day", selector: selectors.global, receipt_event: "dra_import.run_completed", serves_timer: "SM_DRA_RECONCILE_DAILY", expected_by_rule: "same_day 23:59 ET" }),
-  def({ cycle_code: "default_case_daily", owner_process: "35.9", owner_agent: "foreclosure-ops", unit_scope: "loan", schedule: "daily 05:30 ET, every loan with an open regx_ei_windows, cases or claim_candidates row; expected_by 06:30 ET", period_grammar: "day", selector: selectors.default_case_loans, receipt_event: "default_case.daily.run_completed", depends_on: [{ cycle_code: "delinquency_counters" }, { cycle_code: "bk_docket_sync_daily" }, { cycle_code: "dra_import_daily" }], serves_timer: "SM_DEFAULT_CASE_DAILY", expected_by_rule: "06:30 ET" }),
-  def({ cycle_code: "claims_sweep_daily", owner_process: "35.9", owner_agent: "claims-reo", unit_scope: "loan", schedule: "daily, loans with a liquidation milestone in the last 120 calendar days or an open candidate", period_grammar: "day", selector: selectors.claim_loans, receipt_event: "claims_sweep.run_completed", depends_on: [{ cycle_code: "default_case_daily" }], serves_timer: "SM_CLAIM_PACKAGE_5BD", expected_by_rule: "same_day 23:59 ET" }),
+  // 35.9 Trigger & frequency: the four case cycles are planned by 35.9's daily pass at/after 05:30 ET in this order, each after the previous one's receipt (`plan_mode: owner` — rule 2's universe is read after the counters opened the day's windows); `default_case_daily`'s receipt literal is that pass's own, written with the `default_case_daily_runs` row (`receipt_emitted_by: owner`), so the election appends `cycle.run.completed` only
+  def({ cycle_code: "bk_docket_sync_daily", owner_process: "35.9", owner_agent: "bankruptcy-ops", unit_scope: "loan", schedule: "daily at/after 05:30 ET (35.9's daily pass plans it), every open bankruptcy_cases row, before default_case_daily", period_grammar: "day", selector: selectors.open_bankruptcy_loans, receipt_event: "bk_docket_sync.run_completed", depends_on: [{ cycle_code: "delinquency_counters" }], serves_timer: "SM_DOCKET_REACTION_1BD", expected_by_rule: "same_day 23:59 ET", plan_mode: "owner" }),
+  def({ cycle_code: "dra_import_daily", owner_process: "35.9", owner_agent: "foreclosure-ops", unit_scope: "global", schedule: "daily at/after 05:30 ET (35.9's daily pass plans it), 13.6 dra.snapshot.import from the law-firm port", period_grammar: "day", selector: selectors.global, receipt_event: "dra_import.run_completed", serves_timer: "SM_DRA_RECONCILE_DAILY", expected_by_rule: "same_day 23:59 ET", plan_mode: "owner" }),
+  def({ cycle_code: "default_case_daily", owner_process: "35.9", owner_agent: "foreclosure-ops", unit_scope: "loan", schedule: "daily 05:30 ET (35.9's daily pass plans it after the counters, the docket sync and the DRA import), every loan with an open regx_ei_windows, cases or claim_candidates row; expected_by 06:30 ET", period_grammar: "day", selector: selectors.default_case_loans, receipt_event: "default_case.daily.run_completed", receipt_emitted_by: "owner", depends_on: [{ cycle_code: "delinquency_counters" }, { cycle_code: "bk_docket_sync_daily" }, { cycle_code: "dra_import_daily" }], serves_timer: "SM_DEFAULT_CASE_DAILY", expected_by_rule: "06:30 ET", plan_mode: "owner" }),
+  def({ cycle_code: "claims_sweep_daily", owner_process: "35.9", owner_agent: "claims-reo", unit_scope: "loan", schedule: "daily at/after 05:30 ET (35.9's daily pass plans it after default_case_daily), loans with a liquidation milestone in the last 120 calendar days or an open candidate", period_grammar: "day", selector: selectors.claim_loans, receipt_event: "claims_sweep.run_completed", depends_on: [{ cycle_code: "default_case_daily" }], serves_timer: "SM_CLAIM_PACKAGE_5BD", expected_by_rule: "same_day 23:59 ET", plan_mode: "owner" }),
   def({ cycle_code: "posture.check", owner_process: "35.12", owner_agent: "compliance-sentinel", unit_scope: "global", schedule: "daily 05:30 ET and on every manifest", period_grammar: "day", selector: selectors.global, receipt_event: "posture.check.run_completed", serves_timer: "SM_PROD_POSTURE_DAILY", expected_by_rule: "same_day 23:59 ET" }),
   def({ cycle_code: "data.scan", owner_process: "35.12", owner_agent: "compliance-sentinel", unit_scope: "global", schedule: "daily 05:45 ET on nonprod", period_grammar: "day", selector: selectors.global, receipt_event: "posture.data_scan.run_completed", expected_by_rule: "same_day 23:59 ET" }),
   def({ cycle_code: "parallel_run.reconcile", owner_process: "35.12", owner_agent: "compliance-sentinel", unit_scope: "global", schedule: "daily 21:00 ET while a parallel_runs row is open", period_grammar: "day", selector: selectors.open_parallel_runs, receipt_event: "parallel_run.day.reconciled", receipt_emitted_by: "owner", depends_on: onCashiering(), serves_timer: "SM_PROD_PARALLEL_RUN_DAILY", expected_by_rule: "21:00 ET" }),

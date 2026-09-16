@@ -557,5 +557,6 @@ export type CardInstance<K extends CardKind = CardKind> = CardBase & {
 export type AnyCardInstance = { [K in CardKind]: CardInstance<K> }[CardKind];
 
 /** Body of POST /v1/borrower/cards/{id}/resolve (02 §7); idempotency key = card_instance_id. */
-export type ResolveRequest = { evidence: Record<string, unknown>; option_id?: string };
+/** `args` override the card's `command_args_by_option` on the mapped command (src/runtime/borrower/commands.ts: `body.args` → `commandInputFor`) — the goal card's tap carries the occupancy and the property this way (32.19 §3.1). */
+export type ResolveRequest = { evidence: Record<string, unknown>; option_id?: string; args?: Record<string, unknown> };
 export type ResolveResponse = { card: AnyCardInstance; events?: string[] };

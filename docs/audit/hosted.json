@@ -1,13 +1,13 @@
 {
- "run_id": "b4a9a241-1f97-49d9-b197-b8c30ec05974",
+ "run_id": "7ec13fd7-ce9d-4e47-b8df-0fbcc5050edd",
  "target": "probe",
- "database_name": "supermortgage_probe",
+ "database_name": "sm_s3511_int2_probe",
  "migration_head": "0231_seed_inventories.sql",
- "git_sha": "a6916f930589b431a140016cddd7b8bdb5c0833c",
+ "git_sha": "83c8c8fa558b4ebc65ad0006d46a9ef6f317de64",
  "as_of_date": "2026-09-16",
- "tools_total": 1485,
- "executed": 348,
- "refused_typed": 1137,
+ "tools_total": 1499,
+ "executed": 355,
+ "refused_typed": 1144,
  "not_wired": 0,
  "errored": 0,
  "results": [
@@ -8043,7 +8043,7 @@
    "process": "32.2",
    "name": "application.withdraw",
    "status": "refused_typed",
-   "code": "BAD_REQUEST"
+   "code": "APPLICATION_TERMINAL"
   },
   {
    "process": "32.2",
@@ -8744,14 +8744,14 @@
   {
    "process": "35.5",
    "name": "installments.reproject",
-   "status": "refused_typed",
-   "code": "SCHEDULE_REQUIRED"
+   "status": "executed",
+   "code": null
   },
   {
    "process": "35.5",
    "name": "installments.write",
-   "status": "refused_typed",
-   "code": "SCHEDULE_REQUIRED"
+   "status": "executed",
+   "code": null
   },
   {
    "process": "35.5",
@@ -8845,6 +8845,90 @@
   },
   {
    "process": "35.7",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.9",
+   "name": "breach.execute",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "breach.recon",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.9",
+   "name": "case.milestone.expect",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "case.milestone.record",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "case.progress",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.9",
+   "name": "case.refer",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "case.timeline",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.9",
+   "name": "claims.package",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "claims.sweep",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.9",
+   "name": "docket.react",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "docket.sync",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "firm.dispatch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
+   "name": "firm.inbound",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.9",
    "name": "writeDecision",
    "status": "executed",
    "code": null

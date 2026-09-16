@@ -6,6 +6,8 @@
  * (release_task_id, attempt)).
  */
 import { AdapterUnavailable, PermanentRejection, TransientFailure } from "./failures.ts";
+import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
+import { plainDate } from "../../kernel/calendar/date.ts";
 
 export interface PacerParty { readonly caseNumber: string; readonly court: string; readonly chapter: 7 | 11 | 12 | 13; readonly lastName: string; readonly firstName: string; readonly ssn4: string; readonly dateFiled: string; readonly status: "open" | "discharged" | "dismissed" | "closed"; }
 export interface PacerQuery { readonly lastName?: string; readonly ssn4?: string; readonly ssn?: string; readonly dateFiledFrom: string; }
@@ -113,4 +115,82 @@ export class FakeErecording implements ErecordingPort {
   }
   async status(packageId: string): Promise<ErecordingPackage> { this.check(); const p = this.packages.get(packageId); if (!p) throw new PermanentRejection("NO_PACKAGE", packageId); return p; }
   async countyCovered(state: string, county: string): Promise<boolean> { return this.coverage.has(`${state}:${county}`); }
+}
+
+// ───────────────────────────── the law firm (35.9 rule 8: "A firm is an outbox counterparty") ─────────────────────────────
+/**
+ * The `law-firm` port: outbound dispatches (referral packages, instructions, messages, documents, invoice responses) and the
+ * inbound replies a firm sends (acknowledgments, document requests, milestone reports, sale events, invoices, the daily DRA
+ * snapshot). In production the same port is the attorney-network / case-management vendor feed [UNVERIFIED — vendor-specific;
+ * only the FAKE is built]; nothing in the domain knows which.
+ */
+export interface FirmDispatchMessage {
+  readonly dispatch_id: string; readonly loan_id: string; readonly case_id: string | null; readonly firm_id: string;
+  readonly kind: "referral_package" | "instruction" | "message" | "documents" | "invoice_response" | "status_demand" | "ack_demand";
+  readonly owning_event_id: string | null;
+  /** The date of the owning event (the referral's `sent_at`): the FAKE's replies are a pure function of it, never of delivery time (35.9-T14). */
+  readonly owning_event_on: string;
+  readonly state: string; readonly method: "judicial" | "non_judicial";
+  readonly payload: Record<string, unknown>;
+}
+export interface FirmReply { readonly reply_id: string; readonly kind: "ack" | "documents_received" | "document_request" | "milestone" | "sale" | "invoice" | "dra_snapshot"; readonly due_on: string; readonly payload: Record<string, unknown> }
+export interface LawFirmPort {
+  /** Deliver one dispatch (the outbox adapter's send); a receipt names the firm's message id. */
+  deliver(m: FirmDispatchMessage, now: string): Promise<{ firm_message_id: string; accepted: true; at: string }>;
+  /** Every reply the firm sends for a dispatch on or before `asOf` — deterministic from the dispatch (the demo advance and a hosted run agree). */
+  repliesFor(m: FirmDispatchMessage, asOf: string): readonly FirmReply[];
+}
+/** Per-state, per-method lead times (calendar days from the referral) the FAKE reports its milestones on — the same demo constants 35.9 seeds as `fc_milestone_defaults` [UNVERIFIED — demo constants]. */
+export const FAKE_FIRM_LEADS: Readonly<Record<string, Readonly<Partial<Record<"judicial" | "non_judicial", readonly { code: string; days: number }[]>>>>> = {
+  FL: { judicial: [{ code: "FIRST_LEGAL", days: 45 }, { code: "SERVICE_COMPLETE", days: 105 }, { code: "JUDGMENT_ENTERED", days: 345 }, { code: "SALE_SCHEDULED", days: 390 }] },
+  NY: { judicial: [{ code: "FIRST_LEGAL", days: 45 }, { code: "SERVICE_COMPLETE", days: 135 }, { code: "JUDGMENT_ENTERED", days: 435 }, { code: "SALE_SCHEDULED", days: 495 }] },
+  OH: { judicial: [{ code: "FIRST_LEGAL", days: 45 }, { code: "SERVICE_COMPLETE", days: 105 }, { code: "JUDGMENT_ENTERED", days: 285 }, { code: "SALE_SCHEDULED", days: 330 }] },
+  TX: { non_judicial: [{ code: "FIRST_LEGAL", days: 45 }, { code: "SALE_SCHEDULED", days: 66 }] },
+  AZ: { non_judicial: [{ code: "FIRST_LEGAL", days: 45 }, { code: "SALE_SCHEDULED", days: 135 }] },
+  CA: { non_judicial: [{ code: "FIRST_LEGAL", days: 45 }, { code: "SALE_SCHEDULED", days: 135 }] },
+};
+const GENERIC_LEADS: readonly { code: string; days: number }[] = [{ code: "FIRST_LEGAL", days: 45 }, { code: "SALE_SCHEDULED", days: 90 }];
+const isoDay = (d: string): number => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));
+const plusDays = (d: string, n: number): string => new Date(isoDay(d) + n * 86_400_000).toISOString().slice(0, 10);
+/** `n` servicer business days after `d` on the kernel's servicer calendar (the same one the sections' clocks use). */
+const nextBusinessDay = (d: string, n: number): string => addBusinessDays(plainDate(d), n, servicer);
+
+/**
+ * FAKE law firm (35.9 rule 8): acknowledges a referral 1 servicer business day after it was sent with a forecast first-legal
+ * date = referral + the state's first_legal lead; answers a document request in 2; reports each milestone on its forecast
+ * date; schedules the sale per the state's default. `outage` makes `deliver` throw AdapterUnavailable (the dispatch stays
+ * queued; the sections' clocks keep running — 35.9 Integrations). Replies are pure functions of the dispatch, so a demo advance
+ * and thirty hosted sweeps produce the same rows.
+ */
+export class FakeLawFirm implements LawFirmPort {
+  outage = false;
+  transientRemaining = 0;
+  readonly delivered: (FirmDispatchMessage & { at: string })[] = [];
+  /** A firm that never acknowledges (a test's late firm): dispatch ids whose replies are withheld. */
+  readonly silent = new Set<string>();
+  private check(): void { if (this.outage) throw new AdapterUnavailable("law-firm", "law_firm_manual", "attorney network unavailable"); if (this.transientRemaining > 0) { this.transientRemaining -= 1; throw new TransientFailure("law-firm: 502"); } }
+  async deliver(m: FirmDispatchMessage, now: string): Promise<{ firm_message_id: string; accepted: true; at: string }> {
+    this.check();
+    if (!m.firm_id) throw new PermanentRejection("NO_FIRM", "a dispatch names its firm");
+    this.delivered.push({ ...m, at: now });
+    return { firm_message_id: `FAKE-FIRM-${m.dispatch_id}`, accepted: true, at: now };
+  }
+  leads(state: string, method: "judicial" | "non_judicial"): readonly { code: string; days: number }[] { return FAKE_FIRM_LEADS[state.toUpperCase()]?.[method] ?? GENERIC_LEADS; }
+  repliesFor(m: FirmDispatchMessage, asOf: string): readonly FirmReply[] {
+    if (this.silent.has(m.dispatch_id)) return [];
+    const day = asOf.slice(0, 10); const out: FirmReply[] = [];
+    const push = (kind: FirmReply["kind"], due_on: string, seq: string, payload: Record<string, unknown>): void => { if (due_on <= day) out.push({ reply_id: `firm:${m.dispatch_id}:${kind}:${seq}`, kind, due_on, payload }); };
+    if (m.kind === "referral_package") {
+      const leads = this.leads(m.state, m.method);
+      const firstLegal = leads.find((l) => l.code === "FIRST_LEGAL")?.days ?? 45;
+      push("ack", nextBusinessDay(m.owning_event_on, 1), "ack", { referral_id: String(m.payload["referral_id"] ?? ""), complete: true, missing: [], forecast_first_legal_on: plusDays(m.owning_event_on, firstLegal), firm_message_id: `FAKE-FIRM-${m.dispatch_id}` });
+      for (const l of leads) {
+        const on = plusDays(m.owning_event_on, l.days);
+        if (l.code === "SALE_SCHEDULED") push("sale", on, l.code, { sale_at: plusDays(on, 30), method: m.method, scheduled_on: on });
+        else push("milestone", on, l.code, { code: l.code, occurred_on: on, source: "firm" });
+      }
+    }
+    if (m.kind === "documents") push("documents_received", nextBusinessDay(m.owning_event_on, 2), "docs", { request_id: String(m.payload["request_id"] ?? ""), received: true });
+    return out;
+  }
 }

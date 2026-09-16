@@ -553,7 +553,9 @@ jobs:
           DEMO_BASE: https://${{ needs.terraform.outputs.api_hostname }}
           WALK_OUT: walk-out
           # WALK_OPS_TOKEN rides in from $GITHUB_ENV (the step above)
-        run: node --experimental-strip-types tests/walk/demo-walk.mts
+        run: |
+          echo "WALK_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          node --experimental-strip-types tests/walk/demo-walk.mts
       - name: Keep the screenshots and the report
         if: always()
         uses: actions/upload-artifact@v4
@@ -562,6 +564,29 @@ jobs:
           path: apps/borrower/walk-out
           if-no-files-found: warn
           retention-days: 14
+      - name: The demo's log around the walk (only when the walk failed)
+        if: failure()
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+        # What the browser cannot see: the API's and the sweep job's WARNING/ERROR lines (borrower.unhandled, borrower.flow.failed,
+        # borrower.flows.failed, a timer breach), every request the services or the load balancer answered 500 or more, the borrower
+        # API's requests slower than ten seconds, and the INFO lines that carry timings (borrower.card.resolved per tap,
+        # borrower.flows.ticked, the sweep's passes) — all since WALK_STARTED_AT, ascending. Read as the deployer (roles/editor).
+        run: |
+          since="${WALK_STARTED_AT:-$(date -u -d '-20 min' +%Y-%m-%dT%H:%M:%SZ)}"
+          read_log() { echo; echo "## $1"; gcloud logging read "$2 AND timestamp>=\"${since}\"" --project "${PROJECT}" --limit "${3:-200}" --order asc --format "$4" 2>&1 || true; }
+          read_log "Services and jobs: severity >= WARNING since ${since}" \
+            '(resource.type="cloud_run_revision" OR resource.type="cloud_run_job") AND severity>=WARNING' 200 \
+            'value(timestamp,severity,resource.labels.service_name,resource.labels.job_name,jsonPayload.message,jsonPayload.error.message,jsonPayload.path,jsonPayload.flow,jsonPayload.events,textPayload)'
+          read_log "Requests answered 500 or more (the services and the load balancer) since ${since}" \
+            '(resource.type="cloud_run_revision" OR resource.type="http_load_balancer") AND httpRequest.status>=500' 100 \
+            'value(timestamp,resource.type,httpRequest.requestMethod,httpRequest.requestUrl,httpRequest.status,httpRequest.latency,jsonPayload.statusDetails)'
+          read_log "Borrower API requests slower than 10 s since ${since}" \
+            'resource.type="cloud_run_revision" AND resource.labels.service_name="supermortgage-api" AND logName:"requests" AND httpRequest.latency>="10s"' 100 \
+            'value(timestamp,httpRequest.requestMethod,httpRequest.requestUrl,httpRequest.status,httpRequest.latency)'
+          read_log "Timings: each tap's borrower.card.resolved, borrower.command, borrower.flows.ticked, the sweep's passes since ${since}" \
+            '(resource.type="cloud_run_revision" OR resource.type="cloud_run_job") AND (jsonPayload.message="borrower.card.resolved" OR jsonPayload.message="borrower.command" OR jsonPayload.message="borrower.flows.ticked" OR jsonPayload.message="sweep")' 300 \
+            'value(timestamp,resource.labels.service_name,resource.labels.job_name,jsonPayload.message,jsonPayload.command,jsonPayload.kind,jsonPayload.events,jsonPayload.ms,jsonPayload.flows,jsonPayload.passes,jsonPayload.outcome)'
       - name: Summary
         if: always()
         working-directory: apps/borrower

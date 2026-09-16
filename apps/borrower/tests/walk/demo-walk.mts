@@ -40,7 +40,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { duVerdict, waitForDuMoment, JourneyError, type OpsRecord } from "./du-journey.mts";
-import { ADDRESS, MOBILE, SSN, WALK_DOB, WALK_NAME, ScreenError, attr, badgeText, confirmNumbers, connect, continueTo, declarationsNone, demographicsDecline, details, driveToReview, errorText, fill, goal, pick, property, screenText, signUpThroughDoor, tab, waitForBadge, waitForStep, you, type DriveOptions, type StepRecord } from "./apply-journey.mts";
+import { ADDRESS, MOBILE, SSN, WALK_DOB, WALK_NAME, ScreenError, attr, badgeText, confirmNumbers, connect, continueTo, declarationsNone, demographicsDecline, details, driveToReview, errorText, fill, goal, pick, property, screenText, signUpThroughDoor, tab, waitForBadge, waitForStep, watchNetwork, you, type DriveOptions, type StepRecord } from "./apply-journey.mts";
 
 // the copy library as the app renders it (lib/copy/generated.ts, from docs/ux/12): loaded by URL — this file runs under plain node against a deployed demo, where a directory import does not resolve
 const { COPY } = (await import(new URL("../../lib/copy/generated.ts", import.meta.url).href)) as { COPY: Record<string, { text: string }> };
@@ -170,7 +170,7 @@ async function walk(browser: Browser): Promise<void> {
   const password = `walk-${run}-correct-horse`;
   const email1 = `walk-${run}@example.test`;
   const mobile = (): Promise<BrowserContext> => browser.newContext(MOBILE);
-  const ctx = await mobile(); const page = await ctx.newPage();
+  const ctx = await mobile(); const page = await ctx.newPage(); const net = watchNetwork(page, "buy", log);
   const pageErrors: string[] = []; page.on("pageerror", (e) => pageErrors.push(e.message));
 
   // 1. a fresh window reaches the light door
@@ -231,11 +231,11 @@ async function walk(browser: Browser): Promise<void> {
     const text = await screenText(page); const duWord = DU_WORDS.exec(text)?.[0] ?? null;
     const advanced = driven.steps.every((s) => !s.error);
     record(3, WHAT_3, advanced && preapproval === 0 && du.ok && duWord === null, `application=${applicationId1} steps: ${stepsLine(driven.steps)}; cta=${JSON.stringify(confirmed.cta)}; preapproval cards=${preapproval}; ${du.detail}; duWord=${JSON.stringify(duWord)}`);
-  } catch (e) { await snap(page, "buy-failed"); record(3, WHAT_3, false, `${reason(e)} — on step ${await attr(page, "data-step")} error=${JSON.stringify(await errorText(page))}`); }
+  } catch (e) { await snap(page, "buy-failed"); record(3, WHAT_3, false, `${reason(e)} — on step ${await attr(page, "data-step")} error=${JSON.stringify(await errorText(page))}; network: ${net.summary()}`); }
 
   // 4. buy, still looking, ends at the preapproval request (a second account)
   const WHAT_4 = "buy, still looking, ends at the preapproval request: preapproval.where resolved, preapproval.target on Review, the badge Application received or Preapproved, apply.review.tbd, no six-item address on the ops record";
-  const ctx2 = await mobile(); const page2 = await ctx2.newPage();
+  const ctx2 = await mobile(); const page2 = await ctx2.newPage(); const net2 = watchNetwork(page2, "tbd", log);
   try {
     await signUpThroughDoor(page2, BASE, `walk-tbd-${run}@example.test`, password, opts);
     const me2 = await applicationOnMe(page2); const applicationId2 = me2.application_id ?? "";
@@ -261,14 +261,14 @@ async function walk(browser: Browser): Promise<void> {
     if (OPS_TOKEN) { const rec = await readOps(applicationId2); const six = (rec.events ?? []).filter((e) => e.type === "application.six_item.captured" && e.payload?.["item"] === "property_address").length; const trid = (rec.events ?? []).some((e) => e.type === "application.trid_received"); opsOk = six === 0 && !trid; opsDetail = `ops: six-item address events=${six}, trid_received=${trid}`; }
     record(4, WHAT_4, steps.every((s) => !s.error) && p.shoppingSwitch === 1 && whereResolved && targetOk && badgeOk && tbdLine.trim() === copy("apply.review.tbd") && opsOk,
       `application=${applicationId2} steps: ${stepsLine(steps)}; shoppingSwitch=${p.shoppingSwitch}; preapproval.where=${where?.status ?? "(none)"}; preapproval.target=${targetPending} on Review → ${target?.status ?? "(none)"} on the tap (Review showed ${JSON.stringify(shownValue)} / ${JSON.stringify(shownAmount)}); badge=${JSON.stringify(badge)}; tbd=${JSON.stringify(tbdLine.trim())}; ${opsDetail}`);
-  } catch (e) { await snap(page2, "tbd-failed"); record(4, WHAT_4, false, `${reason(e)} — on step ${await attr(page2, "data-step")} error=${JSON.stringify(await errorText(page2))}`); }
+  } catch (e) { await snap(page2, "tbd-failed"); record(4, WHAT_4, false, `${reason(e)} — on step ${await attr(page2, "data-step")} error=${JSON.stringify(await errorText(page2))}; network: ${net2.summary()}`); }
   await ctx2.close();
 
   // 5. refinance, cash out (a third account) — and, on the way, outcome 6's two facts (recorded after 5, in the table's order)
   const WHAT_5 = "refinance, cash out: transaction_type cash_out on the ops record; no shopping switch; value, balance, cash out and what the cash is for collected (DELTA-37: application.field.captured{cash_out_purpose} on the ops record); refi.home.confirm resolved after the SSN with the estate and the lien; the same DU verdict";
   const WHAT_6 = "errors stay on the step, in copy: Details without citizenship keeps the step with a copy line; a 409 CARD_FIELD_REQUIRED from the API renders copy(copy_key) on the step, never the code";
   let six: { ok: boolean; detail: string } = { ok: false, detail: "not reached (outcome 5 stopped before Details)" };
-  const ctx3 = await mobile(); const page3 = await ctx3.newPage();
+  const ctx3 = await mobile(); const page3 = await ctx3.newPage(); const net3 = watchNetwork(page3, "refi", log);
   try {
     await signUpThroughDoor(page3, BASE, `walk-refi-${run}@example.test`, password, opts);
     const me3 = await applicationOnMe(page3); const applicationId3 = me3.application_id ?? "";
@@ -325,7 +325,7 @@ async function walk(browser: Browser): Promise<void> {
     const purposeOk = !OPS_TOKEN || purpose === "DebtConsolidation";
     record(5, WHAT_5, steps.every((s) => !s.error) && p.shoppingSwitch === 0 && homeOk && numbersOk && txn === "cash_out" && purposeOk && du.ok,
       `application=${applicationId3} steps: ${stepsLine(steps)}; shoppingSwitch=${p.shoppingSwitch}; refi.home.confirm=${home?.status ?? "(none)"} at ${home?.resolved_at ?? "-"} (the SSN card at ${ssnCard?.resolved_at ?? "-"}; the card's required estate and lien answered — a bare tap is refused; ${sixItemDetail}); Review showed value ${JSON.stringify(valueShown)}, amount ${JSON.stringify(amountShown)}; cards: value=${value?.status ?? "(none)"} amount=${amount?.status ?? "(none)"} product=${product?.status ?? "(none)"}; transaction_type=${txn}; cash_out_purpose=${purpose}; ${du.detail}`);
-  } catch (e) { await snap(page3, "refi-failed"); record(5, WHAT_5, false, `${reason(e)} — on step ${await attr(page3, "data-step")} error=${JSON.stringify(await errorText(page3))}`); }
+  } catch (e) { await snap(page3, "refi-failed"); record(5, WHAT_5, false, `${reason(e)} — on step ${await attr(page3, "data-step")} error=${JSON.stringify(await errorText(page3))}; network: ${net3.summary()}`); }
   await ctx3.close();
   record(6, WHAT_6, six.ok, six.detail);
 
@@ -404,7 +404,7 @@ async function walk(browser: Browser): Promise<void> {
 
   // 9. a partner-book homeowner (33.1 rules 5–6): the code door on the fixture e-mail lands on My Loan — Monitored, the servicer and the last four from the deployed record; Apply shows no step; sign out. An unseeded book fails, never passes.
   const WHAT_9 = "a partner-book homeowner signs in by code and lands on My Loan: Monitored, the servicer and the last four from the deployed partner_book; Apply shows no step and no goal card; sign out → the door";
-  const ctx4 = await mobile(); const page4 = await ctx4.newPage();
+  const ctx4 = await mobile(); const page4 = await ctx4.newPage(); const net4 = watchNetwork(page4, "book", log);
   try {
     const door = await codeDoor(page4, PARTNER_BOOK.email);
     await snap(page4, "partner-book-code-door");
@@ -448,7 +448,7 @@ async function walk(browser: Browser): Promise<void> {
           `door=${door.how} partner=${JSON.stringify(expectedPartner)} last4=${expectedLast4} landed=${landedTab} badge=${JSON.stringify(badge)} servicer=${JSON.stringify(servicer)} last4Line=${JSON.stringify(last4)} step=${step} goalCards=${goalCards} cta=${cta} name=${JSON.stringify(name)} (fixture ${PARTNER_BOOK.firstName}) signOut=${hadSignOut4} doorAfter=${doorAfter}`);
       }
     }
-  } catch (e) { await snap(page4, "partner-book-failed"); record(9, WHAT_9, false, reason(e)); }
+  } catch (e) { await snap(page4, "partner-book-failed"); record(9, WHAT_9, false, `${reason(e)}; network: ${net4.summary()}`); }
   await ctx4.close();
 
   record(10, WHAT_10, ten.ok, ten.detail);

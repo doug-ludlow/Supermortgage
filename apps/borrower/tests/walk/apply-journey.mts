@@ -8,7 +8,7 @@
  *
  * Copied, not imported (this file runs from apps/borrower against a deployed demo): the fixture values of du-journey.mts.
  */
-import type { Locator, Page } from "@playwright/test";
+import type { Locator, Page, Request } from "@playwright/test";
 
 export type Log = (line: string) => void;
 export type DriveOptions = { stepTimeoutMs?: number; log?: Log };
@@ -27,6 +27,31 @@ export const ADDRESS = "100 N Central Ave, Phoenix, AZ 85004";
 export const MOBILE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } as const;
 
 const ROOT = '[data-testid="apply"]';
+/**
+ * The page's API traffic, watched: every answer of 400 or more, every request that failed and every request slower than `slowMs`
+ * is logged as it happens (UTC time, method, path, status, milliseconds, the first 200 characters of an error body) and kept, and
+ * `pending()` names the requests still in flight — so a step that never advances says which request did not come back. Deploys
+ * 188 and 190: outcome 5's tap sat 90 s behind `error.generic` (the app's word for a 5xx, a network failure or its own 30 s wait)
+ * with nothing in the log to name the request or its status; the journey pages watch from their first navigation.
+ */
+export type NetworkWatch = { readonly lines: string[]; pending(): string[]; summary(): string };
+export function watchNetwork(page: Page, label: string, log?: Log, slowMs = 5_000): NetworkWatch {
+  const started = new Map<Request, number>(); const lines: string[] = [];
+  const keep = (s: string): void => { lines.push(s); log?.(`net ${label}: ${s}`); };
+  const pathOf = (u: string): string => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u; } };
+  const isApi = (u: string): boolean => /\/app\/api\/|\/v1\//.test(u);
+  page.on("request", (r) => { if (isApi(r.url())) started.set(r, Date.now()); });
+  page.on("response", (res) => {
+    const r = res.request(); const t0 = started.get(r); if (t0 === undefined) return; started.delete(r);
+    const ms = Date.now() - t0; const status = res.status();
+    if (status < 400 && ms < slowMs) return;
+    void (status >= 400 ? res.text().catch(() => "") : Promise.resolve("")).then((body) => keep(`${new Date().toISOString()} ${r.method()} ${pathOf(r.url())} → ${status} in ${ms} ms${body ? ` ${JSON.stringify(body.slice(0, 200))}` : ""}`));
+  });
+  page.on("requestfailed", (r) => { const t0 = started.get(r); if (t0 === undefined) return; started.delete(r); keep(`${new Date().toISOString()} ${r.method()} ${pathOf(r.url())} → FAILED (${r.failure()?.errorText ?? "?"}) after ${Date.now() - t0} ms`); });
+  const pending = (): string[] => [...started.entries()].map(([r, t0]) => `${r.method()} ${pathOf(r.url())} in flight ${Date.now() - t0} ms`);
+  return { lines, pending, summary: () => { const all = [...lines.slice(-8), ...pending()]; return all.length ? all.join(" | ") : "(no failed, slow or in-flight API request)"; } };
+}
+
 export const attr = (page: Page, name: string): Promise<string | null> => page.locator(ROOT).first().getAttribute(name);
 /** The text of an element that may be absent: "" at once when it is not on the page (innerText() on a missing element waits Playwright's 30 s action timeout before failing — read on every Continue and every screenshot, that wait was the walk's whole running time: 60 s a screenshot, 30 s a step, 29 minutes for seven outcomes on run 184). */
 const textOf = async (page: Page, selector: string): Promise<string> => { const el = page.locator(selector).first(); if ((await el.count()) === 0) return ""; return ((await el.innerText({ timeout: 5_000 }).catch(() => "")) ?? "").trim(); };

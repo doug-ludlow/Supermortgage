@@ -17739,5 +17739,210 @@
    "go_live.attest",
    "writeDecision"
   ]
+ },
+ {
+  "process": "36.1",
+  "title": "Partner identity, doors, roles, action log, tenant scope",
+  "path": "sections/36-servicing-partner-portal/36-1-partner-identity-doors-roles-action-log-tenant-scope.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a seeded partner_admin bound to the demo partner, when they request an email code and verify it plus password, then a `partner_sessions` row exists with that `partner_party_id` and role `partner_admin`, and no `staff_sessions` row is written."
+   },
+   {
+    "n": 2,
+    "text": "Given a partner_ops session, when they `POST /v1/partner/book/imports`, then the command is refused `403 ROLE_REQUIRED`."
+   },
+   {
+    "n": 3,
+    "text": "Given partner A\u2019s session, when they `GET /v1/partner/book/loans/:id` for a loan whose `partner_party_id` is partner B, then the response is `404 NOT_FOUND` and a `partner_actions` row is written with `result=refused` and no homeowner PII."
+   },
+   {
+    "n": 4,
+    "text": "Given a partner_admin, when they invite a partner_ops user, then that user can sign in and cannot upload."
+   },
+   {
+    "n": 5,
+    "text": "Given a disabled partner_user, when they present a valid code and password, then sign-in is refused and the session is not created."
+   },
+   {
+    "n": 6,
+    "text": "Given any successful partner GET, when the action log is read, then `partner_actions` contains `partner_portal.viewed` with `view`, `partner_user_id`, `partner_party_id`, and no email/phone/name of a homeowner."
+   },
+   {
+    "n": 7,
+    "text": "Given a staff session cookie, when it is sent to `/v1/partner/*` or `/partners`, then the request is unauthenticated (no staff fallback)."
+   },
+   {
+    "n": 8,
+    "text": "Given a partner session, when it is sent to `/ops` or `/ops/api/*`, then the request is unauthenticated (no partner fallback)."
+   }
+  ],
+  "tables": [
+   "partner_actions",
+   "partner_credentials",
+   "partner_sessions",
+   "partner_users"
+  ],
+  "timers": [],
+  "notices": [
+   "NTC_SM_PARTNER_USER_INVITE"
+  ],
+  "agent": "security-records",
+  "tools": [
+   "partner.user.invite"
+  ]
+ },
+ {
+  "process": "36.2",
+  "title": "Partner tape drop on book.import: the upload with its report, the import history, the status line and the holds",
+  "path": "sections/36-servicing-partner-portal/36-2-partner-tape-drop-on-book-import.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the demo fixture tape + supplement and a partner_admin session for that partner, when they POST the files, then `importPartnerBook` writes the same 12 `monitored` loans 33.1-T1 already asserts, and the actor on `book.import` is the partner_user, not `ops_analyst`."
+   },
+   {
+    "n": 2,
+    "text": "Given the same files posted a second time, then the response is `already_loaded` and no new `partner_book_facts` rows are written."
+   },
+   {
+    "n": 3,
+    "text": "Given a later `as_of_date` tape that drops one loan, then that loan is `not_on_latest_tape` / on hold, it is absent from the next 33.2 review, and the partner GET holds lists it. `POST .../resolve` as the partner is `403`."
+   },
+   {
+    "n": 4,
+    "text": "Given a partner_admin for partner A, when the multipart names partner B in a field, then that field is ignored and the import attaches to partner A."
+   },
+   {
+    "n": 5,
+    "text": "Given a header that does not match `m3-v1`, then no rows are written and the partner sees the same header-refusal 33.1 already emits."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": []
+ },
+ {
+  "process": "36.3",
+  "title": "The eligibility board: three buckets projected from the daily review",
+  "path": "sections/36-servicing-partner-portal/36-3-eligibility-board-three-buckets.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the demo book after a 33.2 daily run, when eligibility is fetched as the partner, then every monitored loan appears in exactly one of the three buckets or Holds, and the sum of counts equals monitored-not-held + held."
+   },
+   {
+    "n": 2,
+    "text": "Given a loan whose review verdict is `watching` with `watch_rate_pct` set, then the partner row shows bucket `likely_soon` and that watch rate, and does not show investor, DTI, or score fields."
+   },
+   {
+    "n": 3,
+    "text": "Given a loan `excluded` for bankruptcy, then it is `not_near` with the engine reason code, not a free-text diagnosis."
+   },
+   {
+    "n": 4,
+    "text": "Given a query `?bucket=eligible_now&state=CA`, then only `candidate` loans in CA return. Adding `?fico=` or `?dti=` is ignored (unknown query keys dropped, not applied)."
+   },
+   {
+    "n": 5,
+    "text": "Given partner A, when they request eligibility, then partner B\u2019s loans are absent (not empty-with-403)."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": []
+ },
+ {
+  "process": "36.4",
+  "title": "The refinance pipeline feed: members in motion, projected from the rows that already exist",
+  "path": "sections/36-servicing-partner-portal/36-4-refinance-pipeline-feed.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a monitored loan with `refi_opportunities.status=offered`, then it appears on the pipeline as `offered` and also remains on Eligible now."
+   },
+   {
+    "n": 2,
+    "text": "Given that homeowner\u2019s Yes (`engaged`) and a 33.3 readiness row with missing items, then the pipeline stage is `readiness` and `missing` is the 33.3 item list."
+   },
+   {
+    "n": 3,
+    "text": "Given offer expiry via `expireOffers`, then the item\u2019s current stage is `expired` and a subsequent 33.2 run is free to write `not_now` with cooldown."
+   },
+   {
+    "n": 4,
+    "text": "Given a boarded new loan linked from the old monitored loan (35.10 / `prior_loan_id`), then the pipeline item is `boarded`, the old loan banner is paid off / refinanced, and the new loan banner is `Active \u2014 Supermortgage subservicing`."
+   },
+   {
+    "n": 5,
+    "text": "Partner B cannot see partner A\u2019s pipeline items (404 / absent)."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": []
+ },
+ {
+  "process": "36.5",
+  "title": "Home, the daily report and the two-mode loan page",
+  "path": "sections/36-servicing-partner-portal/36-5-partner-home-reports-two-mode-loan-page.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Home counts equal 36.3 counts + 36.4 in-flight for the same `as_of`."
+   },
+   {
+    "n": 2,
+    "text": "Daily report for the partner matches 34.3 `bookDailyReport` for that `partner_party_id` (same ids, same counts). No other partner\u2019s report is listed."
+   },
+   {
+    "n": 3,
+    "text": "Loan page for a monitored loan shows banner `Monitored \u2014 {partner} remains servicer`, no Pay control, and `serviced.available === false`."
+   },
+   {
+    "n": 4,
+    "text": "Loan page for a boarded refinance shows banner `Active \u2014 Supermortgage subservicing` and `serviced.code === \"SERVICED_PANE_NOT_BUILT\"` in V1."
+   },
+   {
+    "n": 5,
+    "text": "A `partner_auditor` can GET home, eligibility, pipeline, reports, and loan pages, and cannot POST imports."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": []
+ },
+ {
+  "process": "36.6",
+  "title": "The post-refinance serviced pane contract: dark in V1, one refusal everywhere",
+  "path": "sections/36-servicing-partner-portal/36-6-post-refinance-serviced-pane-contract.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a monitored loan, `GET /v1/partner/loans/:id/serviced` is `409 SERVICED_PANE_NOT_BUILT`."
+   },
+   {
+    "n": 2,
+    "text": "Given an `active` boarded loan for this partner, the same endpoint is still `409 SERVICED_PANE_NOT_BUILT` in V1, and the loan page banner is already `Active`."
+   },
+   {
+    "n": 3,
+    "text": "36.6 introduces **no** new money field, timer, or notice."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": []
  }
 ]

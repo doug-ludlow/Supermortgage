@@ -20,7 +20,8 @@ SECTION_DIR = {1: 'boarding', 2: 'cashiering', 3: 'escrow', 4: 'servicing-reques
                32: 'borrower',  # section 32 (borrower experience): API-level node:test plus Playwright driven from node:test
                33: 'partner-book',  # section 33 (the partner book): monitored loans, real accounts, daily refinance review and readiness
                34: 'operator-portal',  # section 34 (the operator portal): staff sign-in and roles, the account directory, partner book operations, evidence and controls
-               35: 'operations-runtime'}  # section 35 (operations runtime): persistence seam, documents, cycles, close, cashiering, orchestration, roles, screens, default ops, refinance close, stewardship, production posture
+               35: 'operations-runtime',  # section 35 (operations runtime): persistence seam, documents, cycles, close, cashiering, orchestration, roles, screens, default ops, refinance close, stewardship, production posture
+               36: 'servicing-partner-portal'}  # section 36 (the servicing partner portal): partner identity, the tape drop, the eligibility board, the pipeline feed, home and reports, the serviced pane contract
 dry = '--dry-run' in sys.argv
 
 def tids_in(text):

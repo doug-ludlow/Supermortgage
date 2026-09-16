@@ -16,6 +16,7 @@ import type { Actor } from "../../kernel/events/index.ts";
 import { CommandRefused } from "../../app/commands.ts";
 import { RoleDenied } from "../../app/roles.ts";
 import type { Runtime } from "../app.ts";
+import { CYCLE_BREACH_CODES } from "../../domain/operations-runtime/timers-35-3.ts";
 import { ControlsRefused, appendEvent, clampLimit, isUuid, requireStaffRole, s, type Row } from "./common.ts";
 
 export interface EscalationRow {
@@ -34,6 +35,17 @@ export interface EscalationsFilter { readonly status?: string | null; readonly r
 /** The disposition sets: the owning command's own outcomes where it has one; `resolved | dismissed | referred` for a row completion. */
 export const ROW_DISPOSITIONS: readonly string[] = ["resolved", "dismissed", "referred"];
 export const DECIDE_DISPOSITIONS: readonly string[] = ["approved", "rejected"];
+/**
+ * 35.3 (T12): an escalation the cycle engine's clocks opened — the breach pass's payload carries `timer_code` SM_CYCLE_RUN_STALLED_1D
+ * or SM_JOB_DEAD_2H — or that names a `cycle_code` (a dead unit's at death, a by-hand `cycles.escalate`) closes on the row with
+ * `completed_late` beside the row dispositions: the run or the unit completed after its clock breached (the clock reads
+ * `satisfied_late`). Every other escalation's set is unchanged.
+ */
+export function rowDispositions(e: { readonly payload: Row }): readonly string[] {
+  const p = e.payload ?? {};
+  const cycles = (typeof p["timer_code"] === "string" && CYCLE_BREACH_CODES.has(p["timer_code"])) || typeof p["cycle_code"] === "string";
+  return cycles ? [...ROW_DISPOSITIONS, "completed_late"] : ROW_DISPOSITIONS;
+}
 interface Owning { readonly process: string; readonly name: string; readonly dispositions: readonly string[]; readonly input: (e: EscalationRow, disposition: string, reason: string, actor: Actor) => Row; readonly fallback?: Owning; }
 /** The owning section's completion command for an escalation, by its owner role and package (the FAKE reviewers' routing, DELTA-30). */
 export function owningCompletion(e: { owner_role: string; kind: string; application_id: string | null; payload: Row }): Owning | null {
@@ -44,7 +56,7 @@ export function owningCompletion(e: { owner_role: string; kind: string; applicat
     fallback: { process: "23.3", name: "openEscalation", dispositions: DECIDE_DISPOSITIONS, input: (row) => ({ op: "complete", escalation_id: row.id }) } };
   return null;
 }
-export const dispositionsOf = (e: { owner_role: string; kind: string; application_id: string | null; payload: Row }): readonly string[] => owningCompletion(e)?.dispositions ?? ROW_DISPOSITIONS;
+export const dispositionsOf = (e: { owner_role: string; kind: string; application_id: string | null; payload: Row }): readonly string[] => owningCompletion(e)?.dispositions ?? rowDispositions(e);
 
 const toRow = (r: Row): EscalationRow => {
   const base = { id: s(r["id"]), kind: s(r["kind"]), owner_role: s(r["owner_role"]), severity: r["severity"] ? s(r["severity"]) : null, status: (r["completed_at"] ? "completed" : "open") as "open" | "completed",
@@ -53,7 +65,7 @@ const toRow = (r: Row): EscalationRow => {
   const done = (r["completion"] as Row | null) ?? null;
   const owning = owningCompletion(base);
   return { ...base, completed_by: done ? s(done["completed_by"]) || null : null, completed_by_role: done ? s(done["completed_by_role"]) || null : null, disposition: done ? s(done["disposition"]) || null : null, reason: done ? s(done["reason"]) || null : null,
-    completion: owning ? { process: owning.process, name: owning.name } : "row", dispositions: owning?.dispositions ?? ROW_DISPOSITIONS };
+    completion: owning ? { process: owning.process, name: owning.name } : "row", dispositions: owning?.dispositions ?? rowDispositions(base) };
 };
 const SELECT = `SELECT e.id::text AS id, e.kind, e.owner_role, e.severity, e.loan_id::text AS loan_id, e.application_id::text AS application_id, e.case_id::text AS case_id, e.batch_id::text AS batch_id, e.sla_timer_id::text AS sla_timer_id,
     e.opened_at::text AS opened_at, e.opened_by, e.completed_at::text AS completed_at, e.completed_evidence_document_id::text AS completed_evidence_document_id, e.payload,

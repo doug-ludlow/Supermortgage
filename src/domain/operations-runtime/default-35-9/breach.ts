@@ -90,6 +90,16 @@ export async function breachExecute(i: ToolInput, ctx: CommandContext, rt: ToolR
   } else if (row.action_kind === "escalate" || row.action_kind === "refuse_gate") {
     outcome = "escalated_only";
     for (const role of (Array.isArray(row.action_spec["inform_roles"]) ? (row.action_spec["inform_roles"] as string[]) : [])) open("sev2", role, { informed: true, action_kind: row.action_kind });
+  } else if (row.action_kind === "inform") {
+    // rule 7: `inform` → an escalations row per inform_roles entry beyond the first (the first is the sweep's own escalation) → executed
+    const roles = Array.isArray(row.action_spec["inform_roles"]) ? (row.action_spec["inform_roles"] as string[]) : [];
+    for (const role of roles.slice(1)) open("sev2", role, { informed: true, action_kind: "inform" });
+    if (roles.length <= 1) note = "inform: no role beyond the sweep's escalation";
+    outcome = "executed";
+  } else if (row.action_kind === "set_flag" && loanId) {
+    // rule 7: `set_flag` → the owning section's flag tool — 13.5's review over the tracking row (never a direct write of its status)
+    try { const { exposureStep } = await import("./exposure.ts"); await exposureStep({ loan_id: loanId }, ctx, rt, ctx.now.slice(0, 10)); outcome = "executed"; note = "set_flag: 13.5's review over the tracking row"; }
+    catch (e) { outcome = "failed"; errorClass = e instanceof Error ? e.name || "Error" : "Error"; note = e instanceof Error ? e.message.slice(0, 500) : String(e); }
   } else if (row.needs_human || row.action_kind === "open_work_item") {
     const spec = row.action_spec;
     workItemId = await ports.workItems.open(q(ctx), { screen_code: String(spec["screen_code"] ?? "escalation"), subject_kind: "loan", subject_id: loanId ?? "global", loan_id: loanId, source_kind: "breached_timer", source_id: timerId, required_role: String(spec["role"] ?? "officer"), now: ctx.now, due_at: null });
@@ -115,14 +125,20 @@ export async function breachExecute(i: ToolInput, ctx: CommandContext, rt: ToolR
             await firmDispatch({ loan_id: loanId, case_id: String(derived.input["case_id"] ?? ""), firm_id: String(derived.input["firm_id"] ?? ""), kind: String(spec["kind"] ?? "message"), owning_event_id: commandEventId, payload: { subject: derived.input["subject"], timer_code: code } }, ctx, rt);
           }
           if (row.action_kind === "instruct_firm" && loanId) await firmDispatch({ loan_id: loanId, case_id: String(derived.input["case_id"] ?? ""), firm_id: String(derived.input["firm_id"] ?? ""), kind: "instruction", owning_event_id: commandEventId, payload: { instruction: derived.input["kind"], timer_code: code } }, ctx, rt);
-          // a compound seed row (`also`): the secondary actions after the primary (set_flag through 13.5's own review, inform through escalations)
+          // a compound seed row: `set_flag` runs 13.5's own review (its `fc_timeframe_tracking.status` transition, never a direct write); `also[]` / `inform_roles` inform through escalations
+          if (spec["set_flag"] && loanId) { const { exposureStep } = await import("./exposure.ts"); await exposureStep({ loan_id: loanId }, ctx, rt, ctx.now.slice(0, 10)); }
           for (const also of (Array.isArray(spec["also"]) ? (spec["also"] as Row[]) : [])) if (also["kind"] === "inform") for (const role of (Array.isArray(also["roles"]) ? (also["roles"] as string[]) : [])) open("sev2", role, { informed: true });
+          for (const role of (Array.isArray(spec["inform_roles"]) ? (spec["inform_roles"] as string[]) : [])) open("sev2", role, { informed: true, action_kind: row.action_kind });
           outcome = "executed";
         }
       }
     } catch (e) {
       if (isGateClosed(e) || (e instanceof Error && e.name === "GateClosed")) { outcome = "refused"; refusal = refusal ?? refusalCode(e); extraEscalation = open("attorney", "attorney", { refusal_code: refusal, action_kind: row.action_kind, reason: (e as Error).message }); }
-      else { outcome = "failed"; errorClass = e instanceof Error ? e.name || "Error" : "Error"; note = e instanceof Error ? e.message.slice(0, 500) : String(e); }
+      else {
+        // the owning tool's writes before the throw stay in the breach transaction (the same store, the same log): the row records what it did persist
+        outcome = "failed"; errorClass = e instanceof Error ? e.name || "Error" : "Error"; note = e instanceof Error ? e.message.slice(0, 500) : String(e);
+        commandEventId = commandEventId ?? ctx.events.all().filter((ev) => ev.loanId === loanId && !ev.type.startsWith("command.") && !ev.type.startsWith("timer.") && !ev.type.startsWith("escalation.") && !ev.type.startsWith("breach_action.")).at(-1)?.id ?? null;
+      }
     }
   }
   const ins = await q(ctx).query<ActionRow>(
@@ -163,12 +179,18 @@ export async function registerBreachAction(i: ToolInput, ctx: CommandContext): P
 export async function breachRecon(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<Row> {
   const asOf: PlainDate = asOfOf(ctx, i);
   const already = (await q(ctx).query<{ payload: Row }>(`SELECT payload FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = $2 ORDER BY sequence DESC LIMIT 1`, [EV.breachReconCompleted, asOf]))[0];
-  if (already && i.force !== true) return { ...already.payload, already: true };
-  const from = toIso(zonedEpochMs(asOf, "00:00", ET)); const to = toIso(zonedEpochMs(addDays(asOf, 1), "00:00", ET));
+  if (already) return { ...already.payload, already: true };
+  // "the day's breaches": every timer.breached since the previous reconciliation's receipt (the day before's 00:00 ET when there is none) up to now —
+  // the reconciliation runs before the breach pass (Timers and gates), so a day's breaches are counted by the next day's run, never missed
+  // the lower bound is the previous receipt's log sequence, not its timestamp: the sweep that wrote the receipt breaches its timers
+  // later in the same pass under the same clock reading, and those breaches belong to the next reconciliation, not to none
+  const last = (await q(ctx).query<{ at: string; seq: string }>(`SELECT occurred_at::text AS at, sequence::text AS seq FROM loan_events WHERE type = $1 ORDER BY sequence DESC LIMIT 1`, [EV.breachReconCompleted]))[0];
+  const from = last?.at ?? toIso(zonedEpochMs(addDays(asOf, -1), "00:00", ET)); const to = ctx.now;
   const breaches = await q(ctx).query<{ timer_id: string; code: string; loan_id: string | null; outcome: string | null }>(
     `SELECT e.payload->>'timer_id' AS timer_id, e.payload->>'code' AS code, e.loan_id::text AS loan_id, a.outcome
        FROM loan_events e LEFT JOIN breach_actions a ON a.timer_id::text = e.payload->>'timer_id'
-      WHERE e.type = 'timer.breached' AND e.occurred_at >= $1::timestamptz AND e.occurred_at < $2::timestamptz ORDER BY e.sequence`, [from, to]);
+      WHERE e.type = 'timer.breached' AND e.occurred_at <= $2::timestamptz
+        AND CASE WHEN $3::bigint IS NULL THEN e.occurred_at > $1::timestamptz ELSE e.sequence > $3::bigint END ORDER BY e.sequence`, [from, to, last?.seq ?? null]);
   const counts = { breaches: breaches.length, executed: 0, deferred: 0, escalated_only: 0, refused: 0, failed: 0, missing: 0 };
   const missingIds: string[] = [];
   for (const b of breaches) { if (!b.outcome) { counts.missing += 1; missingIds.push(b.timer_id); } else (counts as Record<string, number>)[b.outcome] = ((counts as Record<string, number>)[b.outcome] ?? 0) + 1; }
@@ -176,7 +198,7 @@ export async function breachRecon(i: ToolInput, ctx: CommandContext, rt: ToolRun
   const stale = await q(ctx).query<{ c: string }>(`SELECT count(*)::text AS c FROM entity_current WHERE kind = 'bankruptcy_docket_events' AND (data->>'applied_at') IS NULL AND coalesce(data->>'event_date', '') <> '' AND (data->>'event_date')::date < $1::date`, [addDays(asOf, -1)]).catch(() => [{ c: "0" }]);
   let escalationId: string | null = null;
   if (counts.missing + counts.failed > 0) escalationId = rt.escalations.open({ kind: "sev2", ownerRole: "compliance", payload: { as_of_date: asOf, missing: counts.missing, failed: counts.failed, missing_timer_ids: missingIds, reason: "a breach of the day without its action row or an action whose outcome is failed (35.9 rule 7)" } }, ctx.actor).id;
-  ctx.events.append({ type: EV.breachReconCompleted, aggregate: { kind: "breach_action_recon", id: asOf }, actor: ctx.actor, payload: { as_of_date: asOf, ...counts, docket_entries_unapplied: Number(stale[0]?.c ?? 0), escalation_id: escalationId, run_id: rt.services["sweep_run_id"] ?? null } });
-  return { as_of_date: asOf, ...counts, escalation_id: escalationId, already: false };
+  ctx.events.append({ type: EV.breachReconCompleted, aggregate: { kind: "breach_action_recon", id: asOf }, actor: ctx.actor, payload: { as_of_date: asOf, window: { from, to }, ...counts, docket_entries_unapplied: Number(stale[0]?.c ?? 0), escalation_id: escalationId, run_id: s(i, "sweep_run_id") || null } });
+  return { as_of_date: asOf, window: { from, to }, ...counts, escalation_id: escalationId, already: false };
 }
 export const etDate = (iso: string): PlainDate => D(wallClock(Date.parse(iso), ET).date);

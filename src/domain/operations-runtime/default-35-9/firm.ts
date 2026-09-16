@@ -126,7 +126,8 @@ export async function firmInbound(i: ToolInput, ctx: CommandContext, rt: ToolRun
   let owning: string | null = null; let detail: Row = {};
   switch (kind) {
     case "ack": {
-      const r = await delegate(rt, ctx, "13.2", "attorney.instruction.status", { ...base, kind: "ACK", referral_id: String(p["referral_id"] ?? `ref-${caseRef}-${String(p["referral_sent_on"] ?? "")}`), complete: p["complete"] !== false, missing: Array.isArray(p["missing"]) ? p["missing"] : [], acknowledged_on: String(p["acknowledged_on"] ?? ctx.now.slice(0, 10)) });
+      const referralId = String(p["referral_id"] ?? "") || rt.store.list("attorney_referrals", (d) => d["case_id"] === caseRef).at(-1)?.id || `ref-${caseRef}-${String(p["referral_sent_on"] ?? "")}`;
+      const r = await delegate(rt, ctx, "13.2", "attorney.instruction.status", { ...base, kind: "ACK", referral_id: referralId, complete: p["complete"] !== false, missing: Array.isArray(p["missing"]) ? p["missing"] : [], acknowledged_on: String(p["acknowledged_on"] ?? ctx.now.slice(0, 10)) });
       owning = r.event_id;
       const forecast = typeof p["forecast_first_legal_on"] === "string" ? p["forecast_first_legal_on"] : null;
       if (forecast && caseRef) {
@@ -139,12 +140,13 @@ export async function firmInbound(i: ToolInput, ctx: CommandContext, rt: ToolRun
       for (const d of stamped) ctx.events.append({ type: EV.firmDispatchAcknowledged, loanId, actor: ctx.actor, payload: { dispatch_id: d.id, case_id: caseRef ? caseUuid(caseRef) : null, firm_id: firmId, ack_source: s(i, "source") === "firm_message" ? "firm_message" : "fake", ack_event_id: owning } });
       detail = { ...detail, dispatches_acknowledged: stamped.map((d) => d.id) };
       break; }
+    case "documents_received": { owning = null; detail = { request_id: String(p["request_id"] ?? ""), received: true }; break; }   // the firm's receipt of the documents we sent: a note on the dispatch, no section event
     case "document_request": { const r = await delegate(rt, ctx, "13.2", "attorney.instruction.status", { ...base, kind: "DOCUMENT_REQUEST", request_id: String(p["request_id"] ?? replyId), items: Array.isArray(p["items"]) ? p["items"] : [], requested_on: String(p["requested_on"] ?? ctx.now.slice(0, 10)) }); owning = r.event_id; break; }
     case "milestone": { const r = await delegate(rt, ctx, "13.2", "attorney.instruction.status", { ...base, kind: "MILESTONE", code: String(p["code"] ?? "").toUpperCase(), occurred_on: String(p["occurred_on"] ?? ctx.now.slice(0, 10)), source: "firm", ...(p["evidence_document_id"] ? { evidence_document_id: String(p["evidence_document_id"]) } : {}) }); owning = r.event_id; break; }
     case "sale": { const r = await delegate(rt, ctx, "13.2", "attorney.instruction.status", { ...base, kind: "SALE_SCHEDULED", sale_at: String(p["sale_at"] ?? ""), method: String(p["method"] ?? "judicial"), ...(p["rescheduled_from"] ? { rescheduled_from: String(p["rescheduled_from"]) } : {}) }); owning = r.event_id; break; }
     case "invoice": { const r = await delegate(rt, ctx, "13.6", "invoice.review", { op: "received", loan_id: loanId, firm_id: firmId, ...p }); owning = r.event_id; break; }
     case "dra_snapshot": { const r = await delegate(rt, ctx, "13.6", "dra.snapshot.import", { loan_id: loanId, firm_id: firmId, ...p }); owning = r.event_id; break; }
-    default: throw new RangeError("kind must be ack | document_request | milestone | sale | invoice | dra_snapshot (35.9 Inputs: inbound from the law-firm port)");
+    default: throw new RangeError("kind must be ack | documents_received | document_request | milestone | sale | invoice | dra_snapshot (35.9 Inputs: inbound from the law-firm port)");
   }
   ctx.events.append({ type: EV.firmInboundReceived, loanId, actor: ctx.actor, payload: { firm_id: firmId, kind, owning_event_id: owning, reply_id: replyId, dispatch_id: s(i, "dispatch_id") || null, case_ref: caseRef || null, ...detail } });
   return { ingested: true, duplicate: false, reply_id: replyId, owning_event_id: owning, integration_message_id: message.id, ...detail };

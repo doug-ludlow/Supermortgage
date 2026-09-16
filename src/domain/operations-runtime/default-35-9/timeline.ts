@@ -94,8 +94,9 @@ export const throughSequence = async (q: Queryable, loanId: string): Promise<num
 /** rule 1: fold every consumed event of the loan with `sequence` > the timeline's `through_sequence`; idempotent by `event_id`. */
 export async function foldLoan(io: FoldIo, loanId: string, opts: { readonly limit?: number } = {}): Promise<FoldResult> {
   const through = await throughSequence(io.q, loanId);
-  const evs = await io.q.query<EvRow>(`SELECT id::text AS id, sequence::text AS sequence, type, occurred_at::text AS occurred_at, loan_id::text AS loan_id, actor_kind::text AS actor_kind, actor_id, aggregate_kind, aggregate_id, payload
-                                        FROM loan_events WHERE loan_id = $1::uuid AND sequence > $2 ORDER BY sequence LIMIT $3`, [loanId, through, opts.limit ?? 5000]);
+  // every consumed event of the loan with no timeline row yet — `loan_events.sequence` is global, so a row committed out of sequence order (the breach pass appends under a loan without its lock) is never skipped by a watermark
+  const evs = await io.q.query<EvRow>(`SELECT e.id::text AS id, e.sequence::text AS sequence, e.type, e.occurred_at::text AS occurred_at, e.loan_id::text AS loan_id, e.actor_kind::text AS actor_kind, e.actor_id, e.aggregate_kind, e.aggregate_id, e.payload
+                                        FROM loan_events e WHERE e.loan_id = $1::uuid AND e.type = ANY($2::text[]) AND NOT EXISTS (SELECT 1 FROM case_timelines t WHERE t.event_id = e.id) ORDER BY e.sequence LIMIT $3`, [loanId, [...CONSUMED_EVENT_TYPES], opts.limit ?? 5000]);
   const rows: TimelineRow[] = []; let unexpected = 0; let last = through;
   for (const e of evs) {
     last = Number(e.sequence);

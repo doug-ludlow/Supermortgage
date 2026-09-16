@@ -6,6 +6,8 @@
  * (release_task_id, attempt)).
  */
 import { AdapterUnavailable, PermanentRejection, TransientFailure } from "./failures.ts";
+import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
+import { plainDate } from "../../kernel/calendar/date.ts";
 
 export interface PacerParty { readonly caseNumber: string; readonly court: string; readonly chapter: 7 | 11 | 12 | 13; readonly lastName: string; readonly firstName: string; readonly ssn4: string; readonly dateFiled: string; readonly status: "open" | "discharged" | "dismissed" | "closed"; }
 export interface PacerQuery { readonly lastName?: string; readonly ssn4?: string; readonly ssn?: string; readonly dateFiledFrom: string; }
@@ -131,7 +133,7 @@ export interface FirmDispatchMessage {
   readonly state: string; readonly method: "judicial" | "non_judicial";
   readonly payload: Record<string, unknown>;
 }
-export interface FirmReply { readonly reply_id: string; readonly kind: "ack" | "document_request" | "milestone" | "sale" | "invoice" | "dra_snapshot"; readonly due_on: string; readonly payload: Record<string, unknown> }
+export interface FirmReply { readonly reply_id: string; readonly kind: "ack" | "documents_received" | "document_request" | "milestone" | "sale" | "invoice" | "dra_snapshot"; readonly due_on: string; readonly payload: Record<string, unknown> }
 export interface LawFirmPort {
   /** Deliver one dispatch (the outbox adapter's send); a receipt names the firm's message id. */
   deliver(m: FirmDispatchMessage, now: string): Promise<{ firm_message_id: string; accepted: true; at: string }>;
@@ -150,8 +152,8 @@ export const FAKE_FIRM_LEADS: Readonly<Record<string, Readonly<Partial<Record<"j
 const GENERIC_LEADS: readonly { code: string; days: number }[] = [{ code: "FIRST_LEGAL", days: 45 }, { code: "SALE_SCHEDULED", days: 90 }];
 const isoDay = (d: string): number => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));
 const plusDays = (d: string, n: number): string => new Date(isoDay(d) + n * 86_400_000).toISOString().slice(0, 10);
-/** The next servicer business day after `d` (weekends only — the FAKE's own calendar; the sections' clocks use the kernel's). */
-const nextBusinessDay = (d: string, n: number): string => { let out = d; let left = n; while (left > 0) { out = plusDays(out, 1); const w = new Date(isoDay(out)).getUTCDay(); if (w !== 0 && w !== 6) left -= 1; } return out; };
+/** `n` servicer business days after `d` on the kernel's servicer calendar (the same one the sections' clocks use). */
+const nextBusinessDay = (d: string, n: number): string => addBusinessDays(plainDate(d), n, servicer);
 
 /**
  * FAKE law firm (35.9 rule 8): acknowledges a referral 1 servicer business day after it was sent with a forecast first-legal
@@ -188,7 +190,7 @@ export class FakeLawFirm implements LawFirmPort {
         else push("milestone", on, l.code, { code: l.code, occurred_on: on, source: "firm" });
       }
     }
-    if (m.kind === "documents") push("ack", nextBusinessDay(m.owning_event_on, 2), "docs", { request_id: String(m.payload["request_id"] ?? ""), received: true });
+    if (m.kind === "documents") push("documents_received", nextBusinessDay(m.owning_event_on, 2), "docs", { request_id: String(m.payload["request_id"] ?? ""), received: true });
     return out;
   }
 }

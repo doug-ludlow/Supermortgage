@@ -465,6 +465,8 @@ export class Runtime {
         const opened = escalations.list();
         for (const b of breaches) {
           const esc = opened.find((e) => e.slaTimerId === b.timer_id);
+          // lock order: this transaction already holds the due timer rows; a loan command holds the loan's lock and then updates timers — so the loan's lock is only tried, never waited on (a held loan's action runs on the next sweep; 35.9's reconciliation lists the gap meanwhile)
+          if (b.loan_id) { const [l] = await q.query<{ ok: boolean }>(`SELECT pg_try_advisory_xact_lock(hashtext('uow'), hashtext($1)) AS ok`, [b.loan_id]); if (!l?.ok) { this.logger?.warn("35.9 breach.execute deferred: loan lock held", { at: nowIso, timer_id: b.timer_id, code: b.code, loan_id: b.loan_id }); continue; } }
           try { await view.execute({ process: "35.9", name: "breach.execute", loanId: b.loan_id ?? "", actor: { kind: "system", id: "sweep" }, input: { timer_id: b.timer_id, timer_code: b.code, loan_id: b.loan_id, escalation_id: esc?.id ?? null, breached_at: nowIso } }); }
           catch (e) { this.logger?.error("35.9 breach.execute failed", { at: nowIso, timer_id: b.timer_id, code: b.code, error: e instanceof Error ? e.message : String(e) }); }
         }

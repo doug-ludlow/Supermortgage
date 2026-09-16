@@ -395,12 +395,17 @@ test("35.9-T7: Given a code with no `breach_action_registry` row (any 3.x clock)
   // the reconciliation: a timer.breached of the day inserted directly with no breach_actions row → missing: 1 and one compliance escalation
   const t2 = await rows<{ id: string }>(`INSERT INTO timers (code, subject_kind, subject_id, loan_id, armed_at, armed_by_event_id, anchor_date, due_at, status, breached_at) VALUES ('REGX_1024_17G_INITIAL_STMT_45', 'loan', $1::text, $1::uuid, $2::timestamptz, $3::uuid, '2027-04-01', $2::timestamptz, 'breached', $2::timestamptz) RETURNING id::text AS id`, [f.loanId, clock.now(), ev.events[0]!.id]);
   await db.query(`INSERT INTO loan_events (id, type, occurred_at, loan_id, actor_kind, actor_id, payload) VALUES (gen_random_uuid(), 'timer.breached', $1::timestamptz, $2::uuid, 'system', 'test-inserted', $3::jsonb)`, [clock.now(), f.loanId, JSON.stringify({ code: "REGX_1024_17G_INITIAL_STMT_45", timer_id: t2[0]!.id, severity: 2, escalate_to: ["escrow"], breach: "inserted directly" })]);
-  const complianceBefore = await count(db, `FROM escalations WHERE owner_role = 'compliance' AND status = 'open' AND payload->>'as_of_date' = '2027-06-01'`);
-  const r = (await exec("35.9", "breach.recon", "", OPS, { as_of_date: "2027-06-01", force: true })).output as { missing: number; breaches: number; escalated_only: number; escalation_id: string | null };
-  assert.equal(r.missing, 1); assert.ok(r.breaches >= 2); assert.ok(r.escalated_only >= 1);
-  const receipts = await rows<{ payload: Record<string, unknown> }>(`SELECT payload FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2027-06-01' ORDER BY sequence DESC LIMIT 1`, [EV.breachReconCompleted]);
+  // the next day's reconciliation counts the day's breaches (every timer.breached since the previous receipt): the inserted one has no action row
+  clock.set("2027-06-02T13:00:00.000Z");
+  const complianceBefore = await count(db, `FROM escalations WHERE owner_role = 'compliance' AND status = 'open' AND payload->>'as_of_date' = '2027-06-02'`);
+  const r = (await exec("35.9", "breach.recon", "", OPS, { as_of_date: "2027-06-02" })).output as { missing: number; breaches: number; escalated_only: number; escalation_id: string | null; already?: boolean };
+  assert.equal(r.already, false); assert.equal(r.missing, 1); assert.ok(r.breaches >= 2); assert.ok(r.escalated_only >= 1);
+  const receipts = await rows<{ payload: Record<string, unknown> }>(`SELECT payload FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2027-06-02' ORDER BY sequence DESC LIMIT 1`, [EV.breachReconCompleted]);
   assert.equal(receipts[0]!.payload["missing"], 1);
-  assert.equal(await count(db, `FROM escalations WHERE owner_role = 'compliance' AND status = 'open' AND payload->>'as_of_date' = '2027-06-01'`), complianceBefore + 1, "one compliance escalation");
+  assert.equal(await count(db, `FROM escalations WHERE owner_role = 'compliance' AND status = 'open' AND payload->>'as_of_date' = '2027-06-02'`), complianceBefore + 1, "one compliance escalation");
+  // once per day: a second reconciliation the same day writes nothing more
+  const again = (await exec("35.9", "breach.recon", "", OPS, { as_of_date: "2027-06-02" })).output as { already?: boolean };
+  assert.equal(again.already, true); assert.equal(await count(db, `FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2027-06-02'`, [EV.breachReconCompleted]), 1);
 });
 
 test("35.9-T8: Given 13.1's gates open, a completed 13.4 review with outcome `refer`, a retained FAKE firm for the state and no hold, when the daily unit runs, then `case.referral.proposed` is logged, a 35.8 proposal on `foreclosure_case.refer` for `officer` exists and `SM_CASE_REFERRAL_DECISION_2BD` is armed; when an `officer` approves, then `case.referral.decided{decision: approve}` and 13.3's `foreclosure.referral.sent` are in one transaction, `attorney_referrals` has the package manifest, `firm_dispatches{kind: referral_package}` points at the outbox row, the clock is satisfied and `FNMA_E3205_FIRM_ACK_2BD` is armed; when instead a 12.1 application is received before the decision, then approval is refused and `case.referral.decided{decision: cancelled, cause: gate_closed}` is logged.", { skip }, async () => {
@@ -611,6 +616,9 @@ test("35.9-T15: Given any command of this process, then the ledger and every mon
     { name: "case.progress", input: { loan_id: f.loanId, as_of_date: "2027-07-01" } },
     { name: "case.milestone.expect", input: { loan_id: f.loanId, case_id: caseId, milestone_code: "first_legal", expected_on: "2027-08-15", basis: "person", basis_ref: "the contract test" }, actor: FC_OPS },
     { name: "firm.dispatch", input: { loan_id: f.loanId, case_id: caseId, kind: "message", payload: { subject: "contract test" } }, actor: FC_OPS },
+    { name: "case.milestone.record", input: { loan_id: f.loanId, case_id: caseId, milestone_code: "TITLE_ORDERED", occurred_on: "2027-07-01", source: "firm" }, actor: FC_OPS },
+    { name: "claims.sweep", input: { loan_id: f.loanId, as_of_date: "2027-07-01" }, actor: FC_OPS },
+    { name: "firm.inbound", input: { loan_id: f.loanId, firm_id: firmId, kind: "milestone", case_id: caseId, payload: { code: "TITLE_REVIEWED", occurred_on: "2027-07-01" } }, actor: FC_OPS },
     { name: "breach.recon", input: { as_of_date: "2027-07-01" } },
   ];
   for (const c of commands) {

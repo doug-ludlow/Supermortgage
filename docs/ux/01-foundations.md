@@ -38,9 +38,9 @@ The shell has two regions and one persistent bar.
 - Routes for external returns: `/return/{vendor}/{card_instance_id}` (Stripe, Plaid, Truv, RON), `/d/{deep_link_token}` (SMS/email deep links — §6.5), `/doc/{document_id}` (document viewer, authenticated).
 - No dashboard, no settings tree. Preferences (contact permissions, e-delivery, language, autopay) are cards the borrower can request ("change my autopay day") and that the platform offers when relevant.
 
-## 2. Theme — dark (default)
+## 2. Theme — the designed surface (default), with the dark and light token sets beneath it
 
-Design tokens (CSS variables; Tailwind theme extension). Light theme is a second token set only.
+Design tokens (CSS variables; Tailwind theme extension). Since 2026-09-15 the default surface is the designed prototype skin — light paper (`#f4f4f4`), the Super Red accent (`#bf242b`), the system sans, pill buttons — applied by `apps/borrower/app/prototype-theme.css` over the same components and the two token sets below, with `THEME_DEFAULT = light`; the dark tokens that follow remain the second set, selected by `data-theme`. The "black mono until it works" rule that preceded it is superseded: colour still carries state only where the tokens say so, and no card, thread or rail component changes with the skin.
 
 ```
 --sm-bg:            #0A0A0B   /* app background */

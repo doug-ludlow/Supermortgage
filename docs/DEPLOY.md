@@ -16,7 +16,7 @@ What you end up with, in one Google Cloud project (every row is a resource in `i
 | Cloud SQL (PostgreSQL 16) `supermortgage-nonprod` | the database, encrypted with a customer-managed key (KMS key ring `supermortgage-nonprod`, key `supermortgage-sql`, `kms.tf`), `ssl_mode = "ENCRYPTED_ONLY"`, a public IP with no authorized networks (only the Cloud Run socket path reaches it, `sql.tf`), daily backups + point-in-time recovery |
 | Secret Manager | `supermortgage-database-url` and `supermortgage-api-token` (written by Terraform), plus five secrets Terraform creates with the placeholder first version `unset` for you to replace by hand: `supermortgage-anthropic-api-key`, `supermortgage-tavus-api-key`, `supermortgage-video-callback-secret`, `supermortgage-google-oauth-client-id`, `supermortgage-google-oauth-client-secret` (`secrets.tf`) |
 | Artifact Registry `supermortgage` | the `api` and `borrower` container images built by GitHub Actions |
-| Global HTTPS load balancer + Cloud Armor | `demo.supermortgage.com` (the API, the console and the borrower app on one name), a Google-managed certificate; Cloud Armor with the preconfigured SQLi / XSS WAF rules in `preview = true` (logged, not enforced) and an enforced rate limit of 300 requests per 60 s per source IP; the URL map sends `/` → 302 `/app`, `/video` and `/video/*` → 302 `/app/video`, `/app` and `/app/*` to the borrower backend and everything else to the API backend (`lb.tf`) |
+| Global HTTPS load balancer + Cloud Armor | `demo.supermortgage.com` (the API, the console and the borrower app on one name), a Google-managed certificate; Cloud Armor with the preconfigured SQLi / XSS WAF rules in `preview = true` (logged, not enforced) and an enforced rate limit of 1200 requests per 60 s per source IP; the URL map sends `/` → 302 `/app`, `/video` and `/video/*` → 302 `/app/video`, `/app` and `/app/*` to the borrower backend and everything else to the API backend (`lb.tf`) |
 | Three service accounts | `runtime` (the API service and the three jobs), `borrower` (the borrower app; reads only the API token secret) and `scheduler` (holds `run.invoker` on the sweep job alone) — `iam.tf` |
 
 Everything is created by Terraform (`infra/terraform/`) from a GitHub Actions
@@ -596,7 +596,7 @@ The proof is `node --test src/runtime/borrower/borrower.test.ts` on its own data
   so the first Terraform run can create everything. That is acceptable for a
   throwaway nonprod project and not for anything holding real data.
 - **Cloud Armor WAF rules are in preview**: SQLi/XSS signatures are logged,
-  not enforced. The rate limit (300 requests per 60 s per IP) is enforced.
+  not enforced. The rate limit (1200 requests per 60 s per IP; raised from 300 once the Apply product's polling from three sessions on one address tripped it) is enforced.
 - **Cloud SQL has a public IP with no authorized networks.** Only the Cloud
   Run socket path (IAM-authorized) can reach it, and `ssl_mode = "ENCRYPTED_ONLY"`
   refuses plaintext even on the socket path. Prod should not have a public IP at all.

@@ -63,12 +63,17 @@ resource "google_compute_security_policy" "armor" {
     }
   }
 
-  # 300 requests per minute per client IP; excess is throttled with 429 for
-  # the ban-free duration of the window.
+  # 1200 requests per minute per client IP (20 a second); excess is throttled
+  # with 429 for the ban-free duration of the window. It was 300: the Apply
+  # product's screens that wait on the flows poll the API (three requests a
+  # poll while a file moves), so three sessions behind one address — a
+  # household's tabs, an office NAT, the demo walk's three browser contexts on
+  # one runner — crossed 300 in a minute and the edge answered 429 to a poll
+  # the app showed as its generic error (deploy runs 188, 190, 191).
   rule {
     priority    = 1000
     action      = "throttle"
-    description = "Rate limit: 300 requests/minute per source IP"
+    description = "Rate limit: 1200 requests/minute per source IP"
     match {
       versioned_expr = "SRC_IPS_V1"
       config {
@@ -80,7 +85,7 @@ resource "google_compute_security_policy" "armor" {
       exceed_action  = "deny(429)"
       enforce_on_key = "IP"
       rate_limit_threshold {
-        count        = 300
+        count        = 1200
         interval_sec = 60
       }
     }

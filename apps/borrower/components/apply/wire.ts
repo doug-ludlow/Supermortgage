@@ -396,7 +396,9 @@ export async function commitReview(ctx: FlushContext): Promise<FlushResult> {
  */
 export async function waitAfterDeclaration(tappedId: Uuid, ms = 20_000, pollMs = 400): Promise<AnyCardInstance[]> {
   const started = Date.now();
-  let cards = await loadCards();
+  // the tap committed; a read the edge throttled (429 — deploy 191, three tabs on one IP) or that never arrived is retried (null), never the tap's error; the borrower's own refusal (401, 409) still throws
+  const read = async (): Promise<AnyCardInstance[] | null> => { try { return await loadCards(); } catch (e) { if (e instanceof ApiRequestError && e.status !== 429 && e.status < 500) throw e; return null; } };
+  let cards = (await read()) ?? [];
   for (;;) {
     const next = pendingDeclaration(cards);
     if (next && next.card_instance_id !== tappedId) return cards;
@@ -405,7 +407,7 @@ export async function waitAfterDeclaration(tappedId: Uuid, ms = 20_000, pollMs =
     if (tapped && tapped.status !== "pending" && !next && Date.now() - started >= 3_000) return cards;   // the tap was the sequence's last and nothing followed within 3 s (the demographics card is on its way, or not owed on this file)
     if (Date.now() - started >= ms) return cards;
     await sleep(pollMs);
-    cards = await loadCards();
+    const fresh = await read(); if (fresh) cards = fresh; else await sleep(pollMs * 5);
   }
 }
 

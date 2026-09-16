@@ -21,8 +21,14 @@ import "./apply.css";
 
 const TABS: readonly Tab[] = ["apply", "chat", "loan", "tasks", "account"];
 const APPLICATION_POLL_MS = 30_000;
-/** The flows react to a tap asynchronously (a card arrives moments after the resolve that earned it; the DU moment runs itself): the screens that wait for cards re-read the file on a short interval, bounded. */
-const AWAIT_CARDS_MS = 700; const AWAIT_CARDS_FOR_MS = 30_000; const WATCH_MS = 2_000; const WATCH_FOR_MS = 5 * 60_000;
+/**
+ * The flows react to a tap asynchronously (a card arrives moments after the resolve that earned it; the DU moment runs itself): the
+ * screens that wait for cards re-read the file on a short interval, bounded. Watching (Result, Tasks) is three requests a poll
+ * (me, record, thread), so its interval is the slower one: the edge throttles a source IP at a fixed rate per minute (infra/terraform/lb.tf)
+ * and a household's tabs share that IP — deploy 191's walk saw 429s at 2 s. A throttled or failed background poll is never the
+ * borrower's error (THROTTLE_BACKOFF_MS of quiet, then the next poll); only an answer with its own copy is shown.
+ */
+const AWAIT_CARDS_MS = 700; const AWAIT_CARDS_FOR_MS = 30_000; const WATCH_MS = 4_000; const WATCH_FOR_MS = 5 * 60_000; const THROTTLE_BACKOFF_MS = 20_000;
 
 const applicationOf = (me: BorrowerMe | null): string | null => me?.subjects.find((s) => s.application_id)?.application_id ?? null;
 const loanOf = (me: BorrowerMe | null): string | null => me?.subjects.find((s) => s.loan_id)?.loan_id ?? null;
@@ -180,12 +186,16 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
   useEffect(() => {
     if (!awaiting && !watching) return;
     const every = awaiting ? AWAIT_CARDS_MS : WATCH_MS; const until = Date.now() + (awaiting ? AWAIT_CARDS_FOR_MS : WATCH_FOR_MS);
-    let inFlight = false;
+    let inFlight = false; let quietUntil = 0;
     const id = setInterval(() => {
       if (Date.now() > until) { clearInterval(id); return; }
-      if (inFlight || busy) return;
+      if (inFlight || busy || Date.now() < quietUntil) return;
       inFlight = true;
-      refresh().catch((e: unknown) => setError(messageOf(e))).finally(() => { inFlight = false; });
+      refresh().catch((e: unknown) => {
+        // a background poll the edge throttled (429), or that never reached the API: quiet for a while, then poll again — nothing the borrower did failed
+        if (!(e instanceof ApiRequestError) || e.status === 429 || e.status >= 500) { quietUntil = Date.now() + THROTTLE_BACKOFF_MS; return; }
+        setError(messageOf(e));
+      }).finally(() => { inFlight = false; });
     }, every);
     return () => clearInterval(id);
   }, [awaiting, watching, busy, refresh]);

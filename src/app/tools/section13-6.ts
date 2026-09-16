@@ -83,6 +83,12 @@ export const attorneyMessageHandler136 = compute((i, ctx, rt) => {
   const kind = str(i, "kind") || "message"; const loanId = str(i, "loan_id") || ctx.loanId || null; const today = at(i, "at", ctx);
   if (kind === "message") { need(i, "firm_id", "subject"); return ctx.events.append({ type: "attorney.message.sent", ...(loanId ? { loanId } : {}), actor: ctx.actor, payload: { firm_id: str(i, "firm_id"), subject: str(i, "subject"), ...(flag(i, "form200_certification") ? { form200_certification: true, certified_by: `${ctx.actor.kind}:${ctx.actor.id}` } : {}) } }); }
   switch (kind) {
+    // ---- demands (35.9 rule 7's registered breach actions name 13.6's message tool: `ack_demand` for a late acknowledgment — with the
+    // scorecard note the E-3.2-05 breach column cites — and `status_demand` for a case the firm has gone quiet on; both are firm messages, never legal instructions)
+    case "ack_demand": case "status_demand": { need(i, "firm_id", "case_id"); const f = firmRow(rt, str(i, "firm_id"));
+      const sent = ctx.events.append({ type: "attorney.message.sent", ...(loanId ? { loanId } : {}), actor: ctx.actor, payload: { kind, firm_id: f.id, case_id: str(i, "case_id"), matter_id: optStr(i, "matter_id"), referral_id: optStr(i, "referral_id"), subject: str(i, "subject") || (kind === "ack_demand" ? "acknowledgment demand" : "status demand"), sent_on: today, demand: true } });
+      if (kind === "ack_demand" && flag(i, "scorecard")) ctx.events.append({ type: "firm.scorecard.noted", ...(loanId ? { loanId } : {}), actor: ctx.actor, payload: { firm_id: f.id, case_id: str(i, "case_id"), note: "late_ack", noted_on: today, message_event_id: sent.id } });
+      return { kind, firm_id: f.id, case_id: str(i, "case_id"), message_event_id: sent.id, sent_on: today }; }
     // ---- selection and retention (A4-2.2-01, F-2-04)
     case "firm_candidate": { need(i, "firm_id", "legal_name"); const r = firmCandidateCreated({ firm_id: str(i, "firm_id"), legal_name: str(i, "legal_name"), offices: list(i.offices), created_on: today }); const row = put(rt, ctx, FIRMS, str(i, "firm_id"), r.row); emitAll(ctx, r.events); return row; }
     case "due_diligence": { const f = firmRow(rt, str(i, "firm_id")); need(i, "annual_foreclosures", "eo_per_occurrence_cents", "eo_aggregate_cents");
@@ -156,7 +162,7 @@ export const attorneyMessageHandler136 = compute((i, ctx, rt) => {
     case "records_release": { const f = firmRow(rt, str(i, "firm_id")); const decidedOn = optDate(f.selection_decided_on); if (!decidedOn) throw new RangeError(`${f.id} has no selection decision on record`);
       const r = selectionRecordsReleased({ firm_id: f.id, decided_on: decidedOn, decision: String(f.selection_decision ?? f.status), released_on: today, legal_hold: f.legal_hold === true, longer_retention_until: optDate(f.retain_until) });
       const row = put(rt, ctx, FIRMS, f.id, r.row); emitAll(ctx, r.events); return { ...row, eligible_on: r.eligible_on }; }
-    default: throw new RangeError(`attorney.message.send kind ${kind} is not one of message/firm_candidate/due_diligence/form200_submit/form200_response/training_completed/lra_executed/retain/eo_policy/refer/firm_ack/instruction_ack/matter_completed/claim_filed/review_completed/scorecard/escalation_discovered/escalation_sent/suspension_proposed/fnma_notified/suspension_implement/matter_transfer_requested/transfer_approval/matter_transfer/terminate/records_release`);
+    default: throw new RangeError(`attorney.message.send kind ${kind} is not one of message/ack_demand/status_demand/firm_candidate/due_diligence/form200_submit/form200_response/training_completed/lra_executed/retain/eo_policy/refer/firm_ack/instruction_ack/matter_completed/claim_filed/review_completed/scorecard/escalation_discovered/escalation_sent/suspension_proposed/fnma_notified/suspension_implement/matter_transfer_requested/transfer_approval/matter_transfer/terminate/records_release`);
   }
 });
 export const ATTORNEY_MESSAGE_GUARDRAILS_13_6 = [

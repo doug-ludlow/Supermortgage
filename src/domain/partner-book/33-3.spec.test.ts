@@ -32,6 +32,8 @@ import { importPartnerBook } from "../../runtime/partner-book.ts";
 import { opportunityIdFor } from "../../runtime/partner-book-review.ts";
 import { ASK_ORDER, PROJECTED_NOTE_DAYS, READINESS_MODEL_VERSION, READINESS_PROMPT_VERSION, READINESS_RULE_SET_VERSION, REQUIRED_FOR_READY, openRefinanceApplication, readinessRead, readinessRun, readinessSubjects, type ReadinessItem, type ReadinessItemName, type ReadinessRow } from "../../runtime/partner-book-readiness.ts";
 import { LOAN_PAID_OFF_EVENT } from "../../runtime/borrower/flows/16-readiness.ts";
+import { closeoutPass } from "../../runtime/refinance-closeout.ts";
+import { PgEntityRepository } from "../../infra/db/entities.ts";
 import { demoFunded, demoSnapshot, fundApplication } from "../../runtime/origination.ts";
 import { identityPass } from "../verification/ops-22-6.ts";
 import { esignVerificationToken } from "../../app/tools/section32-2.ts";
@@ -538,11 +540,26 @@ test("33.3-T6: Given a loan not a candidate, then no readiness row is written fo
   assert.equal(after.status, "funded"); assert.ok(after.loan_id, "the new loan boarded"); assert.notEqual(after.loan_id, loan.id);
   assert.equal((await appEvents(app.id, "loan.boarded")).length, 1); assert.equal((await appEvents(app.id, "loan.funded")).length, 1);
   assert.equal((await db.query<{ status: string }>(`SELECT status::text AS status FROM loans WHERE id = $1`, [after.loan_id]))[0]!.status, "active", "the refinance is a serviced loan now");
-  // the monitored loan reads paid_off, with the receipt on the loan (rule 5)
+  // the monitored loan reads paid_off, with the receipt on the loan (rule 5) — since 35.10 the flip is the refinance closeout's: the flow writes no status
+  // (35.10-T8's contract), the closeout pass quotes the partner's payoff from loan.funded, settles it from the settlement statement's payoff line and retires the
+  // loan through the 35.1 projector; the receipt is `partner_book.loan.paid_off` with this section's payload, appended by the payoff-release agent
+  assert.equal((await db.query<{ status: string }>(`SELECT status::text AS status FROM loans WHERE id = $1`, [loan.id]))[0]!.status, "monitored", "the funding itself flips nothing (35.10-T8, T11)");
+  const pass1 = await closeoutPass(runtime, NOW_FUNDING, { logger: runtime.logger });
+  const closeout = (await db.query<{ id: string; mode: string; step: string; status: string; partner_party_id: string; payoff_demand_id: string | null }>(`SELECT id::text AS id, mode, step, status, partner_party_id::text AS partner_party_id, payoff_demand_id FROM refinance_closeouts WHERE application_id = $1`, [app.id]))[0];
+  assert.ok(closeout, `the closeout opened on the sweep: ${pass1.line}`); assert.equal(closeout.mode, "monitored_partner"); assert.equal(closeout.step, "quoted", pass1.line); assert.ok(closeout.payoff_demand_id, "24.4's demand went to the partner");
+  const demand = decodeEntityData((await db.query<{ data: Json }>(`SELECT data FROM entity_current WHERE kind = 'payoff_demands' AND id = $1`, [closeout.payoff_demand_id]))[0]!.data);
+  assert.equal(demand["same_servicer"], false); assert.ok(BigInt(String(demand["total_cents"])) > 0n, "the partner's statement total");
+  // the settlement statement (26.3's evidence, FAKE): the payoff line to the partner's account of record for the statement's total, then `funding.disbursement.confirmed` names it
+  const evidenceId = `doc-settlement-statement-${app.id}`;
+  await new PgEntityRepository(db).save([{ kind: "documents", id: evidenceId, version: 1, updatedAt: NOW_FUNDING, updatedBy: "system:test", data: { application_id: app.id, kind: "settlement_statement", sha256: "fake", storage_uri: `fake://documents/${evidenceId}`, mime_type: "application/pdf", retention_class: "life_of_loan_plus_4y",
+    metadata: { payoff_lines: [{ payoff_demand_id: closeout.payoff_demand_id, payee_party_id: closeout.partner_party_id, amount_cents: String(demand["total_cents"]), wire_reference: "FEDREF-33-3-T6" }] } } }], { applicationId: app.id });
+  await runtime.uow.run({ applicationId: app.id }, (ctx) => ctx.events.append({ type: "funding.disbursement.confirmed", applicationId: app.id, aggregate: { kind: "application", id: app.id }, actor: { kind: "agent", id: "funder" }, payload: { application_id: app.id, evidence_document_id: evidenceId, disbursed_on: "2026-11-12", disbursement_date: "2026-11-12" } }), { clock });
+  for (let i = 0; i < 3; i += 1) await closeoutPass(runtime, NOW_FUNDING, { logger: runtime.logger });
   assert.equal((await db.query<{ status: string }>(`SELECT status::text AS status FROM loans WHERE id = $1`, [loan.id]))[0]!.status, "paid_off");
   const paid = await events(LOAN_PAID_OFF_EVENT, loan.id); assert.equal(paid.length, 1, "one paid-off receipt"); const pp = paid[0]!.payload;
   assert.equal(pp["loan_id"], loan.id); assert.equal(pp["application_id"], app.id); assert.equal(pp["new_loan_id"], after.loan_id); assert.equal(pp["status"], "paid_off"); assert.equal(pp["prior_status"], "monitored"); assert.equal(pp["origination"], true); assert.equal(pp["funding_date"], "2026-11-12");
-  assert.equal(paid[0]!.actor_id, "refi-readiness");
+  assert.equal(paid[0]!.actor_id, "payoff-release");
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM prior_loan_retirements WHERE prior_loan_id = $1`, [loan.id]))[0]!.n, "1", "35.10's retirement row");
   // no further rows for that loan: not a subject of the next morning's pass (the loan is not monitored, the application funded), the rows unchanged
   assert.equal((await rowsOf(loan.id)).length, rowsBefore, "the funding wrote no readiness row");
   assert.ok(!(await readinessSubjects(db)).some((s) => s.loan_id === loan.id), "no longer a subject");

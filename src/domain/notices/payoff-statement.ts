@@ -44,7 +44,7 @@ export function payoffBeforeScheduledPayment(f: { upb_before_payment_cents: Cent
   const interest = segments.reduce((a, s) => a + s.interest_cents, 0n);
   return { upb_cents: f.upb_before_payment_cents, segments, interest_cents: interest, total_cents: f.upb_before_payment_cents + interest };
 }
-export function requesterAuthorization(kind: "borrower" | "confirmed_successor" | "attorney" | "counselor" | "lender_or_title" | "unknown", evidence: boolean): "consumer_request" | "authorized_agent" | "request_authorization_send_to_borrower" {
+export function requesterAuthorization(kind: "borrower" | "confirmed_successor" | "attorney" | "counselor" | "lender_or_title" | "refinancing_lender" | "unknown", evidence: boolean): "consumer_request" | "authorized_agent" | "request_authorization_send_to_borrower" {
   if (kind === "borrower" || kind === "confirmed_successor") return "consumer_request";
   return evidence ? "authorized_agent" : "request_authorization_send_to_borrower";
 }

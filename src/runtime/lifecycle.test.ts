@@ -850,7 +850,9 @@ test("g. the id grammar over the whole journey: before funding every event of th
   let before = 0, during = 0, after = 0;
   for (const e of log) {
     const seq = Number(e.sequence);
-    if (e.loan_id === priorLoanId) { if (e.type !== "refi.opportunity.converted") assert.equal(e.application_id, null, `${e.type} on the prior loan (the servicing book) never names the application`); continue; }
+    // 35.10: the refinance closeout's own events (and its commands' bus receipts) are the second bridge between the two records — the prior loan's record names the application that retires it; everything else on the prior loan never does
+    const closeout = e.type.startsWith("refinance.") || (e.type.startsWith("command.") && (e.payload as Record<string, unknown>)["process"] === "35.10") || e.type === "partner_book.loan.paid_off";
+    if (e.loan_id === priorLoanId) { if (e.type !== "refi.opportunity.converted" && !closeout) assert.equal(e.application_id, null, `${e.type} on the prior loan (the servicing book) never names the application`); continue; }
     if (e.application_id === appId && seq < stagedSeq) { before++; assert.equal(e.loan_id, null, `${e.type} (#${seq}) before the hand-off must be keyed by the application alone`); continue; }
     if (e.application_id === appId && seq >= stagedSeq && seq <= boardedSeq) { during++; if (e.type.startsWith("timer.")) continue; assert.equal(e.loan_id, loanId, `${e.type} (#${seq}) during the hand-off carries the loan`); continue; }
     if (seq > boardedSeq) { after++; if (e.type.startsWith("timer.") && e.application_id === appId) continue; assert.equal(e.loan_id, loanId, `${e.type} (#${seq}) after boarding is keyed by the loan`); if (e.application_id !== null) assert.equal(e.application_id, appId); }   // an origination clock that closes after boarding keeps its application subject

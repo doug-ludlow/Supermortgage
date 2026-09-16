@@ -139,6 +139,27 @@ export class TimeframeTracker {
     return { tracking: t, exposure: e, elapsed: daysBetween(lpi, asOf), threshold: Math.ceil(0.7 * (allowableDays + c.credited_days)) };
   }
 
+  /**
+   * Rule 5 run daily (35.9 rule 5 calls it for every open case): the exposure projected on today as the provisional sale date and,
+   * separately, on the firm's forecast sale date when one exists — written on the tracking row (`actual_days`, `credited_delay_days`,
+   * `excess_days`, `exposure_cents`, `exposure_as_of`) and emitted as this section's `comp_fee.exposure.updated{basis: daily_projection}`
+   * (the 70% mark and the status demand stay `review()`'s). Idempotent per day: a second call on the same `as_of` re-emits nothing.
+   */
+  dailyProjection(i: { loan_id: string; case_id?: string | null; as_of: PlainDate; forecast_sale_on?: PlainDate | null }): { tracking: TrackerRecord; today: ReturnType<typeof projectedExposure> | null; forecast: ReturnType<typeof exposure> | null; event: DomainEvent | null } {
+    const p = this.project(i.loan_id, i.as_of, i.case_id);
+    const t = p.tracking; const cid = String(t.data.case_id);
+    if (String(t.data.exposure_as_of ?? "") === i.as_of && String(t.data.exposure_basis ?? "") === "daily_projection") return { tracking: t, today: p.exposure, forecast: null, event: null };
+    const lpi = isoDate(t.data.lpi_due_date, "lpi_due_date"); const upb = toCents(t.data.upb_cents); const ptr = typeof t.data.ptr_pct === "string" && t.data.ptr_pct ? t.data.ptr_pct : null;
+    const forecastOn = i.forecast_sale_on ?? optDate(t.data.forecast_sale_on);
+    const forecast = forecastOn && upb !== null && ptr !== null ? exposure({ lpi_due: lpi, sale_on: forecastOn, allowable: Number(t.data.allowable_days), delays: this.delays(cid, forecastOn), upb_cents: upb, ptr_pct: ptr }) : null;
+    const e = p.exposure;
+    const tracking = this.d.store.put(TRACKING, cid, { actual_days: e?.actual_days ?? p.elapsed, credited_delay_days: e?.credited_days ?? Number(t.data.credited_delay_days ?? 0), excess_days: e?.excess_days ?? 0, exposure_cents: e ? e.exposure_cents.toString() : null, exposure_as_of: i.as_of, exposure_basis: "daily_projection",
+      forecast_sale_on: forecastOn ?? null, forecast_exposure_cents: forecast ? forecast.exposure_cents.toString() : null }, this.actor, this.now());
+    const event = this.emit("comp_fee.exposure.updated", i.loan_id, { case_id: cid, basis: "daily_projection", as_of: i.as_of, provisional_sale_on: i.as_of, actual_days: e?.actual_days ?? p.elapsed, allowable_days: Number(t.data.allowable_days), credited_delay_days: e?.credited_days ?? null, excess_days: e?.excess_days ?? null, exposure_cents: e ? e.exposure_cents.toString() : null,
+      status: e?.status ?? String(t.data.status), forecast: forecast && forecastOn ? { sale_on: forecastOn, actual_days: forecast.actual_days, credited_delay_days: forecast.credited_days, excess_days: forecast.excess_days, exposure_cents: forecast.exposure_cents.toString() } : null });
+    return { tracking, today: e, forecast, event };
+  }
+
   /** Timer table FNMA_E3215_TIMEFRAME_WARNING_70 breach / 13.5-T5: elapsed ≥ 70% of (allowable + credits) → `fc.timeframe.at_risk` (spec Outputs; spelled `foreclosure.timeframe.at_risk` here, as ops.ts `timeframeWarning`) and a firm status demand (13.6 monthly status demand on at_risk cases). Idempotent per case. */
   review(loanId: string, asOf: PlainDate = this.today(), caseId?: string | null): { status: string; at_risk: boolean; elapsed: number; threshold: number; instruction: TrackerRecord | null; events: DomainEvent[] } {
     const p = this.project(loanId, asOf, caseId); const t = p.tracking; const status = String(t.data.status);

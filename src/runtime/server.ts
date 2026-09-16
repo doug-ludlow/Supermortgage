@@ -21,6 +21,7 @@
  *   POST /v1/transfers/batches/demo                 board the built-in 100-loan demo batch (fixtures/transfer-batch-demo)
  *   POST /v1/entry/seed-demo                        32.14 demo seed (FAKE): readiness rows for the demo states, partner NMLSR ID, an active rate sheet (idempotent)
  *   GET  /v1/transfers/batches/{batchId}            a batch's boarding summary
+ *   /v1/partner/*                                   36.1 the servicing partner portal (src/runtime/partner-portal/routes.ts) — a partner_sessions bearer only: the staff cookie, the header actor and API_TOKEN open nothing there (36.1-T7), and a partner session opens nothing on /ops or /v1/partner-book/* (36.1-T8)
  *   /ops, /ops/api/*, /api/*                        the ops console (src/console) — 34.1: a staff session (cookie sm_staff / a session bearer) names the human; x-actor-id / x-actor-role survive only for the deploy workflow behind the ops bearer outside production
  *
  *   Borrower API (docs/ux/02 §7; src/runtime/borrower/routes.ts) — authenticated by a borrower session token, never by API_TOKEN:
@@ -86,6 +87,9 @@ import { createBorrowerRouter, parseMultipart, type BorrowerRouter, type Borrowe
 import { handleVerifyRoute } from "./documents/verify-route.ts";
 import { holdsOf, importPartnerBook, listPartnerBookImports, partnerBookReport, partnerBookStatus, resolvePartnerBookLoan, seedPartnerBookDemo, type PartnerBookImportInput } from "./partner-book.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
+// 36.1: the partner portal's own prefix — resolves only a partner_sessions bearer (rule 7), dispatched before the /v1 door
+import { createPartnerRouter } from "./partner-portal/routes.ts";
+import { seedPartnerPortalDemo } from "./partner-portal/seed.ts";
 import { OffsetClock, advanceDemoClock, demoClockStatus } from "./demo-clock.ts";
 /** 35.12 Inputs and triggers: the /v1 posture routes as aliases of the process's tools (the body is the input). */
 const POSTURE_V1_ROUTES: Readonly<Record<string, string>> = { "/v1/posture/manifests": "posture.record", "/v1/posture/check": "posture.check", "/v1/posture/scans": "data.scan" };
@@ -192,6 +196,8 @@ export function createApiServer(opts: ServerOptions): Server {
   const borrower = opts.borrowerRouter ?? createBorrowerRouter({ runtime, logger, blobs: runtime.blobs, ...(opts.borrower ?? {}) });
   // the demo clock routes refuse in production (docs/DEPLOY.md "The demo clock"); the runtime's environment is the one source (35.7), the borrower options may name it too
   const environment = opts.borrower?.environment ?? runtime.environment;
+  // 36.1 rule 7: the partner prefix resolves its own sessions (never a staff cookie, a header actor or the ops token) — mounted after the existing /v1/partner-book/* machine routes in the path grammar (the prefixes never overlap) and before /ops/api/*, both unchanged
+  const partner = createPartnerRouter({ runtime, logger, environment, ...(opts.borrower?.rpId !== undefined ? { rpId: opts.borrower.rpId } : {}), ...(opts.borrower?.allowedOrigins !== undefined ? { allowedOrigins: opts.borrower.allowedOrigins } : {}) });
 
   return createServer(async (req, res) => {
     const started = Date.now();
@@ -226,6 +232,8 @@ export function createApiServer(opts: ServerOptions): Server {
       if (await handleVerifyRoute(runtime, req, res, url, method)) { logger.info("http", { method, path, status: res.statusCode, ms: Date.now() - started }); return; }
       // the borrower API authenticates its own sessions (and the vendor webhook its signature); the ops token is never accepted there
       if (await borrower.handle(req, res, url, method)) return;
+      // 36.1: /v1/partner/* authenticates its own partner sessions and writes its own partner_actions row; the /v1 door below never sees it (no staff fallback, no staff_actions row)
+      if (await partner.handle(req, res, url, method)) return;
       // 32.14 §6.3 / 34.1: the ops console page lives at /ops and its JSON API at /ops/api/* (and the legacy /api/*); the console authenticates its own staff sessions (src/console/server.ts) — the ops token is one way in only for the deploy workflow's header actor
       if (consoleServer && (path === "/ops" || path === "/ops/" || path === "/ops/index.html" || path.startsWith("/ops/api/") || path.startsWith("/api/"))) { consoleServer.emit("request", req, res); return; }
       v1Route = path.startsWith("/v1/");
@@ -428,7 +436,9 @@ export function createApiServer(opts: ServerOptions): Server {
         if (environment === "production") { done(403, { error: "forbidden", reason: "the demo book does not exist in production (ENVIRONMENT=production)" }); return; }
         const b = await readJson(req);
         const r = await seedPartnerBookDemo(runtime, { ...(typeof b["partner_id"] === "string" ? { partner_id: b["partner_id"] as string } : {}) });
-        done(200, r, { import: r.import_id, status: r.status, rows_loaded: r.rows_loaded, invitations_sent: r.invitations_sent }); return;
+        // 36.1 Operational prerequisites: the demo partner's first partner_admin beside the book (idempotent; never in production)
+        const portal = await seedPartnerPortalDemo(runtime, { partner_id: r.partner_party_id });
+        done(200, { ...r, partner_portal: portal }, { import: r.import_id, status: r.status, rows_loaded: r.rows_loaded, invitations_sent: r.invitations_sent, partner_admin: portal.partner_user_id, partner_admin_created: portal.created }); return;
       }
       // the demo clock (src/runtime/demo-clock.ts): advance the hosted demo through days in minutes, running the sweep minute for every calendar day crossed; ops token; never in production
       if (path === "/v1/demo/clock" || path === "/v1/demo/advance") {

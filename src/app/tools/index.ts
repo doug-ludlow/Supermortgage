@@ -212,6 +212,8 @@ import { TOOLS_35_9 } from "./section35-9.ts";
 import { TOOLS_35_10 } from "./section35-10.ts";
 import { TOOLS_35_11 } from "./section35-11.ts";
 import { TOOLS_35_12 } from "./section35-12.ts";
+// ---- §36 process-owned files (the servicing partner portal)
+import { TOOLS_36_1 } from "./section36-1.ts";
 
 export const ALL_TOOLS: readonly ToolDef[] = [...SECTION_01_TOOLS, ...SECTION_02_TOOLS, ...SECTION_03_TOOLS, ...SECTION_04_TOOLS, ...SECTION_05_TOOLS, ...SECTION_06_TOOLS, ...SECTION_07_TOOLS, ...SECTION_08_TOOLS, ...SECTION_09_TOOLS, ...SECTION_10_TOOLS, ...SECTION_11_TOOLS, ...SECTION_12_TOOLS, ...SECTION_13_TOOLS, ...SECTION_14_TOOLS, ...SECTION_15_TOOLS, ...SECTION_16_TOOLS, ...SECTION_17_TOOLS, ...SECTION_18_TOOLS, ...SECTION_19_TOOLS,
   ...TOOLS_1_1, ...TOOLS_1_2, ...TOOLS_1_3, ...TOOLS_1_4, ...TOOLS_1_5, ...TOOLS_1_6, ...TOOLS_1_7, ...TOOLS_2_1, ...TOOLS_2_2, ...TOOLS_2_3, ...TOOLS_2_4, ...TOOLS_2_5, ...TOOLS_2_6, ...TOOLS_2_7, ...TOOLS_3_1, ...TOOLS_3_2, ...TOOLS_3_3, ...TOOLS_3_4, ...TOOLS_3_5, ...TOOLS_3_6, ...TOOLS_3_7, ...TOOLS_3_8, ...TOOLS_3_9, ...TOOLS_4_1, ...TOOLS_4_2, ...TOOLS_4_3, ...TOOLS_4_4, ...TOOLS_4_5, ...TOOLS_5_1, ...TOOLS_5_2, ...TOOLS_5_3, ...TOOLS_5_4, ...TOOLS_5_5, ...TOOLS_5_6, ...TOOLS_5_7, ...TOOLS_6_1, ...TOOLS_6_2, ...TOOLS_6_3, ...TOOLS_6_4, ...TOOLS_6_5, ...TOOLS_7_1, ...TOOLS_7_2, ...TOOLS_7_3, ...TOOLS_7_4, ...TOOLS_7_5, ...TOOLS_7_6, ...TOOLS_8_1, ...TOOLS_8_2, ...TOOLS_8_3, ...TOOLS_9_1, ...TOOLS_9_2, ...TOOLS_9_3, ...TOOLS_9_4, ...TOOLS_9_5, ...TOOLS_9_6, ...TOOLS_9_7, ...TOOLS_9_8, ...TOOLS_9_9, ...TOOLS_10_1, ...TOOLS_10_2, ...TOOLS_10_3, ...TOOLS_10_4, ...TOOLS_10_5, ...TOOLS_10_6, ...TOOLS_11_1, ...TOOLS_11_2, ...TOOLS_11_3, ...TOOLS_11_4, ...TOOLS_11_5, ...TOOLS_12_1, ...TOOLS_12_2, ...TOOLS_12_3, ...TOOLS_12_4, ...TOOLS_12_5, ...TOOLS_12_6, ...TOOLS_12_7, ...TOOLS_12_8, ...TOOLS_12_9, ...TOOLS_13_1, ...TOOLS_13_2, ...TOOLS_13_3, ...TOOLS_13_4, ...TOOLS_13_5, ...TOOLS_13_6, ...TOOLS_13_7, ...TOOLS_13_8, ...TOOLS_13_9,
@@ -220,7 +222,8 @@ export const ALL_TOOLS: readonly ToolDef[] = [...SECTION_01_TOOLS, ...SECTION_02
   ...TOOLS_33_1, ...TOOLS_33_2, ...TOOLS_33_3,
   ...TOOLS_34_1, ...TOOLS_34_2, ...TOOLS_34_3, ...TOOLS_34_4, ...TOOLS_34_5,
   ...TOOLS_23_5, ...TOOLS_23_6, ...TOOLS_23_7,
-  ...TOOLS_35_1, ...TOOLS_35_2, ...TOOLS_35_3, ...TOOLS_35_4, ...TOOLS_35_5, ...TOOLS_35_6, ...TOOLS_35_7, ...TOOLS_35_8, ...TOOLS_35_9, ...TOOLS_35_10, ...TOOLS_35_11, ...TOOLS_35_12];
+  ...TOOLS_35_1, ...TOOLS_35_2, ...TOOLS_35_3, ...TOOLS_35_4, ...TOOLS_35_5, ...TOOLS_35_6, ...TOOLS_35_7, ...TOOLS_35_8, ...TOOLS_35_9, ...TOOLS_35_10, ...TOOLS_35_11, ...TOOLS_35_12,
+  ...TOOLS_36_1];
 
 export function bindTools(rt: ToolRuntime, agents: AgentRegistry, defs: readonly ToolDef[] = ALL_TOOLS): Map<string, CommandSpec<ToolInput, unknown>> {
   const escalates = new Map(loadAgentsFile().processes.map((p) => [p.process, p.escalates_to] as const));

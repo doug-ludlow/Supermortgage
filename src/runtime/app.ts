@@ -82,6 +82,7 @@ import type { AnalystLlm } from "./partner-book-analyst.ts";
 import { notifyPartnerBookTapeLate, sendPartnerBookReminders } from "./partner-book.ts";
 import { sweepDailyReports, type SweepDailyReportsResult } from "./book-ops/routes.ts";
 import { escalateLongTrips, expireKillSwitchRequests } from "./controls/ai.ts";
+import { runOrchestrationPass, dailyReceipt, dailyReceiptDue, type PassReport as OrchestrationPassReport, type DailyReceipt as OrchestrationDailyReceipt } from "../domain/operations-runtime/orchestration-35-6.ts";
 import type { Logger } from "./log.ts";
 
 export interface RuntimeDeps {
@@ -139,6 +140,10 @@ export interface SweepReport {
   readonly partner_book_daily_reports: SweepDailyReportsResult | null;
   /** 34.4 rule 4: kill-switch requests no admin confirmed within 10 minutes expired on this pass, and the compliance escalations opened for switches tripped more than 24 hours (src/runtime/controls/ai.ts). */
   readonly controls: { readonly kill_requests_expired: number; readonly long_trips_escalated: number };
+  /** 35.6 rule 10: the closing orchestration pass (src/domain/operations-runtime/orchestration-35-6.ts) — after the FAKE reviewers, before the verify and breach passes; null when it failed. */
+  readonly orchestration: OrchestrationPassReport | null;
+  /** 35.6 rule 10: the daily Closing board receipt (35.3's `closing_orchestration_daily`; once per day at/after 06:00 ET; null when not due or failed). */
+  readonly orchestration_daily: OrchestrationDailyReceipt | null;
   /** 35.1 rule 12: the run's `sweep_runs` row, its holder and outcome (`skipped{lease_held}` when another execution holds the lease; `failed{lease_unavailable}` when the dedicated client cannot connect). */
   readonly run_id: string;
   readonly holder: string;
@@ -361,7 +366,7 @@ export class Runtime {
       await this.db.query(`INSERT INTO sweep_runs (id, holder, started_at, heartbeat_at, finished_at, as_of_date, outcome, skipped_reason) VALUES ($1, $2, $3, $3, $3, $4, $5, $6)`, [leased.runId, holder, nowIso, asOfDate, outcome, leased.reason]);
       if (outcome === "skipped") await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_skipped", aggregate: { kind: "sweep_run", id: leased.runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: leased.runId, holder, as_of_date: asOfDate, reason: leased.reason, lease_key: 35_001 } }), { clock: this.clock });
       this.logger?.[outcome === "skipped" ? "info" : "error"](`sweep ${outcome}`, { run_id: leased.runId, holder, reason: leased.reason, error: leased.error ?? null });
-      return { at: nowIso, due: 0, breaches: [], outbox: [], ...notRun(leased.reason), run_id: leased.runId, holder, outcome, skipped_reason: leased.reason, passes: [], outbox_dispatch: null, verify: null };
+      return { at: nowIso, due: 0, breaches: [], outbox: [], ...notRun(leased.reason), run_id: leased.runId, holder, outcome, skipped_reason: leased.reason, passes: [], outbox_dispatch: null, verify: null, orchestration: null, orchestration_daily: null };
     }
     const lease = leased.lease; const runId = lease.runId; this.sweepRunId = runId;
     await this.db.query(`INSERT INTO sweep_runs (id, holder, started_at, heartbeat_at, as_of_date, outcome) VALUES ($1, $2, $3, $3, $4, 'running')`, [runId, holder, nowIso, asOfDate]);
@@ -387,6 +392,10 @@ export class Runtime {
       // 34.4 rule 4: an unconfirmed kill-switch request expires at 10 minutes (logged, nothing trips); a switch tripped more than 24 hours opens one compliance escalation — errors logged, never thrown
       const controls = await logged("controls", async () => ({ kill_requests_expired: await expireKillSwitchRequests(this, nowIso), long_trips_escalated: (await escalateLongTrips(this, nowIso)).length }), () => ({ kill_requests_expired: 0, long_trips_escalated: 0 }), (c) => ({ ...c }));
       const reviewers = this.reviewers ? await logged("fake_reviewers", () => this.reviewers!.tick(this, nowIso), () => null as FakeReviewerReport | null, (r) => ({ ran: r !== null })) : null;
+      // 35.6 rule 10: the closing orchestration pass after the FAKE reviewers (a FAKE release this minute is folded by this pass) and before the verify and breach passes (what a step satisfies is never breached by the same sweep) — errors logged, never thrown
+      const orchestration = await logged("orchestration.pass", () => runOrchestrationPass(this, nowIso, { runId }), () => null as OrchestrationPassReport | null, (r) => (r ? { discovered: r.discovered, claimed: r.claimed, wrote: r.wrote } : { failed: true }));
+      // 35.6 rule 10 / 35.3's `closing_orchestration_daily`: the day's receipt and the Closing board once per platform day at/after 06:00 ET (SM_ORCH_OPEN_BOOK_DAILY)
+      const orchestrationDaily = (await dailyReceiptDue(this, nowIso).catch(() => false)) ? await logged("orchestration.daily_receipt", () => dailyReceipt(this, nowIso), () => null as OrchestrationDailyReceipt | null, (r) => (r ? { as_of_date: r.as_of_date, open: r.open } : { failed: true })) : null;
       // rule 13: the daily verify run once per calendar day at/after 06:00 ET — its own global unit of work (the gaps, the mismatches and their escalations, one projection_runs row, `projection.run_completed`); a failed run inserts `failed` and no event
       let verify: VerifyReport | null = null;
       const wc = wallClock(Date.parse(nowIso), "America/New_York");
@@ -435,7 +444,7 @@ export class Runtime {
       await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_completed", aggregate: { kind: "sweep_run", id: runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: runId, as_of_date: asOfDate, holder, duration_ms: durationMs, passes: passes.map((p) => p.name), due: due.length, breaches: breaches.length, outbox: outboxCounts } }),
         { clock: this.clock, commit: async (q) => { await q.query(`UPDATE sweep_runs SET outcome = 'completed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, outbox = $4::jsonb WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), JSON.stringify(outboxCounts)]); } });
       return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls,
-        run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify };
+        run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify, orchestration, orchestration_daily: orchestrationDaily };
     } catch (e) {
       await this.db.query(`UPDATE sweep_runs SET outcome = 'failed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, skipped_reason = $4 WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), (e instanceof Error ? e.message : String(e)).slice(0, 500)]).catch(() => undefined);
       throw e;

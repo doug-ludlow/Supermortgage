@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8145/8756 (93.0%): tids 2276/2458, tables 779/848, timers 2049/2097, notices 308/308, tools 1452/1578, figures 1281/1467; processes at 100%: 194/205",
+ "brief": "spec units built 8168/8756 (93.3%): tids 2279/2458, tables 787/848, timers 2055/2097, notices 308/308, tools 1457/1578, figures 1282/1467; processes at 100%: 194/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2276
+   "built": 2279
   },
   "tables": {
    "spec": 848,
-   "built": 779
+   "built": 787
   },
   "timers": {
    "spec": 2097,
-   "built": 2049
+   "built": 2055
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1452
+   "built": 1457
   },
   "figures": {
    "spec": 1467,
-   "built": 1281
+   "built": 1282
   },
   "units": {
    "spec": 8756,
-   "built": 8145
+   "built": 8168
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 121,
+   "built": 144,
    "processes": 12,
    "done": 2
   }
@@ -9099,10 +9099,9 @@
    "title": "Default operations over time: cases progressed by the cycles and the screens \u2014 referral, milestones, docket reactions, executed breach actions, claims filed",
    "tids": {
     "spec": 17,
-    "built": 0,
-    "todo": 17,
+    "built": 3,
+    "todo": 14,
     "missing": [
-     1,
      2,
      3,
      4,
@@ -9111,42 +9110,24 @@
      7,
      8,
      9,
-     10,
      11,
      12,
      13,
      14,
      15,
-     16,
      17
     ]
    },
    "tables": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "breach_action_registry",
-     "breach_actions",
-     "case_milestone_expectations",
-     "case_timelines",
-     "claim_candidates",
-     "default_case_daily_runs",
-     "docket_reactions",
-     "firm_dispatches"
-    ]
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 6,
-    "built": 0,
+    "built": 6,
     "armable": 6,
-    "missing": [
-     "SM_BREACH_ACTION_RECON_DAILY",
-     "SM_CASE_MILESTONE_OVERDUE_5BD",
-     "SM_CASE_REFERRAL_DECISION_2BD",
-     "SM_CLAIM_PACKAGE_5BD",
-     "SM_DEFAULT_CASE_DAILY",
-     "SM_DOCKET_REACTION_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9155,13 +9136,9 @@
    },
    "tools": {
     "spec": 14,
-    "built": 0,
+    "built": 5,
     "missing": [
-     "case.timeline",
-     "case.progress",
      "case.refer",
-     "case.milestone.expect",
-     "case.milestone.record",
      "docket.sync",
      "docket.react",
      "firm.dispatch",
@@ -9169,20 +9146,18 @@
      "breach.execute",
      "breach.recon",
      "claims.sweep",
-     "claims.package",
-     "writeDecision"
+     "claims.package"
     ]
    },
    "figures": {
     "spec": 27,
-    "built": 1,
+    "built": 2,
     "missing": [
      "$1,062.00",
      "$129.12",
      "$163,920.44",
      "$178,525.21",
      "$180.00",
-     "$187,450.00",
      "$2,300.00",
      "$2,865.00",
      "$2,914.60",
@@ -9207,9 +9182,9 @@
    },
    "units": {
     "spec": 72,
-    "built": 1
+    "built": 24
    },
-   "pct": 1.4
+   "pct": 33.3
   },
   {
    "process": "35.10",

@@ -46,6 +46,7 @@ import { PgApplicationRepository, type ApplicationInput, type ApplicationRecord 
 import { AgentRegistry } from "../app/agents.ts";
 import { CommandBus, type AgentRunInfo, type ExecuteResult } from "../app/commands.ts";
 import { EntityStore, type Ports, type ToolDef, type ToolInput, type ToolRuntime } from "../app/tools.ts";
+import { CaseFolder } from "../domain/operations-runtime/default-35-9/folder.ts";
 import { ALL_TOOLS, bindTools, toolKey } from "../app/tools/index.ts";
 import { EscalationService, PgEscalationRepository } from "../app/escalations.ts";
 import { NoticeService, type Notice } from "../notices/service.ts";
@@ -212,6 +213,8 @@ export class Runtime {
   private readonly tools = new Map<string, ToolDef>();
   /** The runtime behind a command view (itself for the real runtime): its `db` is the pool — the rare write that must outlive a refusal (34.4's fourth-requeue escalation, an expired kill-switch request) goes through `rt.root.db`. */
   readonly root: Runtime;
+  /** 35.9 rule 1: the post-commit fold of the sections' events into `case_timelines` (started by main.ts for serve and sweep, by a test that asserts it; idle otherwise — the daily unit re-folds anything it missed). */
+  readonly caseFolder: CaseFolder;
   /** 32.12 backend delta: the Notice Registry's rendered notices for the life of the runtime (NoticeServiceDeps.notices) — a notice rendered by one command is readable by the next (17.2 runContentChecklist, the borrower flows' plain-language block). In-memory beside the `notices` table; the event log stays the record. */
   readonly noticeMemory = new Map<string, Notice>();
 
@@ -225,6 +228,7 @@ export class Runtime {
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
     this.bus = new CommandBus(this.agents);
     this.originationServices = originationServices(this.clock);
+    this.caseFolder = new CaseFolder(this);
     for (const t of ALL_TOOLS) { this.tools.set(toolKey(t.process, t.name), t); this.agents.registerTool(t.agent, t.name); }
   }
 
@@ -415,6 +419,7 @@ export class Runtime {
       }
       // the breach pass: the due instances (any loan, or global) claimed FOR UPDATE SKIP LOCKED and restored into a fresh engine; evaluate breaches them and appends timer.breached under each timer's own loan — one transaction
       const breaches: SweepReport["breaches"][number][] = [];
+      const breachCommitted: DomainEvent[] = [];
       const due = await pass("timers.breach", () => this.db.tx(async (q) => {
         const timerRepo = new PgTimerRepository(q);
         // SM_SWEEP_HEARTBEAT_DAILY breaches only inside a sweep (35.1 edge case 7): a run in progress on the clock's due day is the day's sweep and satisfies it minutes later; the clock breaches when its due day passed with no run at all (a demo advance that sweeps once a day at noon is not an outage)
@@ -434,9 +439,13 @@ export class Runtime {
         const persisted = await this.uow.events.append(events.since(0), q);
         await timerRepo.save(engine.all().filter((t) => t.status === "breached"), q);
         for (const e of escalations.list()) await this.escalationRepo.save(e, q);
-        this.uow.notifyCommitted(persisted);
+        // 35.9 rule 7: every breach runs its registered action in the breach transaction — `breach.execute` on this transaction's
+        // command view, after the escalation the pass opens today; a throw is logged and the pass still commits (outcome `failed` is the executor's own row)
+        breachCommitted.push(...persisted);
         return claimed;
       }), (d) => ({ due: d.length, breaches: breaches.length }));
+      // the listeners (the borrower flows, 35.9's folder) see the breach events and the executors' events once committed
+      if (breachCommitted.length) this.uow.notifyCommitted(breachCommitted);
       // 33.1 T10: the breach action of SM_PARTNER_BOOK_INVITATION_REMINDER_14 — one reminder on the same channel while the party has no session, then nothing more; never fails the sweep
       const partnerBookReminders = await logged("partner_book.reminders", async () => (await sendPartnerBookReminders(this, nowIso)).sent, () => 0, (n) => ({ sent: n }));
       // 33.1 T12 / rule 8: the breach action of SM_PARTNER_BOOK_TAPE_EXPECTED_7 — once per breached clock `partner_book.tape.late` beside the ops_analyst escalation the breach pass opened; a second sweep adds nothing

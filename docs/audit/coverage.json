@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8096/8756 (92.5%): tids 2258/2458, tables 773/848, timers 2045/2097, notices 308/308, tools 1443/1578, figures 1269/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8104/8756 (92.6%): tids 2260/2458, tables 775/848, timers 2046/2097, notices 308/308, tools 1446/1578, figures 1269/1467; processes at 100%: 192/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2258
+   "built": 2260
   },
   "tables": {
    "spec": 848,
-   "built": 773
+   "built": 775
   },
   "timers": {
    "spec": 2097,
-   "built": 2045
+   "built": 2046
   },
   "notices": {
    "spec": 308,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1443
+   "built": 1446
   },
   "figures": {
    "spec": 1467,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8756,
-   "built": 8096
+   "built": 8104
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 72,
+   "built": 80,
    "processes": 12,
    "done": 0
   }
@@ -8461,30 +8461,23 @@
    "title": "Documents and artifacts: the object store, the PDF writer, stored-byte integrity, legal holds, e-sign envelopes, the borrower viewer and print/mail manifests",
    "tids": {
     "spec": 18,
-    "built": 14,
-    "todo": 4,
+    "built": 16,
+    "todo": 2,
     "missing": [
-     7,
      15,
-     17,
      18
     ]
    },
    "tables": {
     "spec": 12,
-    "built": 10,
-    "missing": [
-     "mail_manifest_pieces",
-     "mail_manifests"
-    ]
+    "built": 12,
+    "missing": []
    },
    "timers": {
     "spec": 4,
-    "built": 3,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "SM_MAIL_MANIFEST_2BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8493,12 +8486,8 @@
    },
    "tools": {
     "spec": 13,
-    "built": 10,
-    "missing": [
-     "mail.batch",
-     "mail.manifest.ingest",
-     "mail.fallback"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 11,
@@ -8507,9 +8496,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 48
+    "built": 56
    },
-   "pct": 82.8
+   "pct": 96.6
   },
   {
    "process": "35.3",

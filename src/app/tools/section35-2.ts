@@ -25,7 +25,12 @@
  *                          user_agent, typed_name}} — a human party through its own L2+ session (NO_AGENT_SIGNS, SESSION_LEVEL); the last
  *                          required field completes the envelope (the signed row, the audit trail, `esign.envelope.completed`).
  *   esign.envelope.void   act {envelope_id, reason} — the owning process (or 7.4's withdrawal consumer); a terminal envelope refuses.
- *   (the mail tools follow in their commit group)
+ *   mail.batch            act {notice_ids | notice_batch_id, mail_class?} (global) — one outbound manifest per batch: pieces, the hashed
+ *                          manifest document, the print-mail outbox message (key = the batch id), SM_MAIL_MANIFEST_2BD armed.
+ *   mail.manifest.ingest  act {manifest_id, source: vendor | analyst, pieces?} (global) — the proof-of-mailing file matched by
+ *                          notice_id + attempt_no; notice_deliveries.mailed_at/imb/mail_manifest_id; the clock satisfied.
+ *   mail.fallback         act {batch_id} (global) — the in-house manifest with one merged PDF per mail class and the ops_analyst
+ *                          escalation to print and post (rule 10).
  *
  * Guardrails: BYTES_ARE_WRITE_ONCE, URI_SWAP_ONCE (the trigger's), VERIFY_STORED_BYTES_ONLY, HOLD_RELEASE_HUMAN_ONLY,
  * DISPOSE_NEEDS_OFFICER_ATTESTATION, NO_ENVELOPE_WITHOUT_CONSENT, NO_AGENT_SIGNS, NO_MONEY_FIELD, NO_PII_IN_DECISION.
@@ -40,6 +45,7 @@ import { disposeDocument } from "../../domain/operations-runtime/documents/dispo
 import { integrityRun, verifyOne } from "../../domain/operations-runtime/documents/integrity.ts";
 import { openDocument, type OpenPurpose } from "../../domain/operations-runtime/documents/open.ts";
 import { createEnvelope, sendEnvelope, signFields, voidEnvelope, type RequiredField, type SignerAuth } from "../../domain/operations-runtime/documents/esign.ts";
+import { mailBatch, ingestManifest, mailFallback } from "../../domain/operations-runtime/documents/mail.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { docsDecision } from "../../domain/operations-runtime/documents/decision.ts";
 import { render1098CopyB, boxesFromRow, SM_FILER, IRS_1098_TEMPLATE_CODE, IRS_1098_TEMPLATE_VERSION } from "../../domain/operations-runtime/documents/irs-1098.ts";
@@ -221,6 +227,23 @@ export const TOOLS_35_2: readonly ToolDef[] = defineTools(PROCESS, AGENT, [
   { name: "esign.envelope.void", kind: "act", ruleSetVersion: RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD],
     handler: compute(async (i, ctx, rt) => refusing("esign.envelope.void", async () => { need(i, "envelope_id", "reason"); return inTx(ctx, rt, async (q) => voidEnvelope({ ...depsOf(ctx, rt), q }, { envelope_id: str(i, "envelope_id"), reason: str(i, "reason") })); })),
     decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "envelope", id: str(i, "envelope_id") }, action: "envelope.void", ...scopeOf(ctx), sha256: typeof o["evidence_sha256"] === "string" ? o["evidence_sha256"] : null, rationale: `voided (${str(i, "reason")}); the audit trail is document ${String(o["evidence_document_id"] ?? "")}` }); } },
+  { name: "mail.batch", kind: "act", ruleSetVersion: RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD],
+    handler: compute(async (i, ctx, rt) => refusing("mail.batch", async () => {
+      if (ctx.loanId || ctx.applicationId) throw new RangeError("mail.batch is a global command: a batch spans loans");
+      if (!has(i, "notice_ids") && !has(i, "notice_batch_id")) need(i, "notice_ids");
+      return inTx(ctx, rt, async (q) => mailBatch({ ...depsOf(ctx, rt), q }, { ...(Array.isArray(i["notice_ids"]) ? { notice_ids: (i["notice_ids"] as unknown[]).map(String) } : {}), notice_batch_id: str(i, "notice_batch_id") || null, mail_class: str(i, "mail_class") || null }));
+    })),
+    decision: (_i, output) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "manifest", id: String(o["manifest_id"] ?? "") }, action: "batch", sha256: typeof o["file_sha256"] === "string" ? o["file_sha256"] : null, retention_class: "corporate_7y", loan_id: null, application_id: null, counts: { pieces: Number(o["piece_count"] ?? 0), sheets: Number(o["sheet_count"] ?? 0) }, rationale: `outbound manifest for batch ${String(o["batch_id"] ?? "")}: ${String(o["piece_count"])} piece(s) to the print-mail adapter; SM_MAIL_MANIFEST_2BD armed` }); } },
+  { name: "mail.manifest.ingest", kind: "act", ruleSetVersion: RULE_SET_VERSION, humanRoles: ["ops_analyst", "officer"], guardrails: [NO_MONEY_FIELD],
+    handler: compute(async (i, ctx, rt) => refusing("mail.manifest.ingest", async () => {
+      need(i, "manifest_id");
+      const source = str(i, "source") || "vendor"; if (source !== "vendor" && source !== "analyst") throw new RangeError("source is vendor or analyst");
+      return inTx(ctx, rt, async (q) => ingestManifest({ ...depsOf(ctx, rt), q }, rt.ports.printMail, { manifest_id: str(i, "manifest_id"), source, ...(Array.isArray(i["pieces"]) ? { pieces: i["pieces"] as { notice_id: string; attempt_no: number; mailed_on: string; imb?: string | null }[] } : {}) }));
+    })),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "manifest", id: str(i, "manifest_id") }, action: "ingest", loan_id: null, application_id: null, counts: { pieces: Number(o["piece_count"] ?? 0), matched: Number(o["matched"] ?? 0), unmatched: Array.isArray(o["unmatched"]) ? (o["unmatched"] as unknown[]).length : 0, unmailed: Array.isArray(o["unmailed"]) ? (o["unmailed"] as unknown[]).length : 0 }, rationale: `proof of mailing (${str(i, "source") || "vendor"}) for manifest ${str(i, "manifest_id")}: ${o["reconciled"] === true ? "reconciled" : "not reconciled"}` }); } },
+  { name: "mail.fallback", kind: "act", ruleSetVersion: RULE_SET_VERSION, humanRoles: ["ops_analyst", "officer"], guardrails: [NO_MONEY_FIELD],
+    handler: compute(async (i, ctx, rt) => refusing("mail.fallback", async () => { need(i, "batch_id"); return inTx(ctx, rt, async (q) => mailFallback({ ...depsOf(ctx, rt), q }, { batch_id: str(i, "batch_id") })); })),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "manifest", id: String(o["manifest_id"] ?? "") }, action: "fallback", retention_class: "corporate_7y", loan_id: null, application_id: null, counts: { pieces: Number(o["piece_count"] ?? 0), merged: Array.isArray(o["merged"]) ? (o["merged"] as unknown[]).length : 0 }, rationale: `in-house manifest for batch ${str(i, "batch_id")}: one merged PDF per mail class; ops_analyst to print and post` }); } },
   { name: "documents.dispose", kind: "act", ruleSetVersion: RULE_SET_VERSION, humanRoles: ["officer", "compliance"], guardrails: [NO_MONEY_FIELD],
     handler: compute(async (i, ctx, rt) => refusing("documents.dispose", async () => { need(i, "document_id", "disposal_run_id"); return inTx(ctx, rt, async (q) => disposeDocument({ ...depsOf(ctx, rt), q }, { document_id: str(i, "document_id"), disposal_run_id: str(i, "disposal_run_id") })); })),
     decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "document", id: str(i, "document_id") }, action: "dispose", sha256: String(o["sha256"] ?? ""), ...scopeOf(ctx), rationale: `disposed under 19.1 run ${str(i, "disposal_run_id")} (officer attestation and WORM check on the log); the row is the tombstone` }); } },

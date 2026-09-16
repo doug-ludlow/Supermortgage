@@ -43,6 +43,7 @@ import type { Recipient } from "../../notices/channel.ts";
 import { FIGURE_KEYS } from "../payoff/ops-16-1.ts";
 import { FakeEsignSigner } from "../../infra/integrations/esign.ts";
 import { verifyChain, signatureEvents, consumeConsentWithdrawn } from "./documents/esign.ts";
+import { PgNoticeRepository } from "../../infra/db/notices.ts";
 
 // ───────── the harness: this file's own database, one runtime over it, the FAKE object store (document_blobs), the FAKE ports
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
@@ -96,6 +97,18 @@ async function esignConsent(partyId: string, applicationId: string, scope: strin
 const CD = "NTC_REGZ_1026_38_CD_CORRECTED";
 const cdSample = (): Record<string, unknown> => { const reg = registryWithAuthored(); const v = reg.activeVersion(CD, D("2026-09-17")) ?? reg.versionsOf(CD)[0]; assert.ok(v, "25.2's corrected Closing Disclosure is authored"); return v.samplePayload; };
 let completedEnvelopeId = "";   // T13's, refused ENVELOPE_TERMINAL in T14
+/** Three statements decided `mail` (no consent on file: the channel decision is mail_first_class) for three parties on one loan — the pieces of a batch. */
+async function threeMailNotices(loanId: string): Promise<{ notice_id: string; document_id: string; party: Recipient }[]> {
+  const out: { notice_id: string; document_id: string; party: Recipient }[] = [];
+  for (const [k, name] of ["Bea Borrower", "Cam Borrower", "Dee Borrower"].entries()) {
+    const party: Recipient = { partyId: randomUUID(), name, mailingAddress: `${k + 1} Test St, Testville TX 7500${k}` };
+    const r = await run("documents.render", { template_code: STMT, payload: { ...PAYLOAD_A, account_last4: `000${k + 1}`, borrower_name: name }, recipients: [party], send: true }, RECORDS, { loanId });
+    const o = r.output as { notice_id: string; document_id: string; status: string; deliveries: { channel: string; vendor: string }[] };
+    assert.equal(o.status, "sent", JSON.stringify(o)); assert.equal(o.deliveries[0]!.channel, "mail_first_class"); assert.equal(o.deliveries[0]!.vendor, "print-mail");
+    out.push({ notice_id: o.notice_id, document_id: o.document_id, party });
+  }
+  return out;
+}
 /** A second L1 session of the same party (a stolen URL is mis-signed for it). */
 async function signInAgain(email: string): Promise<string> {
   const req = await api("POST", "/v1/borrower/auth/otp", { action: "request", channel: "email", destination: email });
@@ -391,7 +404,62 @@ test("35.2-T6: Given `documents.hold{place}` by the agent with a `matter_ref`, t
   assert.deepEqual((partial.output as { open_matters: string[]; legal_hold: boolean }).open_matters, ["MATTER-3"]); assert.equal((partial.output as { legal_hold: boolean }).legal_hold, true);
   assert.equal((await one<{ legal_hold: boolean }>(`SELECT legal_hold FROM documents WHERE id = $1`, [id])).legal_hold, true, "still held for MATTER-3");
 });
-test("35.2-T7: Given three notices of one batch decided `mail`, when `mail.batch` runs, then one outbound `mail_manifests` row with `piece_count = 3` and a hashed manifest document exists, each `mail_manifest_pieces` row carries the piece's `document_id`, `sha256`, `page_count`, `sheets = ceil(page_count ÷ 2)`, mail class and address snapshot, one `integration_messages` row addresses the `print-mail` adapter with the batch id as idempotency key, and `SM_MAIL_MANIFEST_2BD` is armed; when the FAKE vendor's proof-of-mailing manifest is ingested, then `notice_deliveries.mailed_at`, `imb` and `mail_manifest_id` are set for all three (and `manifest_id` is the `notice_batches` id, 0009's FK), the inbound manifest is `reconciled`, `mail.manifest.ingested` satisfies the clock and `mail.piece.mailed` is logged three times.", { todo: true });
+test("35.2-T7: Given three notices of one batch decided `mail`, when `mail.batch` runs, then one outbound `mail_manifests` row with `piece_count = 3` and a hashed manifest document exists, each `mail_manifest_pieces` row carries the piece's `document_id`, `sha256`, `page_count`, `sheets = ceil(page_count ÷ 2)`, mail class and address snapshot, one `integration_messages` row addresses the `print-mail` adapter with the batch id as idempotency key, and `SM_MAIL_MANIFEST_2BD` is armed; when the FAKE vendor's proof-of-mailing manifest is ingested, then `notice_deliveries.mailed_at`, `imb` and `mail_manifest_id` are set for all three (and `manifest_id` is the `notice_batches` id, 0009's FK), the inbound manifest is `reconciled`, `mail.manifest.ingested` satisfies the clock and `mail.piece.mailed` is logged three times.", { skip }, async () => {
+  clock.set(T0);
+  const f = await loanFixture();
+  const notices = await threeMailNotices(f.loanId);
+  const b = await run("mail.batch", { notice_ids: notices.map((n) => n.notice_id), mail_class: "first_class" });
+  const bo = b.output as { batch_id: string; manifest_id: string; document_id: string; file_sha256: string; piece_count: number; sheet_count: number; vendor: string };
+  assert.equal(bo.piece_count, 3); assert.equal(bo.vendor, "FAKE");
+  // one outbound manifest with a hashed manifest document
+  const m = await one<{ direction: string; vendor: string; piece_count: number; sheet_count: number; status: string; notice_batch_id: string; document_id: string; sha256: string; submitted_at: string }>(`SELECT direction, vendor, piece_count, sheet_count, status, notice_batch_id, document_id, sha256, submitted_at FROM mail_manifests WHERE id = $1`, [bo.manifest_id]);
+  assert.equal(m.direction, "outbound"); assert.equal(m.vendor, "FAKE"); assert.equal(m.piece_count, 3); assert.equal(m.status, "submitted"); assert.equal(m.notice_batch_id, bo.batch_id); assert.equal(m.submitted_at, T0);
+  const md = await one<{ kind: string; mime_type: string; sha256: string; retention_class: string }>(`SELECT kind, mime_type, sha256, retention_class::text AS retention_class FROM documents WHERE id = $1`, [m.document_id]);
+  assert.equal(md.kind, "mail_manifest"); assert.equal(md.mime_type, "application/x-ndjson"); assert.equal(md.retention_class, "corporate_7y");
+  const file = (await blobs.get(m.document_id))!.bytes; assert.equal(sha256(file), m.sha256); assert.equal(m.sha256, bo.file_sha256);
+  const lines = file.toString("utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>); assert.equal(lines.length, 4); assert.equal(lines[0]!["batch_id"], bo.batch_id);
+  assert.equal((await one<{ batch_type: string; status: string }>(`SELECT batch_type, status FROM notice_batches WHERE id = $1`, [bo.batch_id])).batch_type, "mail");
+  // each piece: the notice's document, its hash and pages, sheets = ceil(pages / 2), the mail class and the address snapshot
+  const pieces = await db.query<{ notice_id: string; attempt_no: number; document_id: string; sha256: string; page_count: number; sheets: number; mail_class: string; address_snapshot: { name: string; address: string }; separate_envelope: boolean }>(`SELECT notice_id, attempt_no, document_id, sha256, page_count, sheets, mail_class, address_snapshot, separate_envelope FROM mail_manifest_pieces WHERE manifest_id = $1`, [bo.manifest_id]);
+  assert.equal(pieces.length, 3); assert.equal(m.sheet_count, pieces.reduce((n, p) => n + p.sheets, 0));
+  for (const n of notices) {
+    const p = pieces.find((x) => x.notice_id === n.notice_id); assert.ok(p, `a piece for ${n.notice_id}`);
+    const d = await one<{ sha256: string; page_count: number }>(`SELECT sha256, page_count FROM documents WHERE id = $1`, [n.document_id]);
+    assert.equal(p.document_id, n.document_id); assert.equal(p.sha256, d.sha256); assert.equal(p.page_count, d.page_count); assert.equal(p.sheets, Math.ceil(d.page_count / 2)); assert.equal(p.mail_class, "first_class"); assert.equal(p.attempt_no, 1);
+    assert.equal(p.address_snapshot.name, n.party.name); assert.equal(p.address_snapshot.address, n.party.mailingAddress);
+    assert.ok(lines.some((l) => l["notice_id"] === n.notice_id && l["sha256"] === d.sha256 && l["mail_class"] === "first_class" && (l["address"] as { address: string }).address === n.party.mailingAddress), "the manifest file names the piece");
+    const del = await one<{ manifest_id: string | null; mail_manifest_id: string | null; mailed_at: string | null }>(`SELECT manifest_id, mail_manifest_id, mailed_at FROM notice_deliveries WHERE notice_id = $1 AND attempt_no = 1`, [n.notice_id]);
+    assert.equal(del.manifest_id, bo.batch_id, "manifest_id is the notice_batches id (0009's FK)"); assert.equal(del.mail_manifest_id, null); assert.equal(del.mailed_at, null);
+  }
+  // one outbox message to the print-mail adapter keyed by the batch id (35.1's dispatcher delivers it; nothing here called the vendor)
+  const msgs = await db.query<{ status: string; idempotency_key: string; payload_summary: Record<string, unknown> }>(`SELECT status, idempotency_key, payload_summary FROM integration_messages WHERE adapter = 'print-mail' AND idempotency_key = $1`, [bo.batch_id]);
+  assert.equal(msgs.length, 1); assert.equal(msgs[0]!.status, "queued"); assert.equal(msgs[0]!.payload_summary["manifest_id"], bo.manifest_id);
+  assert.equal(printMail!.manifestFiles.size, 0, "mail.batch only enqueues: the vendor is called by the dispatcher");
+  const t = b.timers.find((x) => x.code === "SM_MAIL_MANIFEST_2BD"); assert.ok(t, "SM_MAIL_MANIFEST_2BD is armed");
+  assert.equal(t.status, "armed"); assert.deepEqual(t.subject, { kind: "mail_batch", id: bo.batch_id }); assert.equal(t.anchorDate, "2026-09-17"); assert.equal(t.dueDate, "2026-09-21");
+  assert.ok(b.events.some((e) => e.type === "mail.batch.submitted" && e.payload["batch_id"] === bo.batch_id && e.payload["manifest_id"] === bo.manifest_id && e.payload["vendor"] === "FAKE" && e.payload["piece_count"] === 3 && e.payload["submitted_at"] === T0));
+  // the vendor mails the pieces; its proof-of-mailing manifest is ingested
+  printMail!.runProduction(T0);
+  const g = await run("mail.manifest.ingest", { manifest_id: bo.manifest_id, source: "vendor" });
+  const go = g.output as { inbound_manifest_id: string; matched: number; reconciled: boolean; unmatched: unknown[]; unmailed: unknown[] };
+  assert.equal(go.matched, 3); assert.equal(go.reconciled, true); assert.deepEqual(go.unmatched, []); assert.deepEqual(go.unmailed, []);
+  for (const n of notices) {
+    const del = await one<{ manifest_id: string | null; mail_manifest_id: string | null; mailed_at: string | null; imb: string | null }>(`SELECT manifest_id, mail_manifest_id, mailed_at, imb FROM notice_deliveries WHERE notice_id = $1 AND attempt_no = 1`, [n.notice_id]);
+    assert.ok(del.mailed_at, "mailed_at"); assert.match(del.imb ?? "", /^\d{31}$/, "the IMB"); assert.equal(del.mail_manifest_id, bo.manifest_id); assert.equal(del.manifest_id, bo.batch_id, "manifest_id unchanged: still the notice_batches id");
+  }
+  const inbound = await one<{ direction: string; reconciled: boolean; piece_count: number; notice_batch_id: string; status: string; document_id: string }>(`SELECT direction, reconciled, piece_count, notice_batch_id, status, document_id FROM mail_manifests WHERE id = $1`, [go.inbound_manifest_id]);
+  assert.equal(inbound.direction, "inbound"); assert.equal(inbound.reconciled, true); assert.equal(inbound.piece_count, 3); assert.equal(inbound.notice_batch_id, bo.batch_id); assert.equal(inbound.status, "received"); assert.ok(inbound.document_id);
+  assert.equal(await count(`FROM mail_manifest_pieces WHERE manifest_id = $1 AND imb IS NOT NULL AND mailed_on IS NOT NULL`, [go.inbound_manifest_id]), 3);
+  assert.equal(g.events.filter((e) => e.type === "mail.piece.mailed").length, 3, "mail.piece.mailed three times");
+  const ing = g.events.find((e) => e.type === "mail.manifest.ingested"); assert.ok(ing); assert.equal(ing.payload["manifest_id"], bo.manifest_id); assert.equal(ing.payload["piece_count"], 3); assert.equal(ing.payload["reconciled"], true);
+  assert.equal((await one<{ status: string }>(`SELECT status FROM timers WHERE id = $1`, [t.id])).status, "satisfied", "mail.manifest.ingested satisfies the clock");
+  await refused(run("mail.manifest.ingest", { manifest_id: bo.manifest_id, source: "vendor" }), "MANIFEST_ALREADY_INGESTED");
+  // a later re-save of the notice (the registry's own upsert) leaves the mailing facts alone
+  const n1 = runtime.noticeMemory.get(notices[0]!.notice_id); assert.ok(n1, "the runtime holds the notice"); await new PgNoticeRepository(db).saveNotice(n1);
+  const again = await one<{ mail_manifest_id: string | null; mailed_at: string | null; imb: string | null }>(`SELECT mail_manifest_id, mailed_at, imb FROM notice_deliveries WHERE notice_id = $1 AND attempt_no = 1`, [notices[0]!.notice_id]);
+  assert.equal(again.mail_manifest_id, bo.manifest_id); assert.ok(again.mailed_at && again.imb);
+  await rejectsSql(db.query(`UPDATE mail_manifests SET status = 'mailed' WHERE id = $1`, [bo.manifest_id]), /forbid_mutation|append-only|immutable/i);
+});
 test("35.2-T8: Given a Spanish-language notice whose payload contains `ñ`, `á`, `¿` and `—`, when it renders, then the text layer round-trips those characters exactly; given a payload containing a character outside WinAnsi (`≥`), then the render is refused `GLYPH_UNSUPPORTED` naming the character and the block and no row is written.", {}, async () => {
   const v = activeStatementVersion();
   const ES = "Señor Peña — ¿está al día? Sí, año. Recibimos su pago; ¡gracias!";
@@ -720,5 +788,50 @@ test("35.2-T16: Given a document rendered and stored on runtime A, when runtime 
     }
   } finally { await new Promise((r) => serverB.close(() => r(undefined))); await dbB.end(); }
 });
-test("35.2-T17: Given the FAKE print vendor in outage for two consecutive sweeps with a batch submitted, when `mail.fallback` runs, then a `mail_manifests{vendor=in_house}` row exists with one merged PDF per mail class whose page count is the sum of the pieces' plus one cover sheet each, `mail.batch.submitted{vendor=in_house}` is logged, an `ops_analyst` escalation names the batch, and the analyst's `mail.manifest.ingest` with `mailed_on` per piece writes `notice_deliveries.mailed_at` and satisfies `SM_MAIL_MANIFEST_2BD`.", { todo: true });
+test("35.2-T17: Given the FAKE print vendor in outage for two consecutive sweeps with a batch submitted, when `mail.fallback` runs, then a `mail_manifests{vendor=in_house}` row exists with one merged PDF per mail class whose page count is the sum of the pieces' plus one cover sheet each, `mail.batch.submitted{vendor=in_house}` is logged, an `ops_analyst` escalation names the batch, and the analyst's `mail.manifest.ingest` with `mailed_on` per piece writes `notice_deliveries.mailed_at` and satisfies `SM_MAIL_MANIFEST_2BD`.", { skip }, async () => {
+  clock.set(T0);
+  const f = await loanFixture();
+  const notices = await threeMailNotices(f.loanId);
+  const bo = (await run("mail.batch", { notice_ids: notices.map((n) => n.notice_id) })).output as { batch_id: string; manifest_id: string };
+  const unreachable0 = await count(`FROM loan_events WHERE type = 'mail.vendor.unreachable'`);
+  // the vendor is down for two consecutive sweeps (both before the clock's due instant: Thu 09/17 + 2 servicer business days = Mon 09/21)
+  printMail!.outage = true;
+  const rep1 = await runtime.sweep("2026-09-18T12:00:00.000Z");
+  assert.equal(rep1.documents?.mail_vendor_down, true); assert.equal(rep1.documents?.fallback_proposed, 0, "one sweep down proposes nothing yet");
+  const rep2 = await runtime.sweep("2026-09-19T12:00:00.000Z");
+  assert.equal(rep2.documents?.mail_vendor_down, true); assert.equal(rep2.documents?.fallback_proposed, 1, rep2.documents?.line);
+  assert.equal(await count(`FROM loan_events WHERE type = 'mail.vendor.unreachable'`), unreachable0 + 2);
+  const proposals = await db.query<{ kind: string; payload: Record<string, unknown> }>(`SELECT kind, payload FROM escalations WHERE owner_role = 'ops_analyst' AND status = 'open' AND payload->>'proposal' = 'mail.fallback' AND payload->>'batch_id' = $1`, [bo.batch_id]);
+  assert.equal(proposals.length, 1); assert.equal(proposals[0]!.payload["manifest_id"], bo.manifest_id);
+  assert.equal((await runtime.sweep("2026-09-19T13:00:00.000Z")).documents?.fallback_proposed, 0, "a third sweep proposes nothing more");
+  assert.equal((await one<{ status: string }>(`SELECT status FROM timers WHERE code = 'SM_MAIL_MANIFEST_2BD' AND subject_kind = 'mail_batch' AND subject_id = $1 ORDER BY armed_at LIMIT 1`, [bo.batch_id])).status, "armed", "the clock is still running: the fallback is the analyst's act, not the breach's");
+  // the analyst runs the fallback: the in-house manifest, one merged PDF per mail class with a cover sheet per piece
+  const fb = await run("mail.fallback", { batch_id: bo.batch_id }, ANALYST);
+  const fo = fb.output as { manifest_id: string; document_id: string; piece_count: number; merged: { mail_class: string; document_id: string; page_count: number; pieces: number }[]; merged_document_ids: string[]; escalation_id: string };
+  assert.equal(fo.piece_count, 3); assert.equal(fo.merged.length, 1, "one mail class → one merged PDF"); assert.equal(fo.merged[0]!.mail_class, "first_class"); assert.equal(fo.merged[0]!.pieces, 3);
+  const ih = await one<{ vendor: string; status: string; direction: string; notice_batch_id: string; piece_count: number; document_id: string }>(`SELECT vendor, status, direction, notice_batch_id, piece_count, document_id FROM mail_manifests WHERE id = $1`, [fo.manifest_id]);
+  assert.equal(ih.vendor, "in_house"); assert.equal(ih.status, "in_house"); assert.equal(ih.direction, "outbound"); assert.equal(ih.notice_batch_id, bo.batch_id); assert.equal(ih.piece_count, 3);
+  assert.equal(await count(`FROM mail_manifest_pieces WHERE manifest_id = $1`, [fo.manifest_id]), 3);
+  const header = JSON.parse((await blobs.get(ih.document_id))!.bytes.toString("utf8").split("\n")[0]!) as Record<string, unknown>; assert.deepEqual(header["merged_document_ids"], fo.merged_document_ids, "the manifest file names the merged PDFs");
+  const merged = await one<{ kind: string; mime_type: string; page_count: number; sha256: string }>(`SELECT kind, mime_type, page_count, sha256 FROM documents WHERE id = $1`, [fo.merged[0]!.document_id]);
+  const piecePages = (await db.query<{ page_count: number }>(`SELECT page_count FROM mail_manifest_pieces WHERE manifest_id = $1`, [bo.manifest_id])).reduce((n, p) => n + p.page_count, 0);
+  assert.equal(merged.kind, "mail_merged"); assert.equal(merged.mime_type, "application/pdf"); assert.equal(merged.page_count, piecePages + 3, "the pieces' pages plus one cover sheet each"); assert.equal(merged.page_count, fo.merged[0]!.page_count);
+  const mergedBytes = (await blobs.get(fo.merged[0]!.document_id))!.bytes; assert.equal(sha256(mergedBytes), merged.sha256);
+  const mergedText = textLayer(mergedBytes);
+  assert.equal(mergedText.pages.length, merged.page_count); for (const n of notices) assert.ok(mergedText.text.includes(n.party.mailingAddress!) && mergedText.text.includes(n.notice_id), `the cover sheet names ${n.party.name}'s piece`);
+  assert.ok(fb.events.some((e) => e.type === "mail.batch.submitted" && e.payload["vendor"] === "in_house" && e.payload["batch_id"] === bo.batch_id && e.payload["manifest_id"] === fo.manifest_id && e.payload["piece_count"] === 3), "mail.batch.submitted{vendor=in_house}");
+  const esc = await one<{ kind: string; payload: Record<string, unknown> }>(`SELECT kind, payload FROM escalations WHERE id = $1`, [fo.escalation_id]);
+  assert.equal(esc.kind, "sev3"); assert.equal(esc.payload["kind"], "in_house_print"); assert.equal(esc.payload["batch_id"], bo.batch_id); assert.equal(esc.payload["manifest_id"], fo.manifest_id);
+  assert.equal((await one<{ owner_role: string }>(`SELECT owner_role FROM escalations WHERE id = $1`, [fo.escalation_id])).owner_role, "ops_analyst");
+  await refused(run("mail.fallback", { batch_id: bo.batch_id }, ANALYST), "FALLBACK_ALREADY_BUILT");
+  // the analyst's proof of mailing: mailed_on per piece → notice_deliveries.mailed_at, the clock satisfied
+  await assert.rejects(run("mail.manifest.ingest", { manifest_id: fo.manifest_id, source: "analyst", pieces: notices.map((n) => ({ notice_id: n.notice_id, attempt_no: 1, mailed_on: "2026-09-18", imb: null })) }, RECORDS), /human act/, "an analyst's manifest is a human act");
+  const g = await run("mail.manifest.ingest", { manifest_id: fo.manifest_id, source: "analyst", pieces: notices.map((n) => ({ notice_id: n.notice_id, attempt_no: 1, mailed_on: "2026-09-18", imb: null })) }, ANALYST);
+  const go = g.output as { matched: number; reconciled: boolean }; assert.equal(go.matched, 3); assert.equal(go.reconciled, true);
+  for (const n of notices) { const del = await one<{ mailed_at: string | null; mail_manifest_id: string | null; manifest_id: string | null }>(`SELECT mailed_at, mail_manifest_id, manifest_id FROM notice_deliveries WHERE notice_id = $1 AND attempt_no = 1`, [n.notice_id]); assert.ok(del.mailed_at?.startsWith("2026-09-18"), "mailed_at from the analyst's mailed_on"); assert.equal(del.mail_manifest_id, fo.manifest_id); assert.equal(del.manifest_id, bo.batch_id); }
+  const timers = await db.query<{ status: string }>(`SELECT status FROM timers WHERE code = 'SM_MAIL_MANIFEST_2BD' AND subject_kind = 'mail_batch' AND subject_id = $1`, [bo.batch_id]);
+  assert.ok(timers.length >= 1); for (const t of timers) assert.equal(t.status, "satisfied", "mail.manifest.ingested satisfies SM_MAIL_MANIFEST_2BD");
+  assert.ok(g.events.filter((e) => e.type === "mail.piece.mailed").length === 3);
+  printMail!.outage = false; clock.set(T0);
+});
 test("35.2-T18: Given every 35.2 tool run over the fixture, then no ledger line and no money column changed (a contract test compares the ledger and every `*_cents` column before and after), `documents.dispose` without a 19.1 disposal run carrying an `officer` attestation is refused `DISPOSE_NEEDS_OFFICER_ATTESTATION`, an agent actor calling `esign.envelope.sign` is refused `NO_AGENT_SIGNS`, every state-changing tool left an `agent_decisions` row with `rule_set_version = docs.v1` and no decision row contains a TIN, an address or rendered text.", { todo: true });

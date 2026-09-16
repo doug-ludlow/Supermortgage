@@ -9,16 +9,21 @@
  *      open is voided as `expired` on its own subject (the audit trail, `esign.envelope.expired`) with one sev 3 `ops_analyst`
  *      escalation per envelope (the registry parses the breach cell's first word, so the breach pass's own escalation is
  *      owned by `expired` — the hook opens the analyst's unless one is open on the timer already);
- *   3. the print vendor probe — added with the mail commit group (it reports zero until then).
+ *   3. the print vendor probe: the proof-of-mailing feed is asked once; an unreachable vendor is one global
+ *      `mail.vendor.unreachable{at}`, and when the previous sweep found it unreachable too, every outbound vendor manifest
+ *      with no inbound row and no in-house sibling gets one sev 3 `ops_analyst` escalation proposing `mail.fallback`
+ *      (rule 10: "adapter down two sweeps"; the analyst runs the fallback — the sweep never prints).
  */
 import type { Runtime } from "../app.ts";
 import type { Actor } from "../../kernel/events/index.ts";
 import type { Queryable } from "../../infra/db/client.ts";
 import { EscalationService } from "../../app/escalations.ts";
 import { closeEnvelope } from "../../domain/operations-runtime/documents/esign.ts";
+import { AdapterUnavailable } from "../../infra/integrations/failures.ts";
 
 export const SYSTEM_DOCUMENTS: Actor = { kind: "system", id: "documents-sweep" };
 export const DRAIN_SCOPES_PER_SWEEP = 500;
+export const PRINT_MAIL_VENDOR = "print-mail";
 
 export interface DocumentsSweepReport {
   readonly at: string;
@@ -49,8 +54,10 @@ export async function documentsSweepPass(runtime: Runtime, nowIso: string): Prom
   } catch (e) { runtime.logger?.error("documents drain pass failed", { at: nowIso, error: e }); }
   let envelopesExpired = 0;
   try { envelopesExpired = await expireEnvelopes(runtime, nowIso); } catch (e) { runtime.logger?.error("envelope expiry pass failed", { at: nowIso, error: e }); }
-  const line = `documents: ${drained} drained, ${drainFailed} not yet, over ${scopes} subject(s); ${envelopesExpired} envelope(s) expired`;
-  return { at: nowIso, drained, drain_failed: drainFailed, scopes, envelopes_expired: envelopesExpired, mail_vendor_down: false, fallback_proposed: 0, line };
+  let vendor = { down: false, proposed: 0 };
+  try { vendor = await probeMailVendor(runtime, nowIso); } catch (e) { runtime.logger?.error("print vendor probe failed", { at: nowIso, error: e }); }
+  const line = `documents: ${drained} drained, ${drainFailed} not yet, over ${scopes} subject(s); ${envelopesExpired} envelope(s) expired; print vendor ${vendor.down ? "unreachable" : "reachable"}, ${vendor.proposed} fallback(s) proposed`;
+  return { at: nowIso, drained, drain_failed: drainFailed, scopes, envelopes_expired: envelopesExpired, mail_vendor_down: vendor.down, fallback_proposed: vendor.proposed, line };
 }
 
 interface BreachedEnvelope extends Record<string, unknown> { timer_id: string; envelope_id: string; application_id: string | null; loan_id: string | null; }
@@ -71,4 +78,29 @@ export async function expireEnvelopes(runtime: Runtime, nowIso: string): Promise
     } catch (e) { runtime.logger?.error("envelope expiry failed", { at: nowIso, envelope_id: r.envelope_id, error: e }); }
   }
   return expired;
+}
+
+/** Rule 10's trigger: the vendor unreachable on two consecutive sweeps → one `mail.fallback` proposal per stuck batch (the analyst decides; the sweep never prints). */
+export async function probeMailVendor(runtime: Runtime, nowIso: string): Promise<{ down: boolean; proposed: number }> {
+  const pm = runtime.ports.printMail;
+  if (!pm?.manifests) return { down: false, proposed: 0 };
+  try { await pm.manifests(nowIso); return { down: false, proposed: 0 }; }
+  catch (e) { if (!(e instanceof AdapterUnavailable)) throw e; }
+  const previously = (await runtime.db.query(`SELECT 1 FROM loan_events WHERE type = 'mail.vendor.unreachable' AND payload->>'at' < $1 LIMIT 1`, [nowIso])).length > 0;
+  await runtime.uow.run({}, (ctx) => ctx.events.append({ type: "mail.vendor.unreachable", aggregate: { kind: "mail_vendor", id: PRINT_MAIL_VENDOR }, actor: SYSTEM_DOCUMENTS, payload: { at: nowIso, adapter: PRINT_MAIL_VENDOR, consecutive: previously } }), { clock: runtime.clock });
+  if (!previously) return { down: true, proposed: 0 };
+  const stuck = await runtime.db.query<{ id: string; notice_batch_id: string }>(`SELECT m.id, m.notice_batch_id FROM mail_manifests m WHERE m.direction = 'outbound' AND m.vendor <> 'in_house' AND m.status = 'submitted' AND m.notice_batch_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM mail_manifests i WHERE i.notice_batch_id = m.notice_batch_id AND i.direction = 'inbound')
+    AND NOT EXISTS (SELECT 1 FROM mail_manifests h WHERE h.notice_batch_id = m.notice_batch_id AND h.vendor = 'in_house')
+    AND NOT EXISTS (SELECT 1 FROM escalations e WHERE e.status = 'open' AND e.payload->>'proposal' = 'mail.fallback' AND e.payload->>'batch_id' = m.notice_batch_id::text) ORDER BY m.submitted_at, m.id`);
+  let proposed = 0;
+  for (const m of stuck) {
+    try {
+      let escalations: EscalationService | null = null;
+      await runtime.uow.run({}, (ctx) => { escalations = new EscalationService(ctx.events, runtime.clock); escalations.open({ kind: "sev3", ownerRole: "ops_analyst", severity: "3", payload: { proposal: "mail.fallback", batch_id: m.notice_batch_id, manifest_id: m.id, reason: "print vendor unreachable on two consecutive sweeps (35.2 rule 10); run mail.fallback{batch_id} to print and post in house", at: nowIso } }, SYSTEM_DOCUMENTS); },
+        { clock: runtime.clock, commit: async (q) => { for (const e of escalations?.list() ?? []) await runtime.escalationRepo.save(e, q); } });
+      proposed++;
+    } catch (e) { runtime.logger?.error("mail fallback proposal failed", { at: nowIso, batch_id: m.notice_batch_id, error: e }); }
+  }
+  return { down: true, proposed };
 }

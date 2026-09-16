@@ -9,8 +9,16 @@ import { AdapterUnavailable, PermanentRejection, TransientFailure } from "./fail
 
 export interface MailJob { readonly jobId: string; readonly noticeId: string; readonly template: string; readonly recipient: { name: string; address: string }; readonly pages: number; readonly separateDocument: boolean; readonly envelopeGroup?: string; }
 export interface MailJobStatus { readonly jobId: string; status: "received" | "in_production" | "mailed" | "returned" | "cancelled"; productionAt?: string; mailedAt?: string; returnedAt?: string; returnReason?: string; proofOfMailingId?: string; }
+/** 35.2 rule 9: the outbound manifest file (NDJSON: piece id, notice id, document sha256, mail class, address) the print vendor receives per batch. */
+export interface MailManifestFile { readonly manifest_id: string; readonly batch_id: string; readonly vendor: string; readonly submitted_at: string; readonly pieces: readonly { piece_id: string; notice_id: string; attempt_no: number; document_id: string; sha256: string; page_count: number; sheets: number; mail_class: string; separate_envelope: boolean; address: { name: string; address: string } }[]; }
+/** 35.2 rule 9: one line of the vendor's proof-of-mailing manifest — matched to the outbound piece by notice_id + attempt_no. */
+export interface ProofOfMailing { readonly notice_id: string; readonly attempt_no: number; readonly vendor_piece_id: string; readonly imb: string; readonly mailed_on: string; readonly proof_of_mailing_id: string; }
 export interface PrintMailPort {
   submit(job: MailJob, now: string): Promise<MailJobStatus & { duplicate: boolean }>;
+  /** 35.2: the outbound manifest file for a batch (idempotent on the batch id). */
+  submitManifest?(file: MailManifestFile, now: string): Promise<{ vendor_file_id: string; duplicate: boolean }>;
+  /** 35.2: the vendor's proof-of-mailing lines for pieces mailed since `since` (a probe of the vendor's reachability on every sweep). */
+  manifests?(since: string): Promise<readonly ProofOfMailing[]>;
   status(jobId: string): Promise<MailJobStatus>;
   cancel(jobId: string, now: string): Promise<"cancelled" | "too_late">;
   /** Returned-mail feed (NIXIE / undeliverable). */
@@ -19,6 +27,8 @@ export interface PrintMailPort {
 export class FakePrintMail implements PrintMailPort {
   outage = false; transientRemaining = 0;
   readonly jobs = new Map<string, MailJobStatus & { job: MailJob }>();
+  /** 35.2: the manifest files received, by batch id (idempotent). */
+  readonly manifestFiles = new Map<string, { file: MailManifestFile; at: string; vendor_file_id: string }>();
   /** Vendor SLA: pieces enter production the next business morning and mail the same day (policy defaults used by the fake). */
   productionLagMs = 16 * 3_600_000;
   private check(): void { if (this.outage) throw new AdapterUnavailable("print-mail", "print_mail_secondary_vendor"); if (this.transientRemaining > 0) { this.transientRemaining--; throw new TransientFailure("print-mail: SFTP handshake failed"); } }
@@ -30,6 +40,21 @@ export class FakePrintMail implements PrintMailPort {
     const s: MailJobStatus & { job: MailJob } = { jobId: job.jobId, status: "received", job };
     this.jobs.set(job.jobId, s);
     return { ...s, duplicate: false };
+  }
+  async submitManifest(file: MailManifestFile, now: string): Promise<{ vendor_file_id: string; duplicate: boolean }> {
+    this.check();
+    const existing = this.manifestFiles.get(file.batch_id); if (existing) return { vendor_file_id: existing.vendor_file_id, duplicate: true };
+    const id = `FAKE-MF-${this.manifestFiles.size + 1}`; this.manifestFiles.set(file.batch_id, { file, at: now, vendor_file_id: id });
+    return { vendor_file_id: id, duplicate: false };
+  }
+  /** 35.2: every piece mailed since `since` — the job id is `<notice_id>:<attempt_no>` (NoticeService.mail); the IMB is a fixed 31-digit code per piece. */
+  async manifests(since: string): Promise<readonly ProofOfMailing[]> {
+    this.check();
+    return [...this.jobs.values()].filter((s) => s.status === "mailed" && (s.mailedAt ?? "") >= since).map((s) => {
+      const [noticeId, attempt] = s.jobId.split(":");
+      const digits = [...s.jobId].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 1_000_000_007, 7).toString().padStart(9, "0");
+      return { notice_id: noticeId ?? s.job.noticeId, attempt_no: Number(attempt ?? 1) || 1, vendor_piece_id: s.jobId, imb: `00700${digits}${digits}${digits.slice(0, 8)}`, mailed_on: (s.mailedAt ?? since).slice(0, 10), proof_of_mailing_id: s.proofOfMailingId ?? `POM-${s.jobId}` };
+    });
   }
   /** Test hook: the vendor's production run. */
   runProduction(now: string): void {

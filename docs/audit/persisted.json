@@ -1,8 +1,8 @@
 {
- "run_id": "344b4796-f3cb-4387-804f-884ae7015442",
+ "run_id": "6dfa19c8-5106-4847-861e-58cf9756dfef",
  "database_name": "supermortgage_test",
- "migration_head": "0231_seed_inventories.sql",
- "git_sha": "a6916f930589b431a140016cddd7b8bdb5c0833c",
+ "migration_head": "0242_staff_oidc_append_only.sql",
+ "git_sha": "0c836ca3c5eb7cd3d290ad80905261f1f7b3c9f4",
  "as_of_date": "2026-09-16",
  "journeys": [
   "lifecycle.test.ts",
@@ -15,37 +15,37 @@
  "journey_databases": [
   {
    "name": "lifecycle.test.ts",
-   "database": "supermortgage_t_cf188c56_runtime_lifecycle",
+   "database": "supermortgage_t_d273d3c7_runtime_lifecycle",
    "present": true
   },
   {
    "name": "purchase-lifecycle.test.ts",
-   "database": "supermortgage_t_75a96bef_runtime_purchase_lifecycle",
+   "database": "supermortgage_t_3e4891c1_runtime_purchase_lifecycle",
    "present": true
   },
   {
    "name": "35-5.spec.test.ts",
-   "database": "supermortgage_t_483e4339_operations_runtime_35_5_spec",
+   "database": "supermortgage_t_6e319da0_operations_runtime_35_5_spec",
    "present": true
   },
   {
    "name": "35-6.spec.test.ts",
-   "database": "supermortgage_t_26d54c8d_operations_runtime_35_6_spec",
+   "database": "supermortgage_t_e9b12364_operations_runtime_35_6_spec",
    "present": false
   },
   {
    "name": "35-9.spec.test.ts",
-   "database": "supermortgage_t_247f5052_operations_runtime_35_9_spec",
-   "present": false
+   "database": "supermortgage_t_601f07b3_operations_runtime_35_9_spec",
+   "present": true
   },
   {
    "name": "35-10.spec.test.ts",
-   "database": "supermortgage_t_42571c4c_operations_runtime_35_10_spec",
-   "present": false
+   "database": "supermortgage_t_a2713336_operations_runtime_35_10_spec",
+   "present": true
   }
  ],
  "tables_total": 752,
- "tables_with_rows": 64,
+ "tables_with_rows": 91,
  "sections_complete": [
   32
  ],
@@ -59,7 +59,7 @@
   32
  ],
  "untouched_expected": [],
- "projection_gaps": 80,
+ "projection_gaps": 268,
  "tables": [
   {
    "section": 1,
@@ -96,8 +96,8 @@
    "process": "1.1",
    "table": "boarding_validations",
    "post_migrate": "0",
-   "after": "4021",
-   "delta": "4021",
+   "after": "4361",
+   "delta": "4361",
    "expected": false,
    "verdict": "persisted"
   },
@@ -126,8 +126,8 @@
    "process": "1.2",
    "table": "escalations",
    "post_migrate": "0",
-   "after": "1195",
-   "delta": "1195",
+   "after": "1719",
+   "delta": "1719",
    "expected": true,
    "verdict": "persisted"
   },
@@ -155,8 +155,8 @@
    "section": 1,
    "process": "1.3",
    "table": "notice_templates",
-   "post_migrate": "345",
-   "after": "1035",
+   "post_migrate": "346",
+   "after": "1730",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -166,8 +166,8 @@
    "process": "1.3",
    "table": "notices",
    "post_migrate": "0",
-   "after": "3",
-   "delta": "3",
+   "after": "33",
+   "delta": "33",
    "expected": false,
    "verdict": "persisted"
   },
@@ -216,8 +216,8 @@
    "process": "1.4",
    "table": "documents",
    "post_migrate": "0",
-   "after": "24",
-   "delta": "24",
+   "after": "96",
+   "delta": "96",
    "expected": true,
    "verdict": "persisted"
   },
@@ -276,7 +276,7 @@
    "process": "1.6",
    "table": "ledger_accounts",
    "post_migrate": "40",
-   "after": "120",
+   "after": "200",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -446,8 +446,8 @@
    "process": "2.4",
    "table": "loan_terms",
    "post_migrate": "0",
-   "after": "111",
-   "delta": "111",
+   "after": "143",
+   "delta": "143",
    "expected": false,
    "verdict": "persisted"
   },
@@ -686,10 +686,10 @@
    "process": "4.1",
    "table": "cases",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "13",
+   "delta": "13",
    "expected": false,
-   "verdict": "untouched"
+   "verdict": "persisted"
   },
   {
    "section": 4,
@@ -846,8 +846,8 @@
    "process": "4.4",
    "table": "parties",
    "post_migrate": "1",
-   "after": "12",
-   "delta": "9",
+   "after": "52",
+   "delta": "47",
    "expected": false,
    "verdict": "persisted"
   },
@@ -1176,7 +1176,7 @@
    "process": "5.7",
    "table": "dq_status_code_map",
    "post_migrate": "31",
-   "after": "93",
+   "after": "155",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -1186,8 +1186,8 @@
    "process": "6.1",
    "table": "custodial_accounts",
    "post_migrate": "0",
-   "after": "14",
-   "delta": "14",
+   "after": "111",
+   "delta": "111",
    "expected": false,
    "verdict": "persisted"
   },
@@ -1226,8 +1226,8 @@
    "process": "7.1",
    "table": "notice_checklist_results",
    "post_migrate": "0",
-   "after": "3",
-   "delta": "3",
+   "after": "33",
+   "delta": "33",
    "expected": false,
    "verdict": "persisted"
   },
@@ -1236,8 +1236,8 @@
    "process": "7.1",
    "table": "notice_deliveries",
    "post_migrate": "0",
-   "after": "3",
-   "delta": "3",
+   "after": "33",
+   "delta": "33",
    "expected": false,
    "verdict": "persisted"
   },
@@ -1246,8 +1246,8 @@
    "process": "7.1",
    "table": "notice_template_versions",
    "post_migrate": "0",
-   "after": "1",
-   "delta": "1",
+   "after": "9",
+   "delta": "9",
    "expected": false,
    "verdict": "persisted"
   },
@@ -1576,7 +1576,7 @@
    "process": "9.1",
    "table": "jurisdiction_rules",
    "post_migrate": "51",
-   "after": "153",
+   "after": "255",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -1926,10 +1926,10 @@
    "process": "11.1",
    "table": "regx_ei_windows",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "261",
+   "delta": "261",
    "expected": false,
-   "verdict": "untouched"
+   "verdict": "persisted"
   },
   {
    "section": 11,
@@ -2266,8 +2266,8 @@
    "process": "13.1",
    "table": "loans",
    "post_migrate": "0",
-   "after": "117",
-   "delta": "117",
+   "after": "198",
+   "delta": "198",
    "expected": true,
    "verdict": "persisted"
   },
@@ -2276,7 +2276,7 @@
    "process": "13.1",
    "table": "rule_sets",
    "post_migrate": "2",
-   "after": "6",
+   "after": "10",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -2816,7 +2816,7 @@
    "process": "15.2",
    "table": "allowable_fee_schedules",
    "post_migrate": "41",
-   "after": "123",
+   "after": "205",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -3536,7 +3536,7 @@
    "process": "19.1",
    "table": "record_types",
    "post_migrate": "79",
-   "after": "237",
+   "after": "395",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -3556,7 +3556,7 @@
    "process": "19.1",
    "table": "retention_classes",
    "post_migrate": "20",
-   "after": "60",
+   "after": "100",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -3665,11 +3665,11 @@
    "section": 19,
    "process": "19.2",
    "table": "security_controls",
-   "post_migrate": "0",
-   "after": "0",
+   "post_migrate": "8",
+   "after": "40",
    "delta": "0",
    "expected": false,
-   "verdict": "untouched"
+   "verdict": "seeded_only"
   },
   {
    "section": 19,
@@ -3706,7 +3706,7 @@
    "process": "19.3",
    "table": "ai_systems",
    "post_migrate": "40",
-   "after": "120",
+   "after": "200",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -3966,8 +3966,8 @@
    "process": "20.3",
    "table": "applications",
    "post_migrate": "0",
-   "after": "6",
-   "delta": "6",
+   "after": "56",
+   "delta": "56",
    "expected": true,
    "verdict": "persisted"
   },
@@ -4046,8 +4046,8 @@
    "process": "21.1",
    "table": "application_borrowers",
    "post_migrate": "0",
-   "after": "9",
-   "delta": "9",
+   "after": "25",
+   "delta": "25",
    "expected": true,
    "verdict": "persisted"
   },
@@ -4226,7 +4226,7 @@
    "process": "22.1",
    "table": "document_classes",
    "post_migrate": "77",
-   "after": "231",
+   "after": "385",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -4736,8 +4736,8 @@
    "process": "23.5",
    "table": "du_joint_credit_report_links",
    "post_migrate": "0",
-   "after": "2",
-   "delta": "2",
+   "after": "3",
+   "delta": "3",
    "expected": false,
    "verdict": "persisted"
   },
@@ -4796,8 +4796,8 @@
    "process": "23.6",
    "table": "du_documents",
    "post_migrate": "0",
-   "after": "2",
-   "delta": "2",
+   "after": "3",
+   "delta": "3",
    "expected": true,
    "verdict": "persisted"
   },
@@ -4806,8 +4806,8 @@
    "process": "23.7",
    "table": "du_preflight_results",
    "post_migrate": "0",
-   "after": "2",
-   "delta": "2",
+   "after": "3",
+   "delta": "3",
    "expected": false,
    "verdict": "persisted"
   },
@@ -4956,7 +4956,7 @@
    "process": "25.1",
    "table": "compliance_test_definitions",
    "post_migrate": "27",
-   "after": "81",
+   "after": "135",
    "delta": "0",
    "expected": false,
    "verdict": "seeded_only"
@@ -5926,8 +5926,8 @@
    "process": "30.2",
    "table": "loan_borrowers",
    "post_migrate": "0",
-   "after": "117",
-   "delta": "117",
+   "after": "149",
+   "delta": "149",
    "expected": false,
    "verdict": "persisted"
   },
@@ -5946,8 +5946,8 @@
    "process": "30.2",
    "table": "properties",
    "post_migrate": "0",
-   "after": "117",
-   "delta": "117",
+   "after": "165",
+   "delta": "165",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6466,30 +6466,30 @@
    "process": "33.1",
    "table": "partner_book_facts",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "36",
+   "delta": "36",
    "expected": false,
-   "verdict": "untouched"
+   "verdict": "persisted"
   },
   {
    "section": 33,
    "process": "33.1",
    "table": "partner_book_imports",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "3",
+   "delta": "3",
    "expected": false,
-   "verdict": "untouched"
+   "verdict": "persisted"
   },
   {
    "section": 33,
    "process": "33.1",
    "table": "partner_book_invitations",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "22",
+   "delta": "22",
    "expected": false,
-   "verdict": "untouched"
+   "verdict": "persisted"
   },
   {
    "section": 33,
@@ -6506,10 +6506,10 @@
    "process": "33.3",
    "table": "readiness_checks",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "11",
+   "delta": "11",
    "expected": false,
-   "verdict": "untouched"
+   "verdict": "persisted"
   },
   {
    "section": 34,
@@ -6526,8 +6526,8 @@
    "process": "34.1",
    "table": "staff_actions",
    "post_migrate": "0",
-   "after": "327",
-   "delta": "327",
+   "after": "509",
+   "delta": "509",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6586,10 +6586,10 @@
    "process": "34.3",
    "table": "partner_book_daily_reports",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "19",
+   "delta": "19",
    "expected": false,
-   "verdict": "untouched"
+   "verdict": "persisted"
   },
   {
    "section": 34,
@@ -6606,8 +6606,8 @@
    "process": "35.1",
    "table": "entity_keys",
    "post_migrate": "0",
-   "after": "19",
-   "delta": "19",
+   "after": "20",
+   "delta": "20",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6616,8 +6616,8 @@
    "process": "35.1",
    "table": "entity_latest_scoped",
    "post_migrate": "0",
-   "after": "387",
-   "delta": "387",
+   "after": "970",
+   "delta": "970",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6626,8 +6626,8 @@
    "process": "35.1",
    "table": "entity_projections",
    "post_migrate": "0",
-   "after": "36",
-   "delta": "36",
+   "after": "37",
+   "delta": "37",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6636,18 +6636,18 @@
    "process": "35.1",
    "table": "outbox_dispatches",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "11",
+   "delta": "11",
    "expected": false,
-   "verdict": "untouched"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.1",
    "table": "projection_gaps",
    "post_migrate": "0",
-   "after": "80",
-   "delta": "80",
+   "after": "268",
+   "delta": "268",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6666,8 +6666,8 @@
    "process": "35.1",
    "table": "projection_runs",
    "post_migrate": "0",
-   "after": "4",
-   "delta": "4",
+   "after": "11",
+   "delta": "11",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6686,8 +6686,8 @@
    "process": "35.1",
    "table": "sweep_runs",
    "post_migrate": "0",
-   "after": "4",
-   "delta": "4",
+   "after": "55",
+   "delta": "55",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6699,17 +6699,17 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
    "process": "35.2",
    "table": "document_blobs",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "23",
+   "delta": "23",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
@@ -6719,7 +6719,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -6729,17 +6729,17 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
    "process": "35.2",
    "table": "document_integrity_runs",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "3",
+   "delta": "3",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
@@ -6749,7 +6749,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -6759,7 +6759,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -6769,7 +6769,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -6779,7 +6779,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -6789,15 +6789,15 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
    "process": "35.3",
    "table": "cycle_receipts",
    "post_migrate": "0",
-   "after": "35",
-   "delta": "35",
+   "after": "56",
+   "delta": "56",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6816,8 +6816,8 @@
    "process": "35.3",
    "table": "cycle_runs",
    "post_migrate": "0",
-   "after": "73",
-   "delta": "73",
+   "after": "85",
+   "delta": "85",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6826,8 +6826,8 @@
    "process": "35.3",
    "table": "job_events",
    "post_migrate": "0",
-   "after": "3449",
-   "delta": "3449",
+   "after": "4022",
+   "delta": "4022",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6836,8 +6836,8 @@
    "process": "35.3",
    "table": "jobs",
    "post_migrate": "0",
-   "after": "999",
-   "delta": "999",
+   "after": "1284",
+   "delta": "1284",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6849,37 +6849,37 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
    "process": "35.4",
    "table": "close_period_events",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "13",
+   "delta": "13",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.4",
    "table": "close_period_steps",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "91",
+   "delta": "91",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.4",
    "table": "close_periods",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "8",
+   "delta": "8",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
@@ -6889,7 +6889,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -6899,7 +6899,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -6916,8 +6916,8 @@
    "process": "35.5",
    "table": "cashiering_unit_runs",
    "post_migrate": "0",
-   "after": "618",
-   "delta": "618",
+   "after": "638",
+   "delta": "638",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6926,8 +6926,8 @@
    "process": "35.5",
    "table": "installment_schedule_runs",
    "post_migrate": "0",
-   "after": "112",
-   "delta": "112",
+   "after": "122",
+   "delta": "122",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6936,8 +6936,8 @@
    "process": "35.5",
    "table": "loan_installments",
    "post_migrate": "0",
-   "after": "28525",
-   "delta": "28525",
+   "after": "32125",
+   "delta": "32125",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6946,8 +6946,8 @@
    "process": "35.5",
    "table": "loan_servicing_configs",
    "post_migrate": "0",
-   "after": "110",
-   "delta": "110",
+   "after": "120",
+   "delta": "120",
    "expected": false,
    "verdict": "persisted"
   },
@@ -6976,7 +6976,7 @@
    "process": "35.5",
    "table": "servicer_profiles",
    "post_migrate": "1",
-   "after": "5",
+   "after": "7",
    "delta": "2",
    "expected": false,
    "verdict": "persisted"
@@ -7076,8 +7076,8 @@
    "process": "35.7",
    "table": "role_queue_snapshots",
    "post_migrate": "0",
-   "after": "88",
-   "delta": "88",
+   "after": "719",
+   "delta": "719",
    "expected": false,
    "verdict": "persisted"
   },
@@ -7155,139 +7155,139 @@
    "section": 35,
    "process": "35.9",
    "table": "breach_action_registry",
-   "post_migrate": "0",
-   "after": "0",
+   "post_migrate": "9",
+   "after": "45",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "seeded_only"
   },
   {
    "section": 35,
    "process": "35.9",
    "table": "breach_actions",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "1574",
+   "delta": "1574",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.9",
    "table": "case_milestone_expectations",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "19",
+   "delta": "19",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.9",
    "table": "case_timelines",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "118",
+   "delta": "118",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.9",
    "table": "claim_candidates",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "2",
+   "delta": "2",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.9",
    "table": "default_case_daily_runs",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "3",
+   "delta": "3",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.9",
    "table": "docket_reactions",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "4",
+   "delta": "4",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.9",
    "table": "firm_dispatches",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "11",
+   "delta": "11",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.10",
    "table": "partner_retirement_notifications",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "5",
+   "delta": "5",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.10",
    "table": "prior_loan_retirements",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "10",
+   "delta": "10",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.10",
    "table": "refinance_closeout_daily_receipts",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "28",
+   "delta": "28",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.10",
    "table": "refinance_closeout_steps",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "376",
+   "delta": "376",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.10",
    "table": "refinance_closeouts",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "51",
+   "delta": "51",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
    "process": "35.11",
    "table": "exception_triages",
    "post_migrate": "0",
-   "after": "220",
-   "delta": "220",
+   "after": "205",
+   "delta": "205",
    "expected": false,
    "verdict": "persisted"
   },
@@ -7306,8 +7306,8 @@
    "process": "35.11",
    "table": "ops_daily_reports",
    "post_migrate": "0",
-   "after": "4",
-   "delta": "4",
+   "after": "27",
+   "delta": "27",
    "expected": false,
    "verdict": "persisted"
   },
@@ -7316,8 +7316,8 @@
    "process": "35.11",
    "table": "ops_exceptions",
    "post_migrate": "0",
-   "after": "83",
-   "delta": "83",
+   "after": "80",
+   "delta": "80",
    "expected": false,
    "verdict": "persisted"
   },
@@ -7346,10 +7346,10 @@
    "process": "35.12",
    "table": "data_scans",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "29",
+   "delta": "29",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "persisted"
   },
   {
    "section": 35,
@@ -7359,7 +7359,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -7369,7 +7369,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -7379,7 +7379,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -7389,7 +7389,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -7399,7 +7399,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -7409,17 +7409,17 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
    "process": "35.12",
    "table": "posture_controls",
-   "post_migrate": "0",
-   "after": "0",
+   "post_migrate": "17",
+   "after": "85",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "seeded_only"
   },
   {
    "section": 35,
@@ -7429,7 +7429,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 35,
@@ -7439,7 +7439,7 @@
    "after": "0",
    "delta": "0",
    "expected": false,
-   "verdict": "missing_ddl"
+   "verdict": "untouched"
   },
   {
    "section": 36,
@@ -7486,8 +7486,8 @@
    "process": "kernel",
    "table": "borrowers",
    "post_migrate": "0",
-   "after": "117",
-   "delta": "117",
+   "after": "149",
+   "delta": "149",
    "expected": false,
    "verdict": "persisted"
   },
@@ -7516,8 +7516,8 @@
    "process": "kernel",
    "table": "loan_events",
    "post_migrate": "0",
-   "after": "13048",
-   "delta": "13048",
+   "after": "20151",
+   "delta": "20151",
    "expected": true,
    "verdict": "persisted"
   },
@@ -7526,8 +7526,8 @@
    "process": "kernel",
    "table": "timers",
    "post_migrate": "0",
-   "after": "3204",
-   "delta": "3204",
+   "after": "4880",
+   "delta": "4880",
    "expected": true,
    "verdict": "persisted"
   },
@@ -7536,8 +7536,8 @@
    "process": "kernel",
    "table": "ledger_entry_sets",
    "post_migrate": "0",
-   "after": "163",
-   "delta": "163",
+   "after": "226",
+   "delta": "226",
    "expected": false,
    "verdict": "persisted"
   },
@@ -7546,8 +7546,8 @@
    "process": "kernel",
    "table": "ledger_lines",
    "post_migrate": "0",
-   "after": "503",
-   "delta": "503",
+   "after": "705",
+   "delta": "705",
    "expected": true,
    "verdict": "persisted"
   },
@@ -7556,8 +7556,8 @@
    "process": "kernel",
    "table": "agent_decisions",
    "post_migrate": "0",
-   "after": "2673",
-   "delta": "2673",
+   "after": "3396",
+   "delta": "3396",
    "expected": true,
    "verdict": "persisted"
   },
@@ -7566,10 +7566,10 @@
    "process": "kernel",
    "table": "integration_messages",
    "post_migrate": "0",
-   "after": "0",
-   "delta": "0",
+   "after": "14",
+   "delta": "14",
    "expected": false,
-   "verdict": "untouched"
+   "verdict": "persisted"
   },
   {
    "section": 0,

@@ -75,6 +75,7 @@ import { FakeBlobStore, type BlobStorePort } from "../runtime/borrower/vendors/f
 // 35.7: the roles routes, dual control on the tools route (rule 2), the break-glass held set (rule 8), the action log's surface/source
 import { rolesRoutes } from "../domain/operations-runtime/roles-35-7/routes.ts";
 import { workRoutes } from "../domain/operations-runtime/work-35-8/routes.ts";
+import { postureRoutes } from "../domain/operations-runtime/posture-35-12/routes.ts";
 // 35.11: the stewardship boards' routes (the exceptions, the day's report, the runbook, the hand requeue through 34.4) — 34.4's table shape and dispatch
 import { stewardshipRoutes } from "../domain/operations-runtime/stewardship-35-11/routes.ts";
 import { executeWithControls } from "../domain/operations-runtime/roles-35-7/dual-control.ts";
@@ -216,6 +217,8 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
   const ROLES: readonly ControlsRoute[] = opts.runtime ? rolesRoutes({ runtime: opts.runtime }) : [];
   // 35.8: the queue, the items and the screens (src/domain/operations-runtime/work-35-8/routes.ts) — 34.4's table shape and dispatch; the body's `role` is the role the act is asked for (rule 4)
   const WORK: readonly ControlsRoute[] = opts.runtime ? workRoutes({ runtime: opts.runtime }) : [];
+  // 35.12: the posture, switch, drill, scan, parallel-run and go-live routes — the same dispatch as 35.7's (the body's `mode`/`role` are never the "act as" preference)
+  const POSTURE: readonly ControlsRoute[] = opts.runtime ? postureRoutes({ runtime: opts.runtime }) : [];
   const STEWARDSHIP: readonly ControlsRoute[] = opts.runtime ? stewardshipRoutes({ runtime: opts.runtime }) : [];
   const SECTION34_PREFIXES = ["/api/directory", "/api/partner-book/", "/api/controls", "/api/portal/", "/api/roles", "/api/principals", "/api/handover", "/api/work", "/api/stewardship"];   // the trailing slash: the legacy /api/portal-tasks/* acts are not 34.5's
   let escalatesTo: Map<string, readonly string[]> | null = null;
@@ -369,12 +372,12 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
         const query = Object.fromEntries(url.searchParams); if (query["partner"] === undefined && query["partner_party_id"] !== undefined) query["partner"] = query["partner_party_id"];   // the console's older partner filter name
         answer(await route.handler({ params, query, body: b, staff: { staff_user_id: actor.id, role: actor.role!, session_id: r.staff?.session.session_id ?? null } })); return;
       }
-      const ctl = matchControlsRoute(CONTROLS, method, path) ?? matchControlsRoute(ROLES, method, path) ?? matchControlsRoute(WORK, method, path) ?? matchControlsRoute(STEWARDSHIP, method, path);
+      const ctl = matchControlsRoute(CONTROLS, method, path) ?? matchControlsRoute(ROLES, method, path) ?? matchControlsRoute(WORK, method, path) ?? matchControlsRoute(POSTURE, method, path) ?? matchControlsRoute(STEWARDSHIP, method, path);
       if (ctl) {
         // every route is logged the directory's way (logRoute above), so a `logged_query === false` row (none in 34.4 today) needs nothing more
         const b = method === "POST" ? await body(req) : {};
         // 35.7's routes: the body's `role` is the role being granted / handed over / broken into, never the "act as" preference (x-staff-role or ?role= carry that)
-        const actor = actAs(r, [...ctl.route.roles], ROLES.includes(ctl.route) || STEWARDSHIP.includes(ctl.route) ? "" : str(b, "role"));
+        const actor = actAs(r, [...ctl.route.roles], ROLES.includes(ctl.route) || POSTURE.includes(ctl.route) || STEWARDSHIP.includes(ctl.route) ? "" : str(b, "role"));
         answer(await ctl.route.handler({ actor, params: ctl.params, query: url.searchParams, body: b, now })); return;
       }
       if (method === "GET") {
@@ -504,7 +507,10 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
           let input: PartnerBookImportInput;
           try { input = await partnerBookUpload(req); } catch (e) { if (e instanceof RangeError) { action.result = "error"; action.refusal_code = "BAD_REQUEST"; json(res, 400, { error: e.message }); return; } throw e; }
           action.command = "book.import";
-          const rep = await importPartnerBook(rt, input, actor); setSubject({ kind: "partner_book_import", id: rep.import_id });
+          // 35.12 rule 6: `X-Supermortgage-Synthetic: true` marks every party the import writes (a fixture book); production refuses it
+          const syntheticBook = String(req.headers["x-supermortgage-synthetic"] ?? "").trim().toLowerCase() === "true";
+          if (syntheticBook && (rt.environment === "production" || rt.environment === "prod")) { refuse(409, "SYNTHETIC_REFUSED_IN_PRODUCTION", { reason: "a synthetic partner book never loads in production (35.12 rule 6)" }); return; }
+          const rep = await importPartnerBook(rt, syntheticBook ? { ...input, synthetic: true } : input, actor); setSubject({ kind: "partner_book_import", id: rep.import_id });
           json(res, 200, rep); return;
         }
         // 33.1 rule 8: book.resolve{loan_id, resolution, reason} on the bus as the console's human (the bus refuses any role but ops_analyst: 403 role_denied)

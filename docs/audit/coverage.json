@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8611/8787 (98.0%): tids 2394/2480, tables 833/852, timers 2091/2097, notices 308/309, tools 1549/1579, figures 1436/1470; processes at 100%: 202/212; retired 27; hosted 1512/1579, persisted 97/852",
+ "brief": "spec units built 8661/8787 (98.6%): tids 2413/2480, tables 843/852, timers 2095/2097, notices 308/309, tools 1563/1579, figures 1439/1470; processes at 100%: 203/212; retired 27; hosted 1550/1579, persisted 128/852",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2394
+   "built": 2413
   },
   "tables": {
    "spec": 852,
-   "built": 833
+   "built": 843
   },
   "timers": {
    "spec": 2097,
-   "built": 2091
+   "built": 2095
   },
   "notices": {
    "spec": 309,
@@ -19,25 +19,25 @@
   },
   "tools": {
    "spec": 1579,
-   "built": 1549
+   "built": 1563
   },
   "figures": {
    "spec": 1470,
-   "built": 1436
+   "built": 1439
   },
   "units": {
    "spec": 8787,
-   "built": 8611
+   "built": 8661
   }
  },
  "exec_totals": {
   "hosted": {
    "spec": 1579,
-   "built": 1512
+   "built": 1550
   },
   "persisted": {
    "spec": 852,
-   "built": 97
+   "built": 128
   }
  },
  "exec_measured": {
@@ -74,8 +74,12 @@
   "32.13",
   "32.18",
   "32.19",
+  "33.1",
+  "33.3",
+  "34.3",
   "35.3",
   "35.5",
+  "35.10",
   "36.2",
   "36.3",
   "36.4",
@@ -464,9 +468,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 600,
+   "built": 650,
    "processes": 12,
-   "done": 10
+   "done": 11
   },
   "36": {
    "spec": 40,
@@ -677,7 +681,8 @@
   "35.8",
   "35.9",
   "35.10",
-  "35.11"
+  "35.11",
+  "35.12"
  ],
  "processes": [
   {
@@ -1918,7 +1923,7 @@
    },
    "persisted": {
     "spec": 9,
-    "built": 0,
+    "built": 1,
     "measured": true
    },
    "units": {
@@ -1970,7 +1975,7 @@
    },
    "persisted": {
     "spec": 3,
-    "built": 0,
+    "built": 1,
     "measured": true
    },
    "units": {
@@ -2126,7 +2131,7 @@
    },
    "persisted": {
     "spec": 5,
-    "built": 0,
+    "built": 1,
     "measured": true
    },
    "units": {
@@ -4050,7 +4055,7 @@
    },
    "persisted": {
     "spec": 8,
-    "built": 1,
+    "built": 2,
     "measured": true
    },
    "units": {
@@ -4102,7 +4107,7 @@
    },
    "persisted": {
     "spec": 4,
-    "built": 1,
+    "built": 2,
     "measured": true
    },
    "units": {
@@ -6026,7 +6031,7 @@
    },
    "persisted": {
     "spec": 4,
-    "built": 0,
+    "built": 1,
     "measured": true
    },
    "units": {
@@ -6286,7 +6291,7 @@
    },
    "persisted": {
     "spec": 4,
-    "built": 0,
+    "built": 1,
     "measured": true
    },
    "units": {
@@ -10430,7 +10435,7 @@
    },
    "persisted": {
     "spec": 3,
-    "built": 0,
+    "built": 3,
     "measured": true
    },
    "units": {
@@ -10534,7 +10539,7 @@
    },
    "persisted": {
     "spec": 1,
-    "built": 0,
+    "built": 1,
     "measured": true
    },
    "units": {
@@ -10690,7 +10695,7 @@
    },
    "persisted": {
     "spec": 1,
-    "built": 0,
+    "built": 1,
     "measured": true
    },
    "units": {
@@ -10865,7 +10870,7 @@
    },
    "persisted": {
     "spec": 9,
-    "built": 7,
+    "built": 8,
     "measured": true
    },
    "units": {
@@ -10912,12 +10917,12 @@
    },
    "hosted": {
     "spec": 13,
-    "built": 0,
+    "built": 13,
     "measured": true
    },
    "persisted": {
     "spec": 12,
-    "built": 2,
+    "built": 4,
     "measured": true
    },
    "units": {
@@ -11016,12 +11021,12 @@
    },
    "hosted": {
     "spec": 11,
-    "built": 0,
+    "built": 11,
     "measured": true
    },
    "persisted": {
     "spec": 6,
-    "built": 0,
+    "built": 3,
     "measured": true
    },
    "units": {
@@ -11351,7 +11356,7 @@
    },
    "persisted": {
     "spec": 8,
-    "built": 0,
+    "built": 7,
     "measured": true
    },
    "units": {
@@ -11403,7 +11408,7 @@
    },
    "persisted": {
     "spec": 5,
-    "built": 0,
+    "built": 5,
     "measured": true
    },
    "units": {
@@ -11470,56 +11475,20 @@
    "title": "Production posture: a production environment apart from nonprod, private networking, a person behind every credential, secrets and data classes, `INTEGRATIONS` as a real switch per vendor, backups and the restore drill, the go-live checklist, the four-week parallel run, and no borrower data in nonprod",
    "tids": {
     "spec": 19,
-    "built": 0,
-    "todo": 19,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18,
-     19
-    ]
+    "built": 19,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 12,
-    "built": 2,
-    "missing": [
-     "data_scans",
-     "environment_manifests",
-     "go_live_checklists",
-     "integration_switches",
-     "parallel_run_diffs",
-     "parallel_runs",
-     "posture_checks",
-     "posture_controls",
-     "posture_findings",
-     "restore_drills"
-    ]
+    "built": 12,
+    "missing": []
    },
    "timers": {
     "spec": 6,
-    "built": 2,
+    "built": 6,
     "armable": 6,
-    "missing": [
-     "SM_NONPROD_REAL_DATA_PURGE_1BD",
-     "SM_PROD_GO_LIVE_ATTEST_GATE",
-     "SM_PROD_POSTURE_DRIFT_1BD",
-     "SM_PROD_RESTORE_DRILL_90D"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -11528,48 +11497,29 @@
    },
    "tools": {
     "spec": 14,
-    "built": 0,
-    "missing": [
-     "posture.record",
-     "posture.check",
-     "posture.drift.resolve",
-     "integrations.switch",
-     "integrations.status",
-     "backup.drill",
-     "data.scan",
-     "parallel_run.open",
-     "parallel_run.reconcile",
-     "parallel_run.disposition",
-     "parallel_run.close",
-     "go_live.check",
-     "go_live.attest",
-     "writeDecision"
-    ]
+    "built": 14,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 4,
-    "missing": [
-     "$3,412.92",
-     "$3,417.92",
-     "$67.50"
-    ]
+    "built": 7,
+    "missing": []
    },
    "hosted": {
     "spec": 14,
-    "built": 0,
+    "built": 14,
     "measured": true
    },
    "persisted": {
     "spec": 12,
-    "built": 2,
+    "built": 3,
     "measured": true
    },
    "units": {
     "spec": 58,
-    "built": 8
+    "built": 58
    },
-   "pct": 13.8,
+   "pct": 100.0,
    "retired": []
   },
   {

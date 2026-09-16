@@ -8,8 +8,8 @@ export interface RuntimeConfig {
   readonly apiToken: string;
   readonly host: string;
   readonly port: number;
-  /** `fake` wires the in-memory test doubles for every vendor port; the only value that exists today. */
-  readonly integrations: "fake";
+  /** `fake` wires the in-memory test doubles for every vendor port (every build stage); `real` reads 35.12's `integration_switches` per vendor — `real` → the adapter over its secret_ref, `off` or no row → an OffPort answering VENDOR_OFF (src/domain/operations-runtime/posture-35-12/real-ports.ts). `fake` never serves production (NO_FAKE_IN_PRODUCTION). */
+  readonly integrations: "fake" | "real";
   readonly logFormat: "json" | "text";
   readonly environment: string;
   /** 32.14 DELTA-15: the Phase I partner (a `parties` row id) the organic entry names when no application names one; empty → the newest servicer party. */
@@ -34,7 +34,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
   const apiToken = env["API_TOKEN"] ?? "";
   if (!apiToken && env["ALLOW_INSECURE_NO_TOKEN"] !== "1") throw new Error("API_TOKEN is not set (set ALLOW_INSECURE_NO_TOKEN=1 only for local development)");
   const integrations = env["INTEGRATIONS"] ?? "fake";
-  if (integrations !== "fake") throw new Error(`INTEGRATIONS=${integrations} is not implemented; only "fake" (in-memory test doubles) exists`);
+  if (integrations !== "fake" && integrations !== "real") throw new Error(`INTEGRATIONS=${integrations} is not one of fake | real (35.12 rule 4)`);
+  const environmentName = env["ENVIRONMENT"] ?? "nonprod";
+  // 35.12 rule 4 / 35.7 rule 6: a production process never starts with fakes — the deploy's smoke fails and the environment never serves a request with a FAKE vendor
+  if (integrations === "fake" && (environmentName === "production" || environmentName === "prod")) throw new Error("NO_FAKE_IN_PRODUCTION: INTEGRATIONS=fake never serves production (35.12 rule 4; 35.7 rule 6) — set INTEGRATIONS=real and throw each vendor's switch with integrations.switch");
   const port = Number(env["PORT"] ?? 8080);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`PORT=${env["PORT"]} is not a port`);
   const borrowerDefaultPartnerId = (env["BORROWER_DEFAULT_PARTNER_ID"] ?? "").trim();
@@ -53,5 +56,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
   const joinTimeoutS = Number((env["VIDEO_JOIN_TIMEOUT_S"] ?? "120").trim());
   if (!Number.isInteger(joinTimeoutS) || joinTimeoutS < 1) throw new Error("VIDEO_JOIN_TIMEOUT_S must be a positive integer of seconds");
   const video = { tavusApiKey: secret(env["TAVUS_API_KEY"]), replicaId: secret(env["TAVUS_REPLICA_ID"]), callbackSecret: secret(env["VIDEO_CALLBACK_SECRET"]), borrowerCamera: camera as "on" | "off", publicApiUrl: (env["VIDEO_API_URL"] ?? "").trim().replace(/\/$/, ""), joinTimeoutS };
-  return { databaseUrl, apiToken, host: env["HOST"] ?? "0.0.0.0", port, integrations, logFormat: env["LOG_FORMAT"] === "text" ? "text" : "json", environment: env["ENVIRONMENT"] ?? "nonprod", borrowerDefaultPartnerId, googleOauth, talk, llm, video };
+  return { databaseUrl, apiToken, host: env["HOST"] ?? "0.0.0.0", port, integrations, logFormat: env["LOG_FORMAT"] === "text" ? "text" : "json", environment: environmentName, borrowerDefaultPartnerId, googleOauth, talk, llm, video };
 }

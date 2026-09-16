@@ -84,6 +84,8 @@ import { handleVerifyRoute } from "./documents/verify-route.ts";
 import { holdsOf, importPartnerBook, listPartnerBookImports, partnerBookReport, partnerBookStatus, resolvePartnerBookLoan, seedPartnerBookDemo, type PartnerBookImportInput } from "./partner-book.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 import { OffsetClock, advanceDemoClock, demoClockStatus } from "./demo-clock.ts";
+/** 35.12 Inputs and triggers: the /v1 posture routes as aliases of the process's tools (the body is the input). */
+const POSTURE_V1_ROUTES: Readonly<Record<string, string>> = { "/v1/posture/manifests": "posture.record", "/v1/posture/check": "posture.check", "/v1/posture/scans": "data.scan" };
 
 export interface ServerOptions { readonly runtime: Runtime; readonly apiToken: string; readonly logger: Logger; readonly console?: boolean;
   /** The borrower API's own dependencies (vendor fakes, rpId, environment); defaults to the FAKE vendors. */
@@ -230,6 +232,16 @@ export function createApiServer(opts: ServerOptions): Server {
       try { principal = await v1.resolve(req, runtime.clock.now()); } catch (e) { if (e instanceof PrincipalRefused && e.context) principal = e.context as PrincipalContext; throw e; }
       if (method === "GET" && path === "/v1/tools") { done(200, { tools: runtime.listTools() }); return; }
       let m: RegExpExecArray | null;
+      // 35.12 Inputs: the deploy workflow's `POST /v1/posture/manifests` (posture.record, under a 35.7 service principal), `POST /v1/posture/check` and
+      // `POST /v1/posture/scans` (the cycle or a compliance principal) — the body IS the tool input; the same door, bus and staff_actions row as the tool routes
+      const postureAlias = method === "POST" ? POSTURE_V1_ROUTES[path] : undefined;
+      if (postureAlias) {
+        const b = await readJson(req);
+        action.command = `35.12 ${postureAlias}`;
+        const { actor, grantRole } = await resolveActor({}, runtime.tool("35.12", postureAlias), {}, "35.12");
+        const r = await executeWithControls(runtime, { process: "35.12", name: postureAlias, loanId: "", actor, input: toolInput(b) }, { surface: "v1", source: principal!.source, requestId: null, grantRole });
+        done(200, r, { tool: `35.12 ${postureAlias}`, actor: `${actor.kind}:${actor.id}`, events: r.events.length }); return;
+      }
       if (method === "POST" && (m = /^\/v1\/(?:loans\/([^/]+)\/)?tools\/([^/]+)\/([^/]+)$/.exec(path))) {
         const loanId = m[1] ? decodeURIComponent(m[1]) : "";
         if (loanId && !isUuid(loanId)) throw new RangeError("loanId must be the loan's uuid (loans.id)");
@@ -337,10 +349,15 @@ export function createApiServer(opts: ServerOptions): Server {
         action.command = "transfers.batches.demo";
         const { actor } = await resolveActor(b, undefined, {}, "transfers", { kind: "system", id: "demo-seed" });
         const demo = generateDemoBatch();
-        const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), actor);
+        const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), actor, { synthetic: true });   // 35.12 rule 6: the demo batch is synthetic
         done(200, r, { batch: r.batch_id, status: r.status, boarded: r.loans.boarded }); return;
       }
       if (method === "POST" && path === "/v1/transfers/batches") {
+        // 35.12 rule 6 — the door: nonprod boards a tape only under `X-Supermortgage-Synthetic: true` (REAL_DATA_REFUSED_IN_NONPROD); production refuses a tape with it (SYNTHETIC_REFUSED_IN_PRODUCTION); the rows it boards inherit the marker
+        const syntheticHeader = String(req.headers["x-supermortgage-synthetic"] ?? "").trim().toLowerCase() === "true";
+        const productionEnv = runtime.environment === "production" || runtime.environment === "prod";
+        if (productionEnv && syntheticHeader) { action.command = "transfers.batches"; done(409, { error: "synthetic_refused_in_production", code: "SYNTHETIC_REFUSED_IN_PRODUCTION", reason: "a synthetic tape never boards in production (35.12 rule 6)" }); return; }
+        if (!productionEnv && !syntheticHeader) { action.command = "transfers.batches"; done(409, { error: "real_data_refused_in_nonprod", code: "REAL_DATA_REFUSED_IN_NONPROD", reason: "nonprod boards synthetic tapes only: send X-Supermortgage-Synthetic: true (35.12 rule 6; docs/DEPLOY.md §7)" }); return; }
         const b = await readJson(req);
         action.command = "transfers.batches";
         const { actor } = await resolveActor(b, undefined, {}, "transfers");
@@ -353,7 +370,7 @@ export function createApiServer(opts: ServerOptions): Server {
         const f: TransferBatchFiles = { "boarding_tape.final.csv": String(files["boarding_tape.final.csv"]), "payment_history.csv": String(files["payment_history.csv"] ?? empty()), "escrow_history.csv": String(files["escrow_history.csv"] ?? empty()), "escrow_analysis.csv": String(files["escrow_analysis.csv"] ?? empty()),
           "lossmit_file.csv": String(files["lossmit_file.csv"] ?? empty()), "fc_bk_file.csv": String(files["fc_bk_file.csv"] ?? empty()), "consents_file.csv": String(files["consents_file.csv"] ?? empty()), "images_manifest.csv": String(files["images_manifest.csv"] ?? empty()), "trial_balance.csv": String(files["trial_balance.csv"] ?? empty()),
           "fnma_position.csv": String(files["fnma_position.csv"] ?? empty()), "mers_lookup.csv": String(files["mers_lookup.csv"] ?? empty()), "fair_lending.csv": String(files["fair_lending.csv"] ?? empty()) };
-        const r = await boardTransferBatch(runtime, input, f, actor);
+        const r = await boardTransferBatch(runtime, input, f, actor, { synthetic: syntheticHeader });
         done(200, r, { batch: r.batch_id, status: r.status, boarded: r.loans.boarded }); return;
       }
       if (method === "GET" && (m = /^\/v1\/transfers\/batches\/([^/]+)$/.exec(path))) {
@@ -365,7 +382,10 @@ export function createApiServer(opts: ServerOptions): Server {
       if (method === "POST" && path === "/v1/partner-book/imports") {
         action.command = "book.import"; v1.scopeCheck(principal!, { process: "33.1" });
         const actorHeader = principal!.person?.id ?? String(req.headers["x-actor-id"] ?? "");
-        const input = await partnerBookInput(req);
+        // 35.12 rule 6: `X-Supermortgage-Synthetic: true` marks every party the import writes (a fixture book); production refuses it
+        const syntheticBook = String(req.headers["x-supermortgage-synthetic"] ?? "").trim().toLowerCase() === "true";
+        if (syntheticBook && (runtime.environment === "production" || runtime.environment === "prod")) { done(409, { error: "synthetic_refused_in_production", code: "SYNTHETIC_REFUSED_IN_PRODUCTION", reason: "a synthetic partner book never loads in production (35.12 rule 6)" }); return; }
+        const input = { ...(await partnerBookInput(req)), ...(syntheticBook ? { synthetic: true } : {}) };
         const r = await importPartnerBook(runtime, input, { kind: "human", id: actorHeader || "ops", ...(req.headers["x-actor-role"] ? { role: String(req.headers["x-actor-role"]) } : { role: "ops_analyst" }) });
         done(200, r, { import: r.import_id, status: r.status, rows_total: r.rows_total, rows_loaded: r.rows_loaded, loans_created: r.loans_created, invitations_sent: r.invitations_sent }); return;
       }

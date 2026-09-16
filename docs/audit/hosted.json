@@ -1,13 +1,13 @@
 {
- "run_id": "12be7408-774e-4067-851c-d4d3b44c30f6",
+ "run_id": "0ebbf492-e797-4a4b-a730-704aec5469c7",
  "target": "probe",
- "database_name": "sm_s3511_int3_probe",
- "migration_head": "0231_seed_inventories.sql",
- "git_sha": "00928370c0f7b5fabd27d014e4a85d7dd9c35687",
+ "database_name": "sm_s3512_int2_probe",
+ "migration_head": "0242_staff_oidc_append_only.sql",
+ "git_sha": "0c836ca3c5eb7cd3d290ad80905261f1f7b3c9f4",
  "as_of_date": "2026-09-16",
- "tools_total": 1512,
- "executed": 358,
- "refused_typed": 1154,
+ "tools_total": 1550,
+ "executed": 363,
+ "refused_typed": 1187,
  "not_wired": 0,
  "errored": 0,
  "results": [
@@ -8658,6 +8658,84 @@
    "code": null
   },
   {
+   "process": "35.2",
+   "name": "documents.dispose",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "documents.hold",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "documents.open",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "documents.render",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "documents.store",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "documents.verify",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "esign.envelope.create",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "esign.envelope.send",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "esign.envelope.sign",
+   "status": "refused_typed",
+   "code": "NO_AGENT_SIGNS"
+  },
+  {
+   "process": "35.2",
+   "name": "esign.envelope.void",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "mail.batch",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "mail.fallback",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.2",
+   "name": "mail.manifest.ingest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
    "process": "35.3",
    "name": "cycles.escalate",
    "status": "refused_typed",
@@ -8710,6 +8788,72 @@
    "name": "writeDecision",
    "status": "executed",
    "code": null
+  },
+  {
+   "process": "35.4",
+   "name": "close.attest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "close.board",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.4",
+   "name": "close.open",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "close.plan",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.4",
+   "name": "close.reopen",
+   "status": "refused_typed",
+   "code": "OFFICER_REOPEN_ONLY"
+  },
+  {
+   "process": "35.4",
+   "name": "close.review",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "close.step.complete",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "close.step.skip",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.4",
+   "name": "close.step.start",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "close.tax_year",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.4",
+   "name": "writeDecision",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
   },
   {
    "process": "35.5",
@@ -9079,6 +9223,90 @@
   },
   {
    "process": "35.11",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.12",
+   "name": "backup.drill",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "data.scan",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.12",
+   "name": "go_live.attest",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "go_live.check",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.12",
+   "name": "integrations.status",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.12",
+   "name": "integrations.switch",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "parallel_run.close",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "parallel_run.disposition",
+   "status": "refused_typed",
+   "code": "DIFF_NOT_FOUND"
+  },
+  {
+   "process": "35.12",
+   "name": "parallel_run.open",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "parallel_run.reconcile",
+   "status": "refused_typed",
+   "code": "RUN_NOT_OPEN"
+  },
+  {
+   "process": "35.12",
+   "name": "posture.check",
+   "status": "refused_typed",
+   "code": "MANIFEST_NOT_FOUND"
+  },
+  {
+   "process": "35.12",
+   "name": "posture.drift.resolve",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.12",
+   "name": "posture.record",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.12",
    "name": "writeDecision",
    "status": "executed",
    "code": null

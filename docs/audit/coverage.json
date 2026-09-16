@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8213/8756 (93.8%): tids 2289/2458, tables 787/848, timers 2055/2097, notices 308/308, tools 1466/1578, figures 1308/1467; processes at 100%: 194/205",
+ "brief": "spec units built 8217/8756 (93.8%): tids 2293/2458, tables 787/848, timers 2055/2097, notices 308/308, tools 1466/1578, figures 1308/1467; processes at 100%: 195/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2289
+   "built": 2293
   },
   "tables": {
    "spec": 848,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8756,
-   "built": 8213
+   "built": 8217
   }
  },
  "sections": {
@@ -237,9 +237,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 189,
+   "built": 193,
    "processes": 12,
-   "done": 2
+   "done": 3
   }
  },
  "done": [
@@ -436,7 +436,8 @@
   "34.3",
   "34.4",
   "35.1",
-  "35.7"
+  "35.7",
+  "35.9"
  ],
  "processes": [
   {
@@ -9098,14 +9099,9 @@
    "title": "Default operations over time: cases progressed by the cycles and the screens \u2014 referral, milestones, docket reactions, executed breach actions, claims filed",
    "tids": {
     "spec": 17,
-    "built": 13,
-    "todo": 4,
-    "missing": [
-     9,
-     13,
-     14,
-     17
-    ]
+    "built": 17,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
@@ -9135,9 +9131,9 @@
    },
    "units": {
     "spec": 72,
-    "built": 68
+    "built": 72
    },
-   "pct": 94.4
+   "pct": 100.0
   },
   {
    "process": "35.10",

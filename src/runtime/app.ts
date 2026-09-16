@@ -48,7 +48,8 @@ import { CommandBus, type AgentRunInfo, type ExecuteResult } from "../app/comman
 import { EntityStore, type Ports, type ToolDef, type ToolInput, type ToolRuntime } from "../app/tools.ts";
 import { CaseFolder } from "../domain/operations-runtime/default-35-9/folder.ts";
 import { LAW_FIRM_ADAPTER, lawFirmAdapter, lawFirmCompletion } from "../domain/operations-runtime/default-35-9/firm.ts";
-import { breachReconPass } from "../domain/operations-runtime/default-35-9/sweep.ts";
+import { breachReconPass, dailyDue, defaultCaseDailyPass } from "../domain/operations-runtime/default-35-9/sweep.ts";
+import type { DailyRunReport } from "../domain/operations-runtime/default-35-9/daily-run.ts";
 import { ALL_TOOLS, bindTools, toolKey } from "../app/tools/index.ts";
 import { EscalationService, PgEscalationRepository } from "../app/escalations.ts";
 import { NoticeService, type Notice } from "../notices/service.ts";
@@ -130,6 +131,8 @@ export interface SweepReport {
   readonly at: string;
   /** 35.9 rule 7: the day's breach-action reconciliation (`breach.recon`), when the run reached it. */
   readonly breach_recon?: Record<string, unknown> | null;
+  /** 35.9 Trigger & frequency: the day's default cycles (daily-run.ts) — once per calendar day at/after 05:30 ET; `already: true` on a later sweep of the day; null when not due or failed. */
+  readonly default_case_daily?: DailyRunReport | null;
   readonly due: number;
   readonly breaches: readonly { loan_id: string | null; code: string; severity: number | null; escalate_to: readonly string[]; timer_id: string }[];
   readonly outbox: readonly { adapter: string; status: string; count: number }[];
@@ -166,6 +169,8 @@ export interface SweepReport {
 export interface SweepOptions {
   /** `false`: skip the daily verify pass (a test that lets SM_PROJECTION_LAG_DAILY breach). */
   readonly verify?: boolean;
+  /** `false`: skip 35.9's daily default pass (a test that lets SM_DEFAULT_CASE_DAILY breach, or drives the day's units by hand). */
+  readonly dailyCase?: boolean;
   readonly holder?: string;
 }
 /** The spec's schedule for the verify run: 06:00 America/New_York (35.1 "Trigger & frequency"). */
@@ -435,6 +440,10 @@ export class Runtime {
           } catch (e) { this.logger?.error("verify run failed", { at: nowIso, error: e }); await recordFailedRun(this.db, { as_of_date: asOfDate, started_at: nowIso, now: this.clock.now(), actor: { kind: "agent", id: "security-records" }, error: e instanceof Error ? e.message : String(e) }).catch(() => undefined); return null; }
         }, (v) => (v ? { run_id: v.run_id, gaps: v.gaps, mismatches: v.mismatches, rows_verified: v.rows_verified } : { failed: true }));
       }
+      // 35.9 Trigger & frequency: the day's default cycles once per calendar day at/after 05:30 ET (delinquency counters, docket sync, DRA import, the daily case unit, the claims sweep; the run row, the report, the receipt) — before the reconciliation and the breach pass, so a day whose run completed never breaches SM_DEFAULT_CASE_DAILY; errors logged, never thrown
+      const defaultCaseDaily = opts.dailyCase !== false && dailyDue(nowIso)
+        ? await logged("default_case.daily", () => defaultCaseDailyPass(this, nowIso, { runId }), () => null as DailyRunReport | null, (r) => (r ? { ran: !r.already, outcome: r.outcome, loans_scanned: r.loans_scanned } : { failed: true }))
+        : null;
       // 35.9 rule 7: the day's breach-action reconciliation, once per calendar day, before the breach pass (a day whose reconciliation ran never breaches SM_BREACH_ACTION_RECON_DAILY) — errors logged, never thrown
       const breachRecon = await logged("breach_action.recon", () => breachReconPass(this, nowIso, { runId }), () => null as Record<string, unknown> | null, (r) => (r ? { ran: r["already"] !== true, missing: r["missing"], failed: r["failed"] } : { failed: true }));
       // the breach pass: the due instances (any loan, or global) claimed FOR UPDATE SKIP LOCKED and restored into a fresh engine; evaluate breaches them and appends timer.breached under each timer's own loan — one transaction
@@ -486,7 +495,7 @@ export class Runtime {
       await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_completed", aggregate: { kind: "sweep_run", id: runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: runId, as_of_date: asOfDate, holder, duration_ms: durationMs, passes: passes.map((p) => p.name), due: due.length, breaches: breaches.length, outbox: outboxCounts } }),
         { clock: this.clock, commit: async (q) => { await q.query(`UPDATE sweep_runs SET outcome = 'completed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, outbox = $4::jsonb WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), JSON.stringify(outboxCounts)]); } });
       return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, roles, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls,
-        run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify, breach_recon: breachRecon };
+        run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify, breach_recon: breachRecon, default_case_daily: defaultCaseDaily };
     } catch (e) {
       await this.db.query(`UPDATE sweep_runs SET outcome = 'failed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, skipped_reason = $4 WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), (e instanceof Error ? e.message : String(e)).slice(0, 500)]).catch(() => undefined);
       throw e;

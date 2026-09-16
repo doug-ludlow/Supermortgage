@@ -21,7 +21,11 @@ import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import type { Actor, Clock } from "../../kernel/events/index.ts";
 import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
 import { plainDate as D, addDays, daysBetween, type PlainDate } from "../../kernel/calendar/date.ts";
-import { Runtime } from "../../runtime/app.ts";
+import { Runtime, type SweepReport } from "../../runtime/app.ts";
+import { OffsetClock, advanceDemoClock, planSteps } from "../../runtime/demo-clock.ts";
+import { originationDailySweep } from "../../runtime/origination.ts";
+import { servicingDailySweep } from "../../runtime/servicing.ts";
+import { delinquencyDailySweep } from "../../runtime/delinquency.ts";
 import { createLogger } from "../../runtime/log.ts";
 import type { EntityRecord } from "../../app/tools.ts";
 import { EV, TIMERS_35_9, ENGINE_ACTOR, EXAMPLE_A, EXAMPLE_B, EXAMPLE_C } from "./default-35-9.ts";
@@ -118,7 +122,8 @@ async function t1Fixture(): Promise<typeof T1> {
 }
 
 // ───────── the breach pass (rule 7): a referred case whose clock breaches, then the sweep ─────────
-const sweepAt = async (iso: string) => { clock.set(iso); const r = await runtime.sweep(iso); await settle(); return r; };
+// the shared book's sweeps run without the daily pass (`dailyCase: false`): these tests assert the breach pass alone, and the daily pass would progress every other test's fixture (T9/T13/T14/T17 open their own books)
+const sweepAt = async (iso: string) => { clock.set(iso); const r = await runtime.sweep(iso, { dailyCase: false }); await settle(); return r; };
 const actionOfTimer = (timerId: string) => rows<{ id: string; outcome: string; action_kind: string; registry_version: number | null; command_event_id: string | null; escalation_id: string | null; refusal_code: string | null; work_item_id: string | null }>(`SELECT id::text AS id, outcome, action_kind, registry_version, command_event_id::text AS command_event_id, escalation_id::text AS escalation_id, refusal_code, work_item_id::text AS work_item_id FROM breach_actions WHERE timer_id = $1::uuid`, [timerId]);
 const escalationsFor = (loanId: string) => rows<{ id: string; kind: string; owner_role: string; status: string; sla_timer_id: string | null; payload: Record<string, unknown> }>(`SELECT id::text AS id, kind, owner_role, status, sla_timer_id::text AS sla_timer_id, payload FROM escalations WHERE loan_id = $1::uuid ORDER BY opened_at`, [loanId]);
 
@@ -158,6 +163,75 @@ async function lbFixture(): Promise<typeof LB> {
   Object.assign(LB, { f, caseId, firmId, saleEventId: sale.id, ready: true });
   return LB;
 }
+
+// ───────── the daily pass (Trigger & frequency; rule 2): a fresh "book" per test — its own database, runtime and clock ─────────
+// T9, T13, T14 and T17 each need a book nobody else has touched (T13 counts the universe; T14 compares two runs of one fixture;
+// T17 boards one loan with no hand-fed state), so each opens its own database from the migrated template (test-db.ts `suffix`),
+// applies the neighbours' DDL and starts a Runtime whose clock it moves. The shared harness above keeps the sweep's daily pass
+// off (`dailyCase: false`) so the breach tests never progress another test's fixture.
+interface Book { readonly db: Db; readonly runtime: Runtime; readonly clock: MovableClock; readonly url: string; close(): Promise<void> }
+async function openBook(suffix: string, startIso: string): Promise<Book> {
+  const t = await testDatabase(import.meta.url, { suffix });
+  if (t.skip) throw new Error(t.skip);
+  const bdb = connect(t.url);
+  await bdb.query(NEIGHBOUR_DDL);
+  const bclock = new MovableClock(startIso);
+  const brt = new Runtime({ db: bdb, registry: loadOverriddenRegistry(), clock: bclock, logger, environment: "nonprod", env: { INTEGRATIONS: "fake" } as NodeJS.ProcessEnv, reviewers: null });
+  brt.caseFolder.start();
+  return { db: bdb, runtime: brt, clock: bclock, url: t.url, close: async () => { brt.caseFolder.stop(); await bdb.end(); await t.close(); } };
+}
+const bexec = (b: Book, process: string, name: string, loanId: string, actor: Actor, input: Record<string, unknown>) => b.runtime.execute({ process, name, loanId, actor, input });
+const brows = <T extends Record<string, unknown>>(b: Book, sql: string, params: unknown[] = []) => b.db.query<T>(sql, params);
+const bcount = (b: Book, sql: string, params: unknown[] = []) => count(b.db, sql, params);
+const brec = (b: Book, kind: string, id: string, data: Record<string, unknown>, by = "agent:foreclosure-ops"): EntityRecord => ({ kind, id, data, version: 1, updatedAt: b.clock.now(), updatedBy: by });
+async function bookLoan(b: Book, state: string, opts: { firstPaymentDate?: PlainDate; principalResidence?: boolean } = {}): Promise<Fixture> {
+  return new PgLoanRepository(b.db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: 25_000_000n, originalTermMonths: 360, firstPaymentDate: opts.firstPaymentDate ?? D("2021-09-01"), maturityDate: D("2051-08-01"), property: { line1: "1 Test St", city: "Testville", state, postalCode: "33101" } });
+}
+async function bookFirm(b: Book, state: string): Promise<string> {
+  const firmId = `firm-fake-${state.toLowerCase()}-${randomUUID().slice(0, 8)}`;
+  await b.runtime.entities.save([
+    brec(b, "attorney_firms", firmId, { firm_id: firmId, legal_name: `FAKE Law Firm ${state}`, status: "retained", eo_expires_on: "2030-12-31", offices: [{ state }], dra_attorney_role: "retained" }),
+    brec(b, "attorney_retentions", `${firmId}:${state}`, { firm_id: firmId, jurisdiction_state: state, form200_submitted_at: "2025-01-10", form200_response: "no_objection", form200_response_at: "2025-02-01", training_completed_at: "2025-02-15", lra_executed_at: "2025-03-01", retained_from: "2025-03-01", retained_to: null, suspended_from: null }),
+  ], null);
+  return firmId;
+}
+/** A foreclosure case at `prereferral`: the `cases` row (rule 2's universe) and 13.x's store row. `withCasesRow: false` seeds the store row only. */
+async function bookForeclosureCase(b: Book, f: Fixture, state: string, method: "judicial" | "non_judicial", extra: Record<string, unknown> = {}, withCasesRow = true): Promise<string> {
+  const caseId = withCasesRow
+    ? (await brows<{ id: string }>(b, `INSERT INTO cases (case_type, loan_id, status, owner_role, opened_at) VALUES ('foreclosure', $1::uuid, 'prereferral', 'foreclosure-ops', $2::timestamptz) RETURNING id::text AS id`, [f.loanId, b.clock.now()]))[0]!.id
+    : randomUUID();
+  await b.runtime.entities.save([brec(b, "foreclosure_cases", caseId, { case_id: caseId, loan_id: f.loanId, jurisdiction_state: state, method, status: "prereferral", principal_residence: true, foreclosing_party: "partner", ...extra })], f.loanId);
+  return caseId;
+}
+/** 13.3's referral through the bus, then (when `dispatch`) 35.9's `firm.dispatch{kind: referral_package}` to the FAKE firm — the outbox row the sweep drains. */
+async function bookReferral(b: Book, f: Fixture, caseId: string, firmId: string, dispatch: boolean): Promise<{ eventId: string; dispatchId: string | null }> {
+  const r = await bexec(b, "13.6", "attorney.message.send", f.loanId, FC_OPS, { op: "fc.send_referral", case_id: caseId, firm_id: firmId, day: 125, principal_residence: true, review_outcome: "refer", documents: [{ id: "note", sha256: sha("note") }, { id: "mortgage", sha256: sha("mortgage") }] });
+  const sent = r.events.find((e) => e.type === "foreclosure.referral.sent"); assert.ok(sent, "13.3 emitted foreclosure.referral.sent");
+  let dispatchId: string | null = null;
+  if (dispatch) { const d = (await bexec(b, "35.9", "firm.dispatch", f.loanId, FC_OPS, { loan_id: f.loanId, case_id: caseId, firm_id: firmId, kind: "referral_package", owning_event_id: sent.id })).output as { dispatch_id: string }; dispatchId = d.dispatch_id; }
+  await b.runtime.caseFolder.settle();
+  return { eventId: sent.id, dispatchId };
+}
+async function bookBankruptcyCase(b: Book, f: Fixture, caseNumber: string): Promise<string> {
+  const c = await brows<{ id: string }>(b, `INSERT INTO cases (case_type, loan_id, status, owner_role, opened_at) VALUES ('bankruptcy', $1::uuid, 'active', 'bankruptcy-ops', $2::timestamptz) RETURNING id::text AS id`, [f.loanId, b.clock.now()]);
+  const caseId = c[0]!.id;
+  await b.runtime.entities.save([brec(b, "bankruptcy_cases", caseId, { case_id: caseId, loan_id: f.loanId, case_number_full: caseNumber, court_id: "flmb", chapter: 13, petition_date: "2027-01-10", status: "active", stay_status: "in_effect", principal_residence: true }, "agent:bankruptcy-ops")], f.loanId);
+  return caseId;
+}
+/** 11.1's open early-intervention window as the counter leaves it (the `regx_ei_windows` row rule 2's universe reads). */
+async function bookEiWindow(b: Book, f: Fixture, dueDate: string): Promise<void> {
+  await b.db.query(`INSERT INTO regx_ei_windows (loan_id, due_date, principal_residence, live_due_at, notice_due_at, live_status, notice_status) VALUES ($1::uuid, $2::date, true, ($2::date + 36)::timestamptz, ($2::date + 45)::timestamptz, 'open', 'open')`, [f.loanId, dueDate]);
+}
+/** One sweep minute as the hosted runtime runs it (main.ts `sweep`: the runtime-level daily sweeps, then Runtime.sweep, then the folder settled). */
+async function hostedSweep(b: Book, iso: string): Promise<SweepReport> {
+  b.clock.set(iso);
+  await originationDailySweep(b.runtime, iso); await servicingDailySweep(b.runtime, iso); await delinquencyDailySweep(b.runtime, iso);
+  const r = await b.runtime.sweep(iso);
+  await b.runtime.caseFolder.settle();
+  return r;
+}
+const expectationRows = (b: Book) => brows<{ loan_id: string; milestone_code: string; status: string; expected_on: string; due_on: string; basis: string }>(b, `SELECT loan_id::text AS loan_id, milestone_code, status, expected_on::text AS expected_on, due_on::text AS due_on, basis FROM case_milestone_expectations ORDER BY loan_id, milestone_code, expected_on, status`);
+const timelineRows = (b: Book) => brows<{ loan_id: string; event_type: string; occurred_on: string; status_before: string | null; status_after: string | null; milestone_code: string | null; source: string }>(b, `SELECT loan_id::text AS loan_id, event_type, occurred_on::text AS occurred_on, status_before, status_after, milestone_code, source FROM case_timelines ORDER BY loan_id, event_sequence`);
 
 test("35.9-T1: Given a boarded loan whose 13.3 `foreclosure.referral.sent` was committed on 2027-03-02, when the seam's post-commit hook and then `case.progress` run, then exactly one `case_timelines` row exists for that event (`event_id` unique; the second fold writes nothing) with `case_kind = foreclosure`, `status_before = prereferral`, `status_after = referred`, and `case.timeline{loan_id}` returns the loan's rows in `event_sequence` order with the case's current status.", { skip }, async () => {
   const { f, caseId, eventId } = await t1Fixture();
@@ -482,7 +556,41 @@ test("35.9-T8: Given 13.1's gates open, a completed 13.4 review with outcome `re
   assert.equal(await count(db, `FROM firm_dispatches WHERE loan_id = $1::uuid`, [g.loanId]), 0);
 });
 
-test("35.9-T9: Given a referral dispatched on Mon 2027-03-01 to the FAKE firm with `first_legal` default 45 days, when the outbox drains and the sweep advances through Tue 2027-03-02, then `firm.inbound{kind: ack}` produced 13.3's `foreclosure.referral.acknowledged`, `firm_dispatches.acknowledged_at` is set with `ack_source = fake`, expectation `referral_ack` is `satisfied`, and expectation `first_legal` exists with `expected_on = 2027-04-15`, `due_on = 2027-04-18`, `basis = firm_forecast`.", { todo: true });
+test("35.9-T9: Given a referral dispatched on Mon 2027-03-01 to the FAKE firm with `first_legal` default 45 days, when the outbox drains and the sweep advances through Tue 2027-03-02, then `firm.inbound{kind: ack}` produced 13.3's `foreclosure.referral.acknowledged`, `firm_dispatches.acknowledged_at` is set with `ack_source = fake`, expectation `referral_ack` is `satisfied`, and expectation `first_legal` exists with `expected_on = 2027-04-15`, `due_on = 2027-04-18`, `basis = firm_forecast`.", { skip }, async () => {
+  // Mon 2027-03-01 10:00 ET: a FL judicial case referred (13.3) and dispatched to the FAKE firm (35.9 firm.dispatch → the outbox row on `law-firm`)
+  const b = await openBook("_t9", "2027-03-01T15:00:00.000Z");
+  try {
+    const f = await bookLoan(b, "FL"); const firmId = await bookFirm(b, "FL"); const caseId = await bookForeclosureCase(b, f, "FL", "judicial");
+    const { eventId, dispatchId } = await bookReferral(b, f, caseId, firmId, true);
+    const queued = await brows<{ status: string; adapter: string }>(b, `SELECT status, adapter FROM integration_messages WHERE id = (SELECT integration_message_id FROM firm_dispatches WHERE id = $1::uuid)`, [dispatchId]);
+    assert.equal(queued[0]!.adapter, "law-firm"); assert.equal(queued[0]!.status, "queued", "the dispatch waits for the drain");
+    // the expectations rule 4 writes on foreclosure.referral.sent: referral_ack (section clock) and first_legal from the jurisdiction default (45 days → 2027-04-15, due 04-18)
+    const before = await expectationRows(b);
+    assert.deepEqual(before.map((e) => [e.milestone_code, e.status, e.basis, e.expected_on, e.due_on]), [["first_legal", "expected", "jurisdiction_default", "2027-04-15", "2027-04-18"], ["referral_ack", "expected", "section_clock", "2027-03-03", "2027-03-03"]]);
+    // the sweep of Mon 2027-03-01 after 05:30 ET drains the outbox (the FAKE accepts the referral package) and runs the day's units: the ack is not due yet (1 servicer business day)
+    const day1 = await hostedSweep(b, "2027-03-01T15:05:00.000Z");
+    assert.equal(day1.outbox_dispatch?.sent, 1, "the drain delivered the referral package");
+    const sent = await brows<{ sent_at: string | null; acknowledged_at: string | null }>(b, `SELECT sent_at::text AS sent_at, acknowledged_at::text AS acknowledged_at FROM firm_dispatches WHERE id = $1::uuid`, [dispatchId]);
+    assert.ok(sent[0]!.sent_at, "sent_at stamped by the completion hook"); assert.equal(sent[0]!.acknowledged_at, null);
+    assert.equal(await bcount(b, `FROM loan_events WHERE type = 'foreclosure.referral.acknowledged' AND loan_id = $1::uuid`, [f.loanId]), 0);
+    // Tue 2027-03-02: the daily unit's firm step ingests the FAKE's ack (firm.inbound{kind: ack}) → 13.3's foreclosure.referral.acknowledged
+    const day2 = await hostedSweep(b, "2027-03-02T15:05:00.000Z");
+    assert.equal(day2.default_case_daily?.already, false); assert.equal(day2.default_case_daily?.outcome, "completed");
+    const inbound = await brows<{ payload: Record<string, unknown> }>(b, `SELECT payload FROM loan_events WHERE type = $1 AND loan_id = $2::uuid AND payload->>'kind' = 'ack'`, [EV.firmInboundReceived, f.loanId]);
+    assert.equal(inbound.length, 1, "firm.inbound{kind: ack} once"); assert.equal(inbound[0]!.payload["dispatch_id"], dispatchId);
+    const acked = await brows<{ id: string; actor_id: string; payload: Record<string, unknown> }>(b, `SELECT id::text AS id, actor_id, payload FROM loan_events WHERE type = 'foreclosure.referral.acknowledged' AND loan_id = $1::uuid`, [f.loanId]);
+    assert.equal(acked.length, 1, "13.3's foreclosure.referral.acknowledged"); assert.equal(inbound[0]!.payload["owning_event_id"], acked[0]!.id, "the owning event is 13.3's");
+    const d = (await brows<{ acknowledged_at: string | null; ack_source: string | null; ack_event_id: string | null; owning_event_id: string }>(b, `SELECT acknowledged_at::text AS acknowledged_at, ack_source, ack_event_id::text AS ack_event_id, owning_event_id::text AS owning_event_id FROM firm_dispatches WHERE id = $1::uuid`, [dispatchId]))[0]!;
+    assert.ok(d.acknowledged_at, "acknowledged_at set"); assert.equal(d.ack_source, "fake"); assert.equal(d.owning_event_id, eventId);
+    // referral_ack satisfied; first_legal now from the firm's forecast (basis firm_forecast, expected 2027-04-15 = referral + 45, due 04-18 = +3 calendar days), the default superseded
+    const after = await expectationRows(b);
+    const ack = after.filter((e) => e.milestone_code === "referral_ack"); assert.equal(ack.length, 1); assert.equal(ack[0]!.status, "satisfied");
+    const fl = after.filter((e) => e.milestone_code === "first_legal" && e.status === "expected");
+    assert.equal(fl.length, 1, "one open first_legal expectation"); assert.equal(fl[0]!.expected_on, "2027-04-15"); assert.equal(fl[0]!.due_on, "2027-04-18"); assert.equal(fl[0]!.basis, "firm_forecast");
+    assert.ok(after.some((e) => e.milestone_code === "first_legal" && e.basis === "jurisdiction_default" && e.status === "cancelled"), "the default expectation was superseded");
+  } finally { await b.close(); }
+});
+
 test("35.9-T10: Given expectation `first_legal` with `due_on = 2027-04-18` and no milestone recorded, when the daily unit runs on 2027-04-19, then its status is `due`, `case.milestone.due` is logged, one 35.8 `work_items` row exists with `source_kind = case_milestone`, `screen_code = foreclosure_case`, `required_role = attorney`, and `SM_CASE_MILESTONE_OVERDUE_5BD` is armed with `due_at` = 2027-04-18 + 5 servicer business days; when 13.3's `foreclosure.milestone.recorded{code: first_legal, source: dra}` is folded, then the expectation is `satisfied`, the item closes, the clock is satisfied and the next expectation is written.", { skip }, async () => {
   const { f, caseId, firmId } = await t1Fixture();
   // the expectation `first_legal` with due_on = 2027-04-18 (a firm forecast of 2027-04-15: due_on = expected_on + 3 calendar days, rule 4)
@@ -594,8 +702,118 @@ test("35.9-T12: Given a docket entry 14.1's classifier scores at 0.62, when `doc
   assert.ok(after.applied_at); assert.equal(after.updated_by, `human:${ATTY.id}`);
 });
 
-test("35.9-T13: Given the fixture book with three open foreclosure cases, one bankruptcy case, one claim candidate and two open early-intervention windows, when the sweep runs once after 05:30 ET, then 35.3's `cycle_runs` show `bk_docket_sync_daily`, `default_case_daily`, `claims_sweep_daily` and `dra_import_daily` for the day with receipts, one `default_case_daily_runs` row exists with `loans_scanned = 7`, `outcome = completed` and a stored report document, `default_case.daily.run_completed` and `breach_action.recon.run_completed` are logged once, and `SM_DEFAULT_CASE_DAILY` and `SM_BREACH_ACTION_RECON_DAILY` are re-armed for the next day; a second sweep the same day writes no second run (`as_of_date` unique).", { todo: true });
-test("35.9-T14: Given the demo clock advanced 30 days over the fixture, then one `default_case_daily_runs` row per crossed day exists in date order, every expectation whose `due_on` fell in the window was marked `due` on that day (its `case.milestone.due` carries that `as_of_date`), the FAKE firm's milestone reports were folded on their forecast dates, and the same rows are produced by 30 hosted sweeps on consecutive days (the contract test compares the two runs' `case_timelines` and `case_milestone_expectations` by `(case_id, milestone_code, status, expected_on, due_on)`).", { todo: true });
+test("35.9-T13: Given the fixture book with three open foreclosure cases, one bankruptcy case, one claim candidate and two open early-intervention windows, when the sweep runs once after 05:30 ET, then 35.3's `cycle_runs` show `bk_docket_sync_daily`, `default_case_daily`, `claims_sweep_daily` and `dra_import_daily` for the day with receipts, one `default_case_daily_runs` row exists with `loans_scanned = 7`, `outcome = completed` and a stored report document, `default_case.daily.run_completed` and `breach_action.recon.run_completed` are logged once, and `SM_DEFAULT_CASE_DAILY` and `SM_BREACH_ACTION_RECON_DAILY` are re-armed for the next day; a second sweep the same day writes no second run (`as_of_date` unique).", { skip }, async () => {
+  // the fixture book (Tue 2027-03-02): three open foreclosure cases, one bankruptcy case, one claim candidate on its own loan, two open early-intervention windows — seven loans
+  const b = await openBook("_t13", "2027-03-02T09:00:00.000Z");   // 04:00 ET
+  try {
+    const firm = await bookFirm(b, "FL");
+    const fc = [] as Fixture[];
+    for (const state of ["FL", "FL", "TX"] as const) { const f = await bookLoan(b, state); await bookForeclosureCase(b, f, state, state === "TX" ? "non_judicial" : "judicial"); fc.push(f); }
+    await bookReferral(b, fc[0]!, (await brows<{ id: string }>(b, `SELECT id::text AS id FROM cases WHERE loan_id = $1::uuid`, [fc[0]!.loanId]))[0]!.id, firm, true);
+    const bk = await bookLoan(b, "FL"); await bookBankruptcyCase(b, bk, "6:27-bk-01001");
+    // the claim candidate: a TX case whose sale 13.3 recorded (fc.sale_completed), the candidate as claims.sweep leaves it once packaged
+    const cl = await bookLoan(b, "TX"); const clCase = await bookForeclosureCase(b, cl, "TX", "non_judicial", { status: "sale_scheduled", lpi_due_date: "2026-06-01", sale_scheduled_at: "2027-02-16" }, false);
+    const sale = (await bexec(b, "13.6", "attorney.message.send", cl.loanId, FC_OPS, { op: "fc.sale_completed", case_id: clCase, sale_on: "2027-02-16", outcome: "fnma_acquired", confirmation_required: false })).events.find((e) => e.type === "foreclosure.sale.completed");
+    assert.ok(sale); await b.runtime.caseFolder.settle();
+    await b.db.query(`INSERT INTO claim_candidates (loan_id, case_id, claim_kind, milestone_event_id, milestone_kind, milestone_date, legal_due_on, package_due_on, status, opened_at, created_at, updated_at) VALUES ($1::uuid, $2::uuid, 'expense_571', $3::uuid, 'sale_completed', '2027-02-16', '2027-04-17', '2027-02-23', 'package_built', $4::timestamptz, $4::timestamptz, $4::timestamptz)`, [cl.loanId, caseUuid(clCase), sale.id, b.clock.now()]);
+    const ei = [await bookLoan(b, "AZ"), await bookLoan(b, "AZ")];
+    await bookEiWindow(b, ei[0]!, "2027-02-01"); await bookEiWindow(b, ei[1]!, "2027-02-01");
+    assert.equal(await bcount(b, `FROM cases WHERE closed_at IS NULL AND case_type = 'foreclosure'`), 3); assert.equal(await bcount(b, `FROM cases WHERE closed_at IS NULL AND case_type = 'bankruptcy'`), 1);
+    // a sweep before 05:30 ET runs no daily pass
+    const early = await hostedSweep(b, "2027-03-02T09:30:00.000Z");
+    assert.equal(early.default_case_daily, null, "not due before 05:30 ET"); assert.equal(await bcount(b, `FROM default_case_daily_runs`), 0);
+    // the sweep once after 05:30 ET
+    const r = await hostedSweep(b, "2027-03-02T10:45:00.000Z");   // 05:45 ET
+    assert.ok(r.default_case_daily, "the daily pass ran"); assert.equal(r.default_case_daily!.already, false); assert.equal(r.default_case_daily!.outcome, "completed", JSON.stringify(r.default_case_daily!.cycles.flatMap((c) => c.units.filter((u) => u.outcome.status === "failed"))));
+    assert.ok(r.passes.some((p) => p.name === "default_case.daily"), "logged as a pass"); assert.ok(r.passes.findIndex((p) => p.name === "default_case.daily") < r.passes.findIndex((p) => p.name === "timers.breach"), "before the breach pass");
+    // 35.3's cycle_runs for the day with receipts
+    const runs = await brows<{ cycle_code: string; period_key: string; status: string; units_total: number; units_done: number; receipts: string }>(b, `SELECT r.cycle_code, r.period_key, r.status, r.units_total, r.units_done, count(c.id)::text AS receipts FROM cycle_runs r LEFT JOIN cycle_receipts c ON c.run_id = r.id WHERE r.as_of_date = '2027-03-02' GROUP BY r.id ORDER BY r.cycle_code`);
+    for (const code of ["bk_docket_sync_daily", "default_case_daily", "claims_sweep_daily", "dra_import_daily"]) {
+      const run = runs.find((x) => x.cycle_code === code); assert.ok(run, `cycle_runs has ${code}`);
+      assert.equal(run.period_key, "2027-03-02"); assert.equal(run.status, "completed"); assert.equal(run.receipts, "1", `${code} has its receipt`);
+    }
+    assert.equal(runs.find((x) => x.cycle_code === "default_case_daily")!.units_done, 7); assert.equal(runs.find((x) => x.cycle_code === "bk_docket_sync_daily")!.units_total, 1);
+    for (const [code, ev] of [["bk_docket_sync_daily", EV.docketSyncRunCompleted], ["claims_sweep_daily", EV.claimsSweepRunCompleted], ["dra_import_daily", EV.draImportRunCompleted], ["delinquency_counters", EV.countersRunCompleted]] as const)
+      assert.equal(await bcount(b, `FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2027-03-02'`, [ev]), 1, `${code} elected its receipt ${ev}`);
+    // one default_case_daily_runs row: loans_scanned 7, completed, the stored report
+    const rows13 = await brows<{ loans_scanned: number; outcome: string; report_document_id: string | null; receipt_event_id: string | null; cycle_run_ids: string[] }>(b, `SELECT loans_scanned, outcome, report_document_id::text AS report_document_id, receipt_event_id::text AS receipt_event_id, cycle_run_ids::text[] AS cycle_run_ids FROM default_case_daily_runs`);
+    assert.equal(rows13.length, 1); assert.equal(rows13[0]!.loans_scanned, 7); assert.equal(rows13[0]!.outcome, "completed"); assert.equal(rows13[0]!.cycle_run_ids.length, 5);
+    const doc = await brows<{ kind: string; retention_class: string; byte_size: number; sha256: string }>(b, `SELECT kind, retention_class::text AS retention_class, byte_size, sha256 FROM documents WHERE id = $1::uuid`, [rows13[0]!.report_document_id]);
+    assert.equal(doc.length, 1, "a stored report document"); assert.equal(doc[0]!.kind, "default_case_daily_report"); assert.equal(doc[0]!.retention_class, "corporate_7y"); assert.ok(doc[0]!.byte_size > 0);
+    // the receipts, once each; the two global clocks re-armed for the next day
+    assert.equal(await bcount(b, `FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2027-03-02'`, [EV.dailyRunCompleted]), 1);
+    assert.equal(await bcount(b, `FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2027-03-02'`, [EV.breachReconCompleted]), 1);
+    assert.equal((await brows<{ id: string }>(b, `SELECT id::text AS id FROM loan_events WHERE id = $1::uuid AND type = $2`, [rows13[0]!.receipt_event_id, EV.dailyRunCompleted])).length, 1, "the run row points at its receipt");
+    for (const code of [TIMERS_35_9.daily, TIMERS_35_9.recon]) {
+      const armed = await brows<{ due_date: string; subject_kind: string }>(b, `SELECT due_date::text AS due_date, subject_kind::text AS subject_kind FROM timers WHERE code = $1 AND status = 'armed'`, [code]);
+      assert.equal(armed.length, 1, `${code} armed`); assert.equal(armed[0]!.due_date, "2027-03-03", `${code} re-armed for the next day`); assert.equal(armed[0]!.subject_kind, "global");
+    }
+    // a second sweep the same day writes no second run (as_of_date unique)
+    const again = await hostedSweep(b, "2027-03-02T12:00:00.000Z");
+    assert.equal(again.default_case_daily?.already, true);
+    assert.equal(await bcount(b, `FROM default_case_daily_runs`), 1); assert.equal(await bcount(b, `FROM loan_events WHERE type = $1`, [EV.dailyRunCompleted]), 1);
+    assert.equal(await bcount(b, `FROM cycle_runs WHERE as_of_date = '2027-03-02'`), 5, "no second cycle run either");
+  } finally { await b.close(); }
+});
+
+test("35.9-T14: Given the demo clock advanced 30 days over the fixture, then one `default_case_daily_runs` row per crossed day exists in date order, every expectation whose `due_on` fell in the window was marked `due` on that day (its `case.milestone.due` carries that `as_of_date`), the FAKE firm's milestone reports were folded on their forecast dates, and the same rows are produced by 30 hosted sweeps on consecutive days (the contract test compares the two runs' `case_timelines` and `case_milestone_expectations` by `(case_id, milestone_code, status, expected_on, due_on)`).", { skip }, async () => {
+  // one fixture, two books: case A (FL judicial) referred Wed 2027-02-10 and dispatched to the FAKE firm (its FIRST_LEGAL report falls on 2027-03-27, inside the window);
+  // case B (FL judicial) referred the same day and never dispatched (its default first_legal expectation, expected 03-27 / due 03-30, falls due inside the window and nobody reports it)
+  const START = "2027-03-02T15:00:00.000Z", END = "2027-04-01T15:00:00.000Z";   // Tue 2027-03-02 10:00 ET → Thu 2027-04-01 11:00 ET: 30 crossed days
+  async function fixture(b: Book): Promise<Record<string, string>> {
+    b.clock.set("2027-02-10T15:00:00.000Z");
+    const firm = await bookFirm(b, "FL"); const labels: Record<string, string> = {};
+    const a = await bookLoan(b, "FL"); const ca = await bookForeclosureCase(b, a, "FL", "judicial"); await bookReferral(b, a, ca, firm, true); labels[a.loanId] = "A";
+    const bb = await bookLoan(b, "FL"); const cb = await bookForeclosureCase(b, bb, "FL", "judicial"); await bookReferral(b, bb, cb, firm, false); labels[bb.loanId] = "B";
+    b.clock.set(START);
+    return labels;
+  }
+  const demo = await openBook("_t14_demo", START); const hosted = await openBook("_t14_hosted", START);
+  try {
+    const labelsDemo = await fixture(demo); const labelsHosted = await fixture(hosted);
+    // the demo clock advanced 30 days (src/runtime/demo-clock.ts: one sweep minute per crossed day at noon ET, then the target)
+    const offset = new OffsetClock(demo.clock);
+    const demoRt = new Runtime({ db: demo.db, registry: loadOverriddenRegistry(), clock: offset, logger, environment: "nonprod", env: { INTEGRATIONS: "fake" } as NodeJS.ProcessEnv, reviewers: null });
+    demoRt.caseFolder.start();
+    const adv = await advanceDemoClock({ runtime: demoRt, clock: offset, actor: "human:test" }, { to: END, budget_ms: 600_000 });
+    await demoRt.caseFolder.settle(); demoRt.caseFolder.stop();
+    assert.equal(adv.complete, true); assert.equal(adv.days_crossed, 30); assert.equal(adv.steps.length, 30);
+    // one default_case_daily_runs row per crossed day, in date order
+    const runs = await brows<{ as_of_date: string; outcome: string }>(demo, `SELECT as_of_date::text AS as_of_date, outcome FROM default_case_daily_runs ORDER BY created_at`);
+    assert.equal(runs.length, 30, "one run per crossed day");
+    assert.deepEqual(runs.map((r) => r.as_of_date), Array.from({ length: 30 }, (_, i) => addDays(D("2027-03-03"), i)), "in date order, 2027-03-03 … 2027-04-01");
+    assert.ok(runs.every((r) => r.outcome === "completed"), `every run completed (${runs.filter((r) => r.outcome !== "completed").map((r) => `${r.as_of_date}:${r.outcome}`).join(",")})`);
+    // every expectation whose due_on fell in the window was marked due on the day the unit found it past due (due_on + 1: rule 4 marks `due_on < as_of_date`), its case.milestone.due carrying that as_of_date
+    const exps = await expectationRows(demo);
+    const inWindow = exps.filter((e) => e.due_on >= "2027-03-02" && e.due_on < "2027-04-01" && e.status !== "cancelled" && e.status !== "satisfied");
+    assert.ok(inWindow.length >= 1, "at least one expectation fell due in the window (case B's first_legal)");
+    for (const e of inWindow) {
+      assert.equal(e.status, "due", `${labelsDemo[e.loan_id]} ${e.milestone_code} is due`);
+      const dueEv = await brows<{ payload: Record<string, unknown> }>(demo, `SELECT payload FROM loan_events WHERE type = $1 AND loan_id = $2::uuid AND payload->>'milestone_code' = $3`, [EV.milestoneDue, e.loan_id, e.milestone_code]);
+      assert.equal(dueEv.length, 1); assert.equal(dueEv[0]!.payload["as_of_date"], addDays(D(e.due_on), 1), `marked on the day after ${e.due_on}`); assert.equal(dueEv[0]!.payload["due_on"], e.due_on);
+    }
+    const bFirst = exps.find((e) => labelsDemo[e.loan_id] === "B" && e.milestone_code === "first_legal" && e.status === "due");
+    assert.ok(bFirst, "case B's first_legal (jurisdiction default, due 2027-03-30) is due"); assert.equal(bFirst.due_on, "2027-03-30");
+    // the FAKE firm's reports folded on their forecast dates: case A's ack on Thu 02-11 (ingested on the first run, the ack's own date kept by 13.3) and FIRST_LEGAL on 2027-03-27
+    const aLoan = Object.keys(labelsDemo).find((k) => labelsDemo[k] === "A")!;
+    const tl = (await timelineRows(demo)).filter((r) => r.loan_id === aLoan);
+    const fl = tl.filter((r) => r.event_type === "foreclosure.milestone.recorded");
+    assert.equal(fl.length, 1, "FIRST_LEGAL recorded once"); assert.equal(fl[0]!.occurred_on, "2027-03-27", "on its forecast date"); assert.equal(fl[0]!.source, "firm");
+    assert.ok(tl.some((r) => r.event_type === "foreclosure.referral.acknowledged"), "the ack folded");
+    const aExp = exps.filter((e) => e.loan_id === aLoan);
+    assert.ok(aExp.some((e) => e.milestone_code === "first_legal" && e.status === "satisfied" && e.basis === "firm_forecast"), "case A's first_legal satisfied by the firm's report");
+    assert.ok(aExp.some((e) => e.milestone_code === "service_complete" && e.status === "expected"), "the next expectation written");
+    // 30 hosted sweeps on consecutive days at the same instants produce the same rows
+    for (const step of planSteps(START, END)) await hostedSweep(hosted, step.at);
+    const relabel = <T extends { loan_id: string }>(rows: T[], labels: Record<string, string>) => rows.map(({ loan_id, ...rest }) => ({ loan: labels[loan_id], ...rest }));
+    const key = (rows: Record<string, unknown>[]) => rows.map((r) => JSON.stringify(r)).sort();
+    assert.deepEqual(key(relabel(await expectationRows(hosted), labelsHosted)), key(relabel(exps, labelsDemo)), "case_milestone_expectations by (case, milestone_code, status, expected_on, due_on)");
+    const strip = (rows: Awaited<ReturnType<typeof timelineRows>>, labels: Record<string, string>) => relabel(rows, labels).map((r) => ({ loan: r.loan, event_type: r.event_type, occurred_on: r.occurred_on, status_before: r.status_before, status_after: r.status_after, milestone_code: r.milestone_code, source: r.source }));
+    assert.deepEqual(key(strip(await timelineRows(hosted), labelsHosted)), key(strip(await timelineRows(demo), labelsDemo)), "case_timelines agree");
+    assert.equal(await bcount(hosted, `FROM default_case_daily_runs`), 30);
+  } finally { await demo.close(); await hosted.close(); }
+});
+
 test("35.9-T15: Given any command of this process, then the ledger and every money column of the sections' rows before and after are identical (contract test over `ledger_lines`, `advances`, `expense_claims`, `mi_claims`, `comp_fee_bills`), an input carrying `amount_cents`, `benefit_cents` or `exposure_cents` is refused `NO_MONEY_FIELD`, an attempt to register a `breach_action_registry` row whose `action_kind` the `cited_text` does not name is refused `ACTION_MATCHES_CITED_TEXT`, and a `compliance` registration without `officer` confirmation is refused.", { skip }, async () => {
   // the contract: the ledger and every money column of the sections' rows are identical before and after each 35.9 command
   clock.set("2027-07-01T15:00:00.000Z");
@@ -687,4 +905,55 @@ test("35.9-T16: Given the timeline of loan L-A at any point, then no row of this
   Object.assign(LA, { f, caseId, firmId });
 });
 
-test("35.9-T17: Given loan L-B boarded on the hosted runtime with 35.5's `loan_installments` (the installment due 2026-10-01 left `due`), a `loan_servicing_configs.time_zone` of America/Phoenix, no `regx_ei_windows` row and no hand-fed state, when the demo clock advances from 2026-10-01 to 2026-11-06 with 35.3 planning `delinquency_counters` after `cashiering_daily` each day, then `cycle_runs` holds one `delinquency_counters` run per crossed day with `period_key` equal to that day and a `cycle_receipts` row each, 11.1's `loan.delinquency.window_opened{due_date: \"2026-10-01\"}` is on L-B's log exactly once with the counter's actor `{agent, default-collections}` (delinquency.ts:26), a `regx_ei_windows` row is open for it, `REGX_1024_39A_LIVE_CONTACT_36` is armed on that window with `due_at` on the 36th day of delinquency as 11.1's row computes it in the loan's zone, `loan.delinquency.day_reached` is logged for each 11.1 milestone on the loan-local date, `default_case_daily` selected L-B from the open window on the day it opened, and running the same day's unit twice adds no event (35.3 rule 3).", { todo: true });
+test("35.9-T17: Given loan L-B boarded on the hosted runtime with 35.5's `loan_installments` (the installment due 2026-10-01 left `due`), a `loan_servicing_configs.time_zone` of America/Phoenix, no `regx_ei_windows` row and no hand-fed state, when the demo clock advances from 2026-10-01 to 2026-11-06 with 35.3 planning `delinquency_counters` after `cashiering_daily` each day, then `cycle_runs` holds one `delinquency_counters` run per crossed day with `period_key` equal to that day and a `cycle_receipts` row each, 11.1's `loan.delinquency.window_opened{due_date: \"2026-10-01\"}` is on L-B's log exactly once with the counter's actor `{agent, default-collections}` (delinquency.ts:26), a `regx_ei_windows` row is open for it, `REGX_1024_39A_LIVE_CONTACT_36` is armed on that window with `due_at` on the 36th day of delinquency as 11.1's row computes it in the loan's zone, `loan.delinquency.day_reached` is logged for each 11.1 milestone on the loan-local date, `default_case_daily` selected L-B from the open window on the day it opened, and running the same day's unit twice adds no event (35.3 rule 3).", { skip }, async () => {
+  // loan L-B boarded on the hosted runtime: 35.5's installment due 2026-10-01 left `due`, a Phoenix servicing config, no regx_ei_windows row, nothing hand-fed
+  const b = await openBook("_t17", "2026-10-01T16:00:00.000Z");   // Thu 2026-10-01 12:00 ET / 09:00 Phoenix
+  try {
+    const lb = await bookLoan(b, "TX", { firstPaymentDate: D("2026-10-01") });
+    await b.db.query(`INSERT INTO loan_installments (loan_id, due_date, pi_cents, interest_cents, principal_cents, escrow_cents, status) VALUES ($1::uuid, '2026-10-01', 161234, 134502, 26732, 43278, 'due')`, [lb.loanId]);
+    await b.db.query(`INSERT INTO loan_servicing_configs (loan_id, effective_from, time_zone, time_zone_source, jurisdiction_state) VALUES ($1::uuid, '2026-01-01', 'America/Phoenix', 'state_default', 'TX')`, [lb.loanId]);
+    assert.equal(await bcount(b, `FROM regx_ei_windows WHERE loan_id = $1::uuid`, [lb.loanId]), 0);
+    // the demo clock advances 2026-10-01 → 2026-11-06 (36 crossed days; each step's sweep plans delinquency_counters before default_case_daily)
+    const offset = new OffsetClock(b.clock);
+    const rt = new Runtime({ db: b.db, registry: loadOverriddenRegistry(), clock: offset, logger, environment: "nonprod", env: { INTEGRATIONS: "fake" } as NodeJS.ProcessEnv, reviewers: null });
+    rt.caseFolder.start();
+    const adv = await advanceDemoClock({ runtime: rt, clock: offset, actor: "human:test" }, { to: "2026-11-06T20:00:00.000Z", budget_ms: 600_000 });   // 13:00 Phoenix on day 36
+    await rt.caseFolder.settle();
+    assert.equal(adv.complete, true); assert.equal(adv.days_crossed, 36);
+    // cycle_runs: one delinquency_counters run per crossed day, period_key = the day, a cycle_receipts row each
+    const runs = await brows<{ period_key: string; as_of_date: string; status: string; receipts: string }>(b, `SELECT r.period_key, r.as_of_date::text AS as_of_date, r.status, count(c.id)::text AS receipts FROM cycle_runs r LEFT JOIN cycle_receipts c ON c.run_id = r.id WHERE r.cycle_code = 'delinquency_counters' GROUP BY r.id ORDER BY r.as_of_date`);
+    assert.equal(runs.length, 36, "one run per crossed day");
+    assert.deepEqual(runs.map((r) => r.period_key), Array.from({ length: 36 }, (_, i) => addDays(D("2026-10-02"), i)));
+    assert.ok(runs.every((r) => r.period_key === r.as_of_date && r.status === "completed" && r.receipts === "1"), "period_key = the day, completed, one receipt each");
+    assert.equal(await bcount(b, `FROM loan_events WHERE type = $1`, [EV.countersRunCompleted]), 36);
+    // 11.1's window opened exactly once, by the counter's actor
+    const opened = await brows<{ actor_kind: string; actor_id: string; payload: Record<string, unknown>; occurred_at: string }>(b, `SELECT actor_kind, actor_id, payload, occurred_at::text AS occurred_at FROM loan_events WHERE type = 'loan.delinquency.window_opened' AND loan_id = $1::uuid`, [lb.loanId]);
+    assert.equal(opened.length, 1, "window_opened once"); assert.equal(opened[0]!.payload["due_date"], "2026-10-01"); assert.equal(opened[0]!.actor_kind, "agent"); assert.equal(opened[0]!.actor_id, "default-collections");
+    const win = await brows<{ live_status: string; due_date: string; live_due_at: string }>(b, `SELECT live_status, due_date::text AS due_date, live_due_at::text AS live_due_at FROM regx_ei_windows WHERE loan_id = $1::uuid`, [lb.loanId]);
+    assert.equal(win.length, 1); assert.equal(win[0]!.live_status, "open"); assert.equal(win[0]!.due_date, "2026-10-01");
+    // REGX_1024_39A_LIVE_CONTACT_36 armed on the window, due on the 36th day of delinquency (2026-11-06) as 11.1's row computes it
+    const live = await brows<{ status: string; due_date: string; anchor_date: string; due_at: string }>(b, `SELECT status::text AS status, due_date::text AS due_date, anchor_date::text AS anchor_date, due_at::text AS due_at FROM timers WHERE code = 'REGX_1024_39A_LIVE_CONTACT_36' AND loan_id = $1::uuid`, [lb.loanId]);
+    assert.equal(live.length, 1, "one live-contact clock"); assert.equal(live[0]!.anchor_date, "2026-10-01"); assert.equal(live[0]!.due_date, "2026-11-06"); assert.equal(live[0]!.status, "armed", "still armed at 13:00 Phoenix on day 36");
+    // loan.delinquency.day_reached for each 11.1 milestone in the window, on the loan-local date
+    const reached = await brows<{ payload: Record<string, unknown> }>(b, `SELECT payload FROM loan_events WHERE type = 'loan.delinquency.day_reached' AND loan_id = $1::uuid ORDER BY sequence`, [lb.loanId]);
+    assert.deepEqual(reached.map((r) => [Number(r.payload["day"]), r.payload["on"]]), [[16, "2026-10-17"], [20, "2026-10-21"], [30, "2026-10-31"], [36, "2026-11-06"]]);
+    assert.equal(await bcount(b, `FROM loan_events WHERE type = 'delinquency.counters.updated' AND loan_id = $1::uuid AND payload->>'on' = '2026-11-06'`, [lb.loanId]), 1, "13.1's counters once for the day (35.3 rule 3)");
+    // default_case_daily selected L-B from the open window on the day it opened (its unit's decision record on 2026-10-02)
+    const selected = await brows<{ subject_id: string }>(b, `SELECT subject_id FROM agent_decisions WHERE loan_id = $1::uuid AND action = 'case.progress' AND subject_id = '2026-10-02'`, [lb.loanId]);
+    assert.equal(selected.length, 1, "case.progress ran for L-B on 2026-10-02");
+    assert.equal(await bcount(b, `FROM agent_decisions WHERE loan_id = $1::uuid AND action = 'case.progress' AND subject_id = '2026-10-01'`, [lb.loanId]), 0, "not before the window opened");
+    // running the same day's unit twice adds no event (35.3 rule 3): the counters unit and the daily unit for 2026-11-06 again
+    const domainEvents = () => bcount(b, `FROM loan_events WHERE loan_id = $1::uuid AND type NOT LIKE 'command.%'`, [lb.loanId]);
+    const before = await domainEvents();
+    const again = await delinquencyDailySweep(rt, "2026-11-06T20:30:00.000Z", [lb.loanId], { oncePerDay: true });
+    assert.deepEqual(again.skipped, [{ loan_id: lb.loanId, reason: "already_ran_today" }]);
+    await bexec(b, "35.9", "case.progress", lb.loanId, OPS, { loan_id: lb.loanId, as_of_date: "2026-11-06" });
+    await rt.caseFolder.settle();
+    const middle = await domainEvents();
+    await bexec(b, "35.9", "case.progress", lb.loanId, OPS, { loan_id: lb.loanId, as_of_date: "2026-11-06" });
+    await rt.caseFolder.settle();
+    assert.equal(await domainEvents(), middle, "the second run of the day's unit adds no event"); assert.equal(middle, before, "nor did the first re-run");
+    rt.caseFolder.stop();
+  } finally { await b.close(); }
+});
+

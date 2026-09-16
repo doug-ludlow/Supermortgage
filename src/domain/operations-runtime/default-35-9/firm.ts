@@ -86,7 +86,7 @@ export const lawFirmCompletion: OutboxCompletion = async (io, message) => {
 };
 
 export async function dispatchesOf(qx: Queryable, loanId: string): Promise<DispatchRow[]> { return qx.query<DispatchRow>(`SELECT ${SEL} FROM firm_dispatches WHERE loan_id = $1::uuid ORDER BY created_at, id`, [loanId]); }
-const messagePayload = async (qx: Queryable, d: DispatchRow): Promise<FirmDispatchMessage | null> => {
+export const messagePayload = async (qx: Queryable, d: DispatchRow): Promise<FirmDispatchMessage | null> => {
   if (!d.integration_message_id) return null;
   const m = (await qx.query<{ payload_summary: Row }>(`SELECT payload_summary FROM integration_messages WHERE id = $1::uuid`, [d.integration_message_id]))[0];
   const inner = (m?.payload_summary["payload"] as { args?: unknown[] } | undefined)?.args?.[0];
@@ -128,7 +128,8 @@ export async function firmInbound(i: ToolInput, ctx: CommandContext, rt: ToolRun
     case "ack": {
       const referralId = String(p["referral_id"] ?? "") || rt.store.list("attorney_referrals", (d) => d["case_id"] === caseRef).at(-1)?.id || `ref-${caseRef}-${String(p["referral_sent_on"] ?? "")}`;
       const r = await delegate(rt, ctx, "13.2", "attorney.instruction.status", { ...base, kind: "ACK", referral_id: referralId, complete: p["complete"] !== false, missing: Array.isArray(p["missing"]) ? p["missing"] : [], acknowledged_on: String(p["acknowledged_on"] ?? ctx.now.slice(0, 10)) });
-      owning = r.event_id;
+      // the owning event is 13.3's `foreclosure.referral.acknowledged` (the ingest also appends 13.6's `firm.referral.acknowledged` first)
+      owning = ctx.events.all().filter((e) => e.loanId === loanId && e.type === "foreclosure.referral.acknowledged").at(-1)?.id ?? r.event_id;
       const forecast = typeof p["forecast_first_legal_on"] === "string" ? p["forecast_first_legal_on"] : null;
       if (forecast && caseRef) {
         const fc = rt.store.get("foreclosure_cases", caseRef) ?? null;

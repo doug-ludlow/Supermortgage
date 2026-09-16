@@ -29,7 +29,7 @@ export const LEGAL_CLOCKS: Readonly<Record<ClaimKind, readonly string[]>> = {
   delinquency_advance_4828: [],
 };
 /** The timeline events that are liquidation / completion milestones, as 15.2's `milestoneReached` spells the producing event. */
-const MILESTONE_OF_EVENT: Readonly<Record<string, { event_type: string; kind: string; liquidation_type: string | null }>> = {
+export const MILESTONE_OF_EVENT: Readonly<Record<string, { event_type: string; kind: string; liquidation_type: string | null }>> = {
   "foreclosure.sale.held": { event_type: "foreclosure.sale.held", kind: "foreclosure_sale", liquidation_type: "fcl_fnma" },
   "foreclosure.sale.completed": { event_type: "foreclosure.sale.held", kind: "foreclosure_sale", liquidation_type: "fcl_fnma" },
   "workout_plan.completed": { event_type: "lossmit.modification.completed", kind: "workout_completed", liquidation_type: null },

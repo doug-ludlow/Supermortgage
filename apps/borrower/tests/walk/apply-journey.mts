@@ -86,7 +86,7 @@ export async function goal(page: Page, intent: "buy" | "refi", occupancy: "My pr
 export type PropertyPlan =
   | { kind: "address"; address: string; state: string; price: string; down: string }
   | { kind: "shopping"; state: string; low: string; high: string; down: string; firstTime: "Yes" | "No" }
-  | { kind: "refi"; address: string; state: string; worth: string; balance: string; cashOut?: string };
+  | { kind: "refi"; address: string; state: string; worth: string; balance: string; cashOut?: string; /** DELTA-37: what the cash is for, by its option label (`apply.property.cash_out_purpose`); only on a cash-out */ cashOutPurpose?: string };
 
 /** The property screen for the three branches (docs/ux/18 §2.2–2.4): the fields, the goal card's consents statement above Continue, Continue → you. */
 export async function property(page: Page, plan: PropertyPlan, o: DriveOptions = {}): Promise<StepRecord & { consents: string; shoppingSwitch: number }> {
@@ -98,7 +98,7 @@ export async function property(page: Page, plan: PropertyPlan, o: DriveOptions =
   } else {
     await fill(page, "Property address", plan.address); await fill(page, "State", plan.state);
     if (plan.kind === "address") { await fill(page, "Price", plan.price); await fill(page, "Down payment", plan.down); }
-    else { await fill(page, "About what is it worth?", plan.worth); await fill(page, "Current balance", plan.balance); if (plan.cashOut !== undefined) await fill(page, "Cash out", plan.cashOut); }
+    else { await fill(page, "About what is it worth?", plan.worth); await fill(page, "Current balance", plan.balance); if (plan.cashOut !== undefined) await fill(page, "Cash out", plan.cashOut); if (plan.cashOutPurpose !== undefined) await pick(page, "What the cash is for", plan.cashOutPurpose); }
     await pick(page, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(page, "Is there a PACE or clean-energy loan on the home?", "No");
   }
   const consentsEl = page.locator('[data-testid="apply-consents"]').first();

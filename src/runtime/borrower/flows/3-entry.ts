@@ -124,6 +124,8 @@ const isTbd = (ctx: Ctx): boolean => !ctx.property?.address_line1 && !intakeAddr
 /** A refi-trigger lead (20.1/20.2 → 20.3's own consents, prequalification and conversion) arrives with its E1–E6 done by the owning process; this flow's asks are for the leads that open their application here (organic / referral). */
 const asksHere = (ctx: Ctx): boolean => ctx.app?.channel !== "refi_trigger";
 const isPurchase = (ctx: Ctx): boolean => ctx.app?.transaction_type === "purchase";
+/** DELTA-37: a cash-out refinance — the applications row (setGoal's deferred UPDATE) or 21.1's intake record (setGoal's captureField{credit_request}), whichever already says so. */
+const isCashOut = (ctx: Ctx): boolean => ctx.app?.transaction_type === "cash_out" || (ctx.store.get("applications", ctx.appId)?.data as P | undefined)?.["transaction_type"] === "cash_out";
 const leadId = (ctx: Ctx): string | null => (ctx.lead ? String(ctx.lead["lead_id"]) : null);
 
 // ---------------------------------------------------------------- card and thread primitives (32.1's tools as the intake agent; idempotent on `flow_key`)
@@ -338,6 +340,8 @@ async function duMoment(deps: FlowDeps, ctx: Ctx): Promise<void> {
 const GAP_DECLARATION = /\/ROLES\/ROLE\/BORROWER\/DECLARATION\//;
 const GAP_RESIDENCE = /\/ROLES\/ROLE\/BORROWER\/RESIDENCES\//;
 const GAP_HOME = /\/SUBJECT_PROPERTY\/PROPERTY_DETAIL\/(?:PropertyEstateType|PropertyExistingCleanEnergyLienIndicator)$/;
+/** DELTA-37: the cash-out purpose (conditional on RefinanceCashOutDeterminationType = CashOut) — the amount card asks it, so its gap re-sends that card. */
+const GAP_PURPOSE = /\/LOANS\/LOAN\/REFINANCE\/RefinancePrimaryPurposeType$/;
 const PARTY_INDEX = /\/PARTIES\/PARTY(?:\[(\d+)\])?\//;
 const BORROWING_ROLES = `('borrower', 'co_borrower', 'non_occupant_co_borrower')`;
 interface Gap { readonly code: string; readonly path: string }
@@ -367,7 +371,7 @@ async function gapCards(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void>
   // one card per gap and party (rule 7): a sequence still open under any of the party's prefixes — the interview's `declarations.<step>:<ab>`, an invitee's `cob.declarations.<step>:<party>` (32.5 §7), an earlier emission's `…:gap:<emission>` — is the current ask already
   const pendingLike = async (party: Party, prefixes: readonly string[]): Promise<boolean> => (await deps.runtime.db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND status = 'pending' AND props->>'flow_key' LIKE ANY ($2::text[])`, [party.party_id, prefixes.map((p) => `${p}%`)])).length > 0;
   const resent = new Map<string, string[]>();   // party_id → the cards sent for this emission (the line is said once per party, beside the first)
-  const resend = async (party: Party, ask: "declarations" | "residence" | "home", spec: CardSpec, pendingPrefixes: readonly string[]): Promise<void> => {
+  const resend = async (party: Party, ask: "declarations" | "residence" | "home" | "purpose", spec: CardSpec, pendingPrefixes: readonly string[]): Promise<void> => {
     if (resent.get(party.party_id)?.includes(ask)) return;
     if (await pendingLike(party, pendingPrefixes)) { deps.logger?.info("borrower.flow.32-18.gap.pending", { application_id: ctx.appId, party_id: party.party_id, ask }); return; }
     if (await existingCard(deps, party.party_id, spec.flow_key)) return;   // this emission's card is already on the rail (a delivery replayed)
@@ -384,6 +388,9 @@ async function gapCards(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void>
       for (const party of partiesAt(gap.path)) await resend(party, "residence", residenceCard(ctx, party, `identity.confirm:${party.application_borrower_id}:gap:${emission}`), [`identity.confirm:${party.application_borrower_id}`]);
     } else if (GAP_HOME.test(gap.path)) {
       for (const party of ctx.parties) await resend(party, "home", homeCard(ctx, party, `refi.home:${party.application_borrower_id}:gap:${emission}`), [`refi.home:${party.application_borrower_id}`]);
+    } else if (GAP_PURPOSE.test(gap.path) && isCashOut(ctx)) {
+      // DELTA-37: the amount card re-sent with the purpose asked (the same ConfirmCard the six items use; its tap re-captures the amount it shows and the purpose, then reassembleAfterGapCard re-runs the assembly)
+      for (const party of ctx.parties) await resend(party, "purpose", loanAmountCard(ctx, party, `refi.loan_amount:${party.application_borrower_id}:gap:${emission}`), [`refi.loan_amount:${party.application_borrower_id}`]);
     } else {
       deps.logger?.info("borrower.flow.32-18.gap.platform", { application_id: ctx.appId, code: gap.code, path: gap.path, emission });
     }
@@ -702,16 +709,30 @@ async function sixItemCards(deps: FlowDeps, ctx: Ctx, party: Party): Promise<voi
   const avm = ctx.property?.estimated_value_cents ?? null;
   await sendCard(deps, ctx, party, { kind: "ConfirmCard", copy_key: "refi.value.confirm", flow_key: `refi.value:${party.application_borrower_id}`, command_ref: "application.confirmField",
     props: { title: "", fields: [{ path: "property_value_estimate", label: "Estimated value", value: avm ?? "", source: avm ? "avm" : "borrower" }], commits_to: "application_properties.estimated_value", money_paths: ["property_value_estimate"], required_paths: ["property_value_estimate"], avm_vendor: "FAKE", command_args: { path: "property_value_estimate", ...lead } } });
-  // the payoff-based amount from the credit report's mortgage tradeline (source credit_report), else the amount the application already carries
+  await sendCard(deps, ctx, party, loanAmountCard(ctx, party, `refi.loan_amount:${party.application_borrower_id}`));
+  await sendCard(deps, ctx, party, { kind: "ChoiceCard", copy_key: "refi.product.choice", flow_key: `refi.product:${party.application_borrower_id}`, command_ref: "application.confirmField",
+    props: { title: "", options: [{ id: "FRM30", label: "30-year fixed", is_primary: true }, { id: "FRM15", label: "15-year fixed" }, { id: "ARM", label: "Adjustable (ARM)" }], command: "application.confirmField", command_args_by_option: { FRM30: { path: "product_code", value: "FRM30", source: "borrower" }, FRM15: { path: "product_code", value: "FRM15", source: "borrower" }, ARM: { path: "product_code", value: "ARM", source: "borrower", arm_interest: true } }, affirmatives: ["30 year fixed", "thirty year fixed", "15 year fixed"] } });
+}
+
+/** DELTA-37: what the cash is for — the MISMO RefinancePrimaryPurposeBase members 21.1 admits (ULAD_ENUMS.cash_out_purpose), in the copy library's words (`apply.property.cash_out_purpose`). */
+export const CASH_OUT_PURPOSE_OPTIONS: readonly { id: string; label: string }[] = [{ id: "DebtConsolidation", label: "Pay off other debts" }, { id: "HomeImprovement", label: "Improve the home" }, { id: "Education", label: "Pay for school" }, { id: "Cash", label: "Other / keep the cash" }];
+/**
+ * R7: the loan-amount card — the payoff-based amount from the credit report's mortgage tradeline (source credit_report), else the amount the application already
+ * carries; on a cash-out refinance a second, required field asks what the cash is for (DELTA-37: DU's RefinancePrimaryPurposeType is conditional on CashOut —
+ * 21.1 keeps the answer, 32.18's snapshot carries it; the purpose already on the record is shown so a re-sent gap card (rule 7) confirms rather than re-asks).
+ */
+function loanAmountCard(ctx: Ctx, party: Party, flowKey: string): CardSpec {
+  const lead = leadId(ctx) ? { lead_id: leadId(ctx) } : {};
   const report = last(ctx, "credit.report.received", (x) => typeof x["report_id"] === "string");
   const rep = report ? (ctx.store.get("credit_reports", String(pl(report)["report_id"]))?.data as P | undefined) : undefined;
   const mortgage = ((rep?.["tradelines"] as P[] | undefined) ?? []).find((t) => /mortgage/i.test(String(t["liability_kind"] ?? "")));
-  const intakeAmount = cents((ctx.store.get("applications", ctx.appId)?.data as P | undefined)?.["loan_amount_sought_cents"]);
+  const intake = ctx.store.get("applications", ctx.appId)?.data as P | undefined;
+  const intakeAmount = cents(intake?.["loan_amount_sought_cents"]);
   const amount = cents(mortgage?.["balance_cents"]) ?? intakeAmount ?? null;
-  await sendCard(deps, ctx, party, { kind: "ConfirmCard", copy_key: "refi.loan_amount.confirm", flow_key: `refi.loan_amount:${party.application_borrower_id}`, command_ref: "application.confirmField",
-    props: { title: "", fields: [{ path: "loan_amount_sought", label: "Loan amount", value: amount ?? "", source: mortgage ? "credit_report" : amount ? "prior_application" : "borrower" }], commits_to: "applications.loan_amount_sought", money_paths: ["loan_amount_sought"], required_paths: ["loan_amount_sought"], command_args: { path: "loan_amount_sought", ...lead } } });
-  await sendCard(deps, ctx, party, { kind: "ChoiceCard", copy_key: "refi.product.choice", flow_key: `refi.product:${party.application_borrower_id}`, command_ref: "application.confirmField",
-    props: { title: "", options: [{ id: "FRM30", label: "30-year fixed", is_primary: true }, { id: "FRM15", label: "15-year fixed" }, { id: "ARM", label: "Adjustable (ARM)" }], command: "application.confirmField", command_args_by_option: { FRM30: { path: "product_code", value: "FRM30", source: "borrower" }, FRM15: { path: "product_code", value: "FRM15", source: "borrower" }, ARM: { path: "product_code", value: "ARM", source: "borrower", arm_interest: true } }, affirmatives: ["30 year fixed", "thirty year fixed", "15 year fixed"] } });
+  const cashOut = isCashOut(ctx); const purpose = typeof intake?.["cash_out_purpose"] === "string" ? String(intake["cash_out_purpose"]) : "";
+  return { kind: "ConfirmCard", copy_key: "refi.loan_amount.confirm", flow_key: flowKey, command_ref: "application.confirmField",
+    props: { title: "", fields: [{ path: "loan_amount_sought", label: "Loan amount", value: amount ?? "", source: mortgage ? "credit_report" : amount ? "prior_application" : "borrower" }, ...(cashOut ? [{ path: "cash_out_purpose", label: "What the cash is for", value: purpose, source: "borrower", options: CASH_OUT_PURPOSE_OPTIONS }] : [])],
+      commits_to: "applications.loan_amount_sought", money_paths: ["loan_amount_sought"], required_paths: cashOut ? ["loan_amount_sought", "cash_out_purpose"] : ["loan_amount_sought"], command_args: { path: "loan_amount_sought", ...lead } } };
 }
 
 // ---------------------------------------------------------------- R2: the credit report → liabilities, the current loan, the 21.3 score notices

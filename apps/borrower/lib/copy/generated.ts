@@ -763,6 +763,7 @@ export const COPY = {
   "apply.property.value": { key: "apply.property.value", kind: "field", text: "About what is it worth?", notes: "32.19 §2.4: held for `refi.value.confirm`.", extras: [], section: "The Apply product (32.19)" },
   "apply.property.balance": { key: "apply.property.balance", kind: "field", text: "Current balance", notes: "32.19 §2.4: held for `refi.current_loan.confirm`.", extras: [], section: "The Apply product (32.19)" },
   "apply.property.cash_out": { key: "apply.property.cash_out", kind: "field", text: "Cash out", notes: "32.19 §2.4: only when the purpose is cash; folded into the loan amount (DELTA-33).", extras: [], section: "The Apply product (32.19)" },
+  "apply.property.cash_out_purpose": { key: "apply.property.cash_out_purpose", kind: "field", text: "What the cash is for", notes: "32.19 §2.4: only when the purpose is cash; rides `refi.loan_amount.confirm` as `cash_out_purpose` (DELTA-37; the ids DebtConsolidation · HomeImprovement · Education · Cash, in this order).", extras: [], options: ["Pay off other debts", "Improve the home", "Pay for school", "Other / keep the cash"], section: "The Apply product (32.19)" },
   "apply.property.required": { key: "apply.property.required", kind: "refusal", text: "Fill in each field before you continue.", notes: "32.19 §3.0: a required field empty stays on the step; nothing is posted.", extras: [], section: "The Apply product (32.19)" },
   "apply.property.waiting": { key: "apply.property.waiting", kind: "line", text: "Setting up your application…", notes: "32.19 §3.0: shown while the goal card is awaited after the account door.", extras: [], section: "The Apply product (32.19)" },
   "apply.you.title": { key: "apply.you.title", kind: "heading", text: "You, then credit.", notes: "32.19 §2.2 you.", extras: [], section: "The Apply product (32.19)" },
@@ -846,4 +847,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 831;
+export const COPY_KEY_COUNT = 832;

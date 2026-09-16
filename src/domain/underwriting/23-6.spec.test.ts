@@ -289,6 +289,27 @@ test("23.6-T5: Given a required data point with no value, when emitted, then the
   assert.equal(rows.length, 1); assert.equal(Number(rows[0]!.required_missing), outDb.required_missing); assert.equal(rows[0]!.sha256, outDb.sha256);
   assert.deepEqual(rows[0]!.gaps.map((g) => g.xpath), outDb.request.document.gaps.map((g) => g.xpath), "the du_documents row carries the gaps by XPath");
 });
+test("23.6 DELTA-37 (the cash-out purpose): Given the refinance fixture as a cash-out (`loan_purpose = cash_out_refinance` → RefinanceCashOutDeterminationType = CashOut) carrying 21.1's `cash_out_purpose`, when 23.1's deal is laid over the graph and emitted, then LOAN/REFINANCE writes `RefinancePrimaryPurposeType` after the determination (the schema's order) and the document has no gap; given the same snapshot without the purpose, then the emission is refused `DU_REQUIRED_MISSING` naming …/LOANS/LOAN/REFINANCE/RefinancePrimaryPurposeType (conditional on CashOut) and under `report` the gap is listed with no empty element; given a limited cash-out with a purpose on the record, then no purpose element is written (the condition is false).", () => {
+  const CASH_OUT: UladSnapshot = { ...REFI, application_id: "APP-C", loan_purpose: "cash_out_refinance", cash_out_purpose: "DebtConsolidation" };
+  const deal = dealFromSnapshot(CASH_OUT, CASEFILE.system_id_ref);
+  assert.equal(deal.loan["TERMS_OF_LOAN/LoanPurposeType"], "Refinance"); assert.equal(deal.loan["REFINANCE/RefinanceCashOutDeterminationType"], "CashOut"); assert.equal(deal.loan["REFINANCE/RefinancePrimaryPurposeType"], "DebtConsolidation");
+  const doc = assembleDuDocument(refinanceFixtureGraph(CASH_OUT), CASEFILE, FIRST);
+  assert.deepEqual(doc.gaps, [], "no gap on a cash-out that names its purpose");
+  assert.match(text(doc.bytes), /<RefinanceCashOutDeterminationType>CashOut<\/RefinanceCashOutDeterminationType>\s*<RefinancePrimaryPurposeType>DebtConsolidation<\/RefinancePrimaryPurposeType>\s*<\/REFINANCE>/, "the determination, then the purpose (generated/order.ts), as DI-C03 / DI-C09 carry them");
+  // every member 21.1 admits (ULAD_ENUMS.cash_out_purpose) emits without a gap
+  for (const purpose of ["HomeImprovement", "Education", "Cash"]) { const d = assembleDuDocument(refinanceFixtureGraph({ ...CASH_OUT, cash_out_purpose: purpose }), CASEFILE, FIRST); assert.deepEqual(d.gaps, [], purpose); assert.ok(text(d.bytes).includes(`<RefinancePrimaryPurposeType>${purpose}</RefinancePrimaryPurposeType>`), purpose); }
+  // without the purpose the point is ABSENT (never guessed): strict → refused naming the XPath as conditional; report → written without it, the gap listed (what 32.18 rule 7 re-sends the amount card on)
+  const NO_PURPOSE: UladSnapshot = { ...CASH_OUT, cash_out_purpose: null };
+  assert.equal(dealFromSnapshot(NO_PURPOSE, CASEFILE.system_id_ref).loan["REFINANCE/RefinancePrimaryPurposeType"], undefined);
+  assert.throws(() => assembleDuDocument(refinanceFixtureGraph(NO_PURPOSE), CASEFILE, FIRST), (e: unknown) => e instanceof DuEmitError && e.code === "DU_REQUIRED_MISSING" && /\/LOANS\/LOAN\/REFINANCE\/RefinancePrimaryPurposeType$/.test(e.xpath) && /conditional/.test(e.detail));
+  const reported = assembleDuDocument(refinanceFixtureGraph(NO_PURPOSE), CASEFILE, FIRST, { conditionality: "report" });
+  assert.equal(reported.gaps.length, 1); assert.match(reported.gaps[0]!.xpath, /\/LOANS\/LOAN\/REFINANCE\/RefinancePrimaryPurposeType$/);
+  assert.ok(!text(reported.bytes).includes("RefinancePrimaryPurposeType"), "never an empty element"); assert.ok(text(reported.bytes).includes("<RefinanceCashOutDeterminationType>CashOut</RefinanceCashOutDeterminationType>"));
+  // a limited cash-out never carries the purpose, even when the record has one; a purchase has no REFINANCE at all
+  const lco = assembleDuDocument(refinanceFixtureGraph({ ...REFI, cash_out_purpose: "Cash" }), CASEFILE, FIRST); assert.deepEqual(lco.gaps, []); assert.ok(!text(lco.bytes).includes("RefinancePrimaryPurposeType")); assert.ok(text(lco.bytes).includes("<RefinanceCashOutDeterminationType>LimitedCashOut</RefinanceCashOutDeterminationType>"));
+  assert.equal(dealFromSnapshot({ ...REFI, cash_out_purpose: "Cash" }, CASEFILE.system_id_ref).loan["REFINANCE/RefinancePrimaryPurposeType"], undefined);
+  assert.ok(!text(assembleDuDocument(refinanceFixtureGraph({ ...PURCHASE, cash_out_purpose: "Cash" }), CASEFILE, FIRST).bytes).includes("<REFINANCE>"));
+});
 test("23.6-T6: Given a first submission, when emitted, then `AutomatedUnderwritingCaseIdentifier` is absent; given `applications.du_casefile_id = 1234567890` and `submission_number = 2`, then it is present with that value.", () => {
   const AUS = "AutomatedUnderwritingCaseIdentifier";
   const first = assembleDuDocument(refinanceFixtureGraph(REFI), CASEFILE, { submission_number: 1 });

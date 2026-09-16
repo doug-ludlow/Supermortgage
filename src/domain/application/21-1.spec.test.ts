@@ -23,7 +23,7 @@ import { render } from "../../notices/render.ts";
 import { evaluateChecklist } from "../../notices/checklist.ts";
 import { NoticeService } from "../../notices/service.ts";
 import { FakePrintMail, FakeEdelivery } from "../../infra/integrations/delivery.ts";
-import { type IntakeApplication, type MloRosterEntry, newIntakeApplication, startInterview, discloseAi, receiveApplication, captureSixItem, offerPrefill, confirmPrefill, detectSixItems, leDueDate, localIso, addBorrower, nonBorrowingSpouse, affirmJointIntent, demographicsRow, askDemographics, presentScif, scanTranscript, reportProhibitedInquiry, assignMlo, openMloReview, decideMloReview, reassignMlo, handleMloSlaBreach, loadNmlsFeed, gateFacts, mloOfRecordGate, jointIntentGate, scifPresentGate, utterancePermission, logSafeActivity, indicativeQuotePayment, renderForm1003, requestESign, abandonDecision, abandonSweep, educationAndCounseling, civilDate, SAFE_GATE, INTAKE_ABANDON_DAYS, REGB_RETENTION_MONTHS, SCIF_TEMPLATE } from "./ops-21-1.ts";
+import { ULAD_ENUMS, validateUlad, type IntakeApplication, type MloRosterEntry, newIntakeApplication, startInterview, discloseAi, receiveApplication, captureSixItem, offerPrefill, confirmPrefill, detectSixItems, leDueDate, localIso, addBorrower, nonBorrowingSpouse, affirmJointIntent, demographicsRow, askDemographics, presentScif, scanTranscript, reportProhibitedInquiry, assignMlo, openMloReview, decideMloReview, reassignMlo, handleMloSlaBreach, loadNmlsFeed, gateFacts, mloOfRecordGate, jointIntentGate, scifPresentGate, utterancePermission, logSafeActivity, indicativeQuotePayment, renderForm1003, requestESign, abandonDecision, abandonSweep, educationAndCounseling, civilDate, SAFE_GATE, INTAKE_ABANDON_DAYS, REGB_RETENTION_MONTHS, SCIF_TEMPLATE } from "./ops-21-1.ts";
 import { SCIF_SAMPLE } from "../../notices/authored/section21-1.ts";
 
 const INTAKE: Actor = { kind: "agent", id: "intake" };
@@ -402,4 +402,28 @@ test("21.1 worked figures: $560,000 at 6.125 % / 360 → P&I $3,402.62 (half-up 
   assert.equal(d.app.ai_disclosure_utterance_id, "utt-0001"); assert.equal(d.app.interview_sessions[0]!.ai_disclosure_given_at, "2026-10-05T17:14:07.000Z");
   const withB = addBorrower(events, { ...dec.app, trid_received_at: "2026-10-05T17:41:00.000Z", trid_application_date: D("2026-10-05"), status: "trid_received" }, { id: "B2", legal_name: "C. Borrower", borrower_role: "co_borrower", at: "2026-10-06T17:00:00.000Z" });
   assert.equal(detectSixItems(events, withB.app, "2026-10-06T17:00:00.000Z").emitted, false); assert.equal(withB.app.trid_received_at, "2026-10-05T17:41:00.000Z");
+});
+
+test("21.1 DELTA-37 (cash_out_purpose): `captureField{field: cash_out_purpose}` validates the value against ULAD_ENUMS.cash_out_purpose (the MISMO RefinancePrimaryPurposeBase spelling — DebtConsolidation · HomeImprovement · Education · Cash), saves it on the intake record (`applications.cash_out_purpose`, null until captured) with `application.field.captured{field, value}`, refuses any other spelling unchanged, and the 1003 render carries it in section 4 on a cash-out only.", async () => {
+  const h = harness("APP-CASH-1", "2026-10-05T17:14:00.000Z"); h.started();
+  await h.run("startInterview", { session_id: "S-1", partner_name: "Partner Bank", partner_nmlsr_id: "123456", intake_channel: "web", creditor_time_zone: "America/Phoenix", property_state: "AZ", borrowers: [{ id: "B1", legal_name: "R. Borrower" }] });
+  assert.equal(h.app().cash_out_purpose, null, "null until captured (newIntakeApplication)");
+  assert.deepEqual([...ULAD_ENUMS.cash_out_purpose], ["DebtConsolidation", "HomeImprovement", "Education", "Cash"], "the four the borrower can pick, MISMO's spelling");
+  h.at("2026-10-05T17:16:00.000Z"); await h.run("captureField", { field: "credit_request", transaction_type: "cash_out", occupancy: "primary", property_state: "AZ", identity_verified: true });
+  h.at("2026-10-05T17:20:00.000Z"); const r = await h.run("captureField", { field: "cash_out_purpose", value: "DebtConsolidation" });
+  assert.equal(r.field, "cash_out_purpose"); assert.equal(r.value, "DebtConsolidation"); assert.equal(r.valid, true); assert.equal(r.captured_at, "2026-10-05T17:20:00.000Z");
+  assert.equal(h.rt.store.get("applications", "APP-CASH-1")!.data["cash_out_purpose"], "DebtConsolidation", "readable back from the entity store");
+  const captured = h.ofType("application.field.captured").filter((e) => (e.payload as Record<string, unknown>)["field"] === "cash_out_purpose");
+  assert.equal(captured.length, 1); assert.equal((captured[0]!.payload as Record<string, unknown>)["value"], "DebtConsolidation"); assert.equal(captured[0]!.applicationId, "APP-CASH-1");
+  // every other spelling is refused — the MISMO members outside the four, the snake_case, the plain words, an empty value — and the record keeps what it had
+  for (const bad of ["AssetAcquisition", "debt_consolidation", "Pay off other debts", "cash", "Other"]) await assert.rejects(h.run("captureField", { field: "cash_out_purpose", value: bad }), /cash_out_purpose .* is not one of DebtConsolidation\/HomeImprovement\/Education\/Cash/, bad);
+  await assert.rejects(h.run("captureField", { field: "cash_out_purpose", value: "" }), /needs value/);
+  assert.equal(h.app().cash_out_purpose, "DebtConsolidation", "a refused value changes nothing");
+  h.at("2026-10-05T17:21:00.000Z"); await h.run("captureField", { field: "cash_out_purpose", value: "HomeImprovement" }); assert.equal(h.app().cash_out_purpose, "HomeImprovement", "a later answer replaces the earlier one");
+  assert.equal(validateUlad("cash_out_purpose", "Education").valid, true); assert.equal(validateUlad("cash_out_purpose", "Medical").valid, false, "Medical is MISMO's but not offered");
+  // the 1003's section 4 carries the purpose on a cash-out; a limited cash-out renders null there even when a value was once captured
+  const withMlo = assignMlo(h.events, h.app(), { roster: ROSTER, at: "2026-10-05T17:22:00.000Z" }).app;
+  assert.equal(renderForm1003(withMlo).section_4_loan.cash_out_purpose, "HomeImprovement");
+  assert.equal(renderForm1003({ ...withMlo, transaction_type: "limited_cash_out" }).section_4_loan.cash_out_purpose, null);
+  assert.equal(renderForm1003(withMlo).section_4_loan.cash_out_purpose !== renderForm1003({ ...withMlo, cash_out_purpose: "Cash" }).section_4_loan.cash_out_purpose, true); assert.notEqual(renderForm1003(withMlo).data_hash, renderForm1003({ ...withMlo, cash_out_purpose: "Cash" }).data_hash, "the purpose is in the rendered data (its hash)");
 });

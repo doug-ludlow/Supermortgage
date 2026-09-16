@@ -219,9 +219,10 @@ async function buyToReview(page: Page, who: { name: string; dob: string; ssn: st
   await connectStep(page, "8500", who.employer); await detailsStep(page); await declarationsNone(page); await demographicsStep(page, { decline: true });
 }
 /** A refinance (Lower payment) driven from the goal to Review: the current home's fields, You (the home card rides the SSN card), Connect, Details, the None declarations, a declined demographics. */
-async function refiToReview(page: Page, address: string, who: { name: string; dob: string; ssn: string; employer: string }): Promise<void> {
-  await goal(page, "refi", "My primary home", "Lower payment");
+async function refiToReview(page: Page, address: string, who: { name: string; dob: string; ssn: string; employer: string }, o: { cashOut?: { amount: string; purpose: string } } = {}): Promise<void> {
+  await goal(page, "refi", "My primary home", o.cashOut ? "Take cash out" : "Lower payment");
   await fill(page, "Property address", address); await fill(page, "State", "AZ"); await fill(page, "About what is it worth?", "500000"); await fill(page, "Current balance", "300000");
+  if (o.cashOut) { await fill(page, "Cash out", o.cashOut.amount); await pick(page, "What the cash is for", o.cashOut.purpose); }   // DELTA-37: the cash out and what it is for
   await pick(page, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(page, "Is there a PACE or clean-energy loan on the home?", "No");
   await consentsStatement(page); await continueTo(page, "you", "property");
   await you(page, { name: who.name, dob: who.dob, ssn: who.ssn, basis: "Own", months: "72" });
@@ -470,7 +471,8 @@ test("32.19-T5: Refinance — Given Refinance my home with Lower payment, Pay of
     assert.equal(await page.getByTestId("apply-property-switch").count(), 0, `${purpose}: no shopping switch`); assert.equal(await page.getByRole("button", { name: "Still looking" }).count(), 0);
     assert.match(await page.locator(".sm-bubble h1").first().innerText(), /Your current home\./);
     await fill(page, "Property address", address); await fill(page, "State", "AZ"); await fill(page, "About what is it worth?", "500000"); await fill(page, "Current balance", "300000");
-    if (option === "cash_out") await fill(page, "Cash out", "50000"); else assert.equal(await page.getByLabel("Cash out", { exact: true }).count(), 0, `${purpose}: no cash-out field`);
+    if (option === "cash_out") { await fill(page, "Cash out", "50000"); await pick(page, "What the cash is for", "Pay off other debts"); }   // DELTA-37: what the cash is for, only on a cash-out
+    else { assert.equal(await page.getByLabel("Cash out", { exact: true }).count(), 0, `${purpose}: no cash-out field`); assert.equal(await page.getByLabel("What the cash is for", { exact: true }).count(), 0, `${purpose}: no purpose field`); }
     await pick(page, "Do you own the land, or is it a leasehold?", "It is a leasehold"); await pick(page, "Is there a PACE or clean-energy loan on the home?", "Yes");
     const before = await cardsOf(a.party_id); const g0 = card(before, "entry.goal.question"); assert.ok(g0); assert.equal(g0.status, "pending");
     const st = await consentsStatement(page); assert.equal(st.text, String(g0.props["statement"]));
@@ -500,6 +502,7 @@ test("32.19-T5: Refinance — Given Refinance my home with Lower payment, Pay of
     assert.equal(await page.getByLabel("Do you own the land, or is it a leasehold?", { exact: true }).first().inputValue(), "leasehold");
     assert.equal(await page.getByLabel("Is there a PACE or clean-energy loan on the home?", { exact: true }).first().inputValue(), "yes");
     assert.equal(await page.getByLabel("Current balance", { exact: true }).first().inputValue(), "300000");
+    if (option === "cash_out") { assert.equal(await page.getByLabel("Cash out", { exact: true }).first().inputValue(), "50000"); assert.equal(await page.getByLabel("What the cash is for", { exact: true }).first().inputValue(), "DebtConsolidation", "the purpose held in the draft as its MISMO id"); }
     // the You screen's Continue: the identity card's resolve captures current_address, and refi.home.confirm is sent with the SSN card on that event; the step then resolves it with the held address, estate type and lien
     await page.getByTestId("apply-continue").first().click(); await page.waitForSelector('[data-testid="apply"][data-step="you"]', { timeout: 60_000 }); await noError(page, "property → you");
     await you(page, { name: `Riley Ortega ${i}`, dob: "1979-03-02", ssn: "212-55-100" + i, basis: "Own", months: "60" });
@@ -869,6 +872,20 @@ test("32.19-T12: The DU moment from the screens — Given Buy with an address or
   assert.equal(card(refiCards, "credit.liabilities.confirm")?.status, "pending", "the report's cards followed credit.report.received"); assert.equal(card(refiCards, "refi.current_loan.confirm")?.status, "pending");
   refiAccount = { token: r.token, party_id: r.party_id, application_id: r.application_id };
   await R.ctx.close();
+  // ── A cash-out refinance (Take cash out), end to end at 390: the purpose collected on Property rides refi.loan_amount.confirm (DELTA-37) and the document reads required_missing = 0 — the same verdict as the other two
+  const c = await account("t12-cash"); const C = await openApply(c.token, 390);
+  await refiToReview(C.page, "88 Ocotillo Way, Phoenix, AZ 85006", { name: "Sasha Bell", dob: "1981-11-11", ssn: "706-78-9012", employer: "Bell Landscaping" }, { cashOut: { amount: "50000", purpose: "Pay off other debts" } });
+  assert.equal((await C.page.getByTestId("apply-review-amount").first().innerText()).trim(), "$350,000", "Review: the balance + the cash out"); assert.equal((await C.page.getByTestId("apply-review-purpose").first().innerText()).trim(), "Pay off other debts", "Review names what the cash is for in the copy library's words");
+  await duMoment(C.page, c, "cash-out refinance", 0);
+  const cashCards = await cardsOf(c.party_id); const cashAmount = card(cashCards, "refi.loan_amount.confirm"); assert.ok(cashAmount); assert.equal(cashAmount.status, "resolved");
+  assert.deepEqual(cashAmount.props["required_paths"], ["loan_amount_sought", "cash_out_purpose"], "the card required the purpose on a cash-out file");
+  assert.equal(fieldOf(cashAmount, "loan_amount_sought")?.["value_confirmed"], "35000000", "the loan amount ← balance + cash out"); assert.equal(fieldOf(cashAmount, "cash_out_purpose")?.["value_confirmed"], "DebtConsolidation", "the purpose as its MISMO id"); assert.equal(fieldOf(cashAmount, "cash_out_purpose")?.["source"], "borrower");
+  const cashRec = await intake(c.application_id); assert.equal(cashRec?.["transaction_type"], "cash_out"); assert.equal(cashRec?.["cash_out_purpose"], "DebtConsolidation", "21.1's record keeps the purpose");
+  const cashEvs = await events(c.application_id); assert.ok(seqOf(cashEvs, "application.field.captured", (p) => p["field"] === "cash_out_purpose" && p["value"] === "DebtConsolidation") !== null, "application.field.captured{cash_out_purpose}");
+  assert.equal(Number(cashEvs.find((e) => e.type === "du.document.emitted")!.payload["required_missing"]), 0, "no gap on the cash-out file (DELTA-37 built)"); assert.deepEqual(cashEvs.find((e) => e.type === "du.document.emitted")!.payload["gaps"], []);
+  const cashOps = await ops(c.application_id); assert.equal((cashOps.du?.documents ?? []).at(-1)?.["required_missing"], 0, "the ops record's du.documents row reads zero (the walk's outcome 5)");
+  assert.doesNotMatch(await C.page.locator('[data-testid="apply"]').first().innerText(), DU_WORDS);
+  await C.ctx.close();
 });
 test("32.19-T13: Errors stay on the step — Given a required field empty, then the step stays with `.sm-error` and nothing is posted; given a `409 CARD_FIELD_REQUIRED` or a refusal `{code, copy_key}` from the API, then the step stays and `.sm-error` renders `copy(copy_key)`, never the code.", { skip }, async () => {
   const postsOf = (page: Page): number => (page.requests ?? []).filter((r) => r.startsWith("POST ")).length;

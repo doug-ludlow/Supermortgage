@@ -53,6 +53,9 @@ import { timingSafeEqual } from "node:crypto";
 import { CommandRefused, AiPathUnavailable } from "../app/commands.ts";
 import { refuseClientState } from "../domain/operations-runtime/cashiering-cycle.ts";
 import { CardRefused } from "../app/tools/section32-1.ts";
+import { orchestrationByApplication, orchestrationOwnsHandoff } from "../domain/operations-runtime/orchestration-35-6.ts";
+import { hasRole } from "../app/roles.ts";
+import { SnapshotRefused } from "../domain/operations-runtime/snapshot-35-6.ts";
 import { RescissionRefused } from "../domain/compliance-disclosures/ops-25-3.ts";
 import { CyclesRefused } from "../domain/operations-runtime/service.ts";
 import { PortUnavailable } from "../app/tools.ts";
@@ -296,6 +299,21 @@ export function createApiServer(opts: ServerOptions): Server {
         const { actor } = await resolveActor(b, undefined, { applicationId }, "fund");
         const app = await runtime.applications.get(applicationId);
         if (!app) { done(404, { error: "no_such_application" }); return; }
+        // 35.6 rule 6: an orchestrated application funds through `orchestration.snapshot` + `orchestration.fund` — the snapshot from the record, an officer's `snapshot` overrides only (NO_CLIENT_STATE otherwise), a `funded` override never (26.3's loan.funded is read from the log); a second call is the duplicate receipt
+        const orch = await orchestrationByApplication(runtime.db, applicationId);
+        // 35.6 rule 2 / rule 6 / T14: on an orchestrated application (the pass owns the hand-off) and in production, refused before anything is written — a `snapshot` correction is an officer's (a money-field change proposed by an agent has no officer approval record), `funded` is never a client's; the nonprod harness path of a row the pass does not yet own keeps 30.2's fixture fill (Discrepancies (1))
+        const orchestrated = orch !== null || environment === "production";
+        if (orchestrated && b["snapshot"] !== undefined && !hasRole(actor, ["officer"])) { done(409, { error: "refused", command: "orchestration.fund", code: "NO_CLIENT_STATE", citation: "35.6 rule 6: snapshot overrides only from an officer actor", reason: `a snapshot override is an officer's correction (${actor.kind}:${actor.id})` }, { refused: "NO_CLIENT_STATE" }); return; }
+        if (orchestrated && b["funded"] !== undefined) { done(409, { error: "refused", command: "orchestration.fund", code: "NO_CLIENT_STATE", citation: "35.6 rule 2 / rule 6: 26.3's loan.funded is read from the log", reason: "a `funded` payload is never a client's" }, { refused: "NO_CLIENT_STATE" }); return; }
+        // 35.6 edge case: a POST /fund on an application whose orchestration is not at `funded` (26.3's loan.funded not on the log) → NOT_FUNDED, unless an officer supplies 26.3's facts as a correction
+        if (orch !== null && !orchestrationOwnsHandoff(orch) && !(await fundedFromLog(runtime, applicationId)) && !(hasRole(actor, ["officer"]) && b["snapshot"] !== undefined)) { done(409, { error: "refused", command: "orchestration.fund", code: "NOT_FUNDED", citation: "35.6 edge cases: a POST /fund on an application whose orchestration is not at funded is refused unless an officer supplies 26.3's facts as a correction", reason: `orchestration at ${orch.step} (${orch.status}); no loan.funded on the log` }, { refused: "NOT_FUNDED", step: orch.step }); return; }
+        if (orchestrated) {
+          const input: Record<string, unknown> = { ...(b["snapshot"] !== undefined ? { snapshot: b["snapshot"] } : {}) };
+          if (!app.loan_id) { const snap = await runtime.execute({ process: "35.6", name: "orchestration.snapshot", loanId: "", applicationId, actor, input: {} }); input["snapshot_id"] = (snap.output as { snapshot_id: string | null }).snapshot_id; }
+          const r = await runtime.execute({ process: "35.6", name: "orchestration.fund", loanId: "", applicationId, actor, input });
+          const out = r.output as Record<string, unknown>;
+          done(200, out, { application_id: applicationId, loan_id: out["loan_id"], status: out["status"], duplicate: out["duplicate"], events: out["events"], via: "35.6" }); return;
+        }
         const snapshotOverrides = (b["snapshot"] && typeof b["snapshot"] === "object" ? reviveCents(b["snapshot"]) : {}) as DemoOverrides;
         const fundedOverrides = (b["funded"] && typeof b["funded"] === "object" ? reviveCents(b["funded"]) : {}) as Partial<LoanFundedPayload>;
         // the record first: the closing facts 26.1/26.2 wrote and 26.3's loan.funded; the body's overrides win; the demo fixture fills what the record does not carry
@@ -442,6 +460,8 @@ export function createApiServer(opts: ServerOptions): Server {
       if (e instanceof CyclesRefused) { done(409, { error: "refused", code: e.code, reason: e.message, ...e.detail }, { refused: e.code }); return; }
       if (e instanceof BoardingRefused) { done(409, { error: "refused", command: "applications.fund", code: e.code, citation: "30.2 rule 2 / OB-018: boarding is refused until the source record is corrected", reason: e.message, application_id: e.applicationId, validations: e.validations }, { refused: e.code }); return; }
       if (e instanceof ApplicationNotFound) { done(404, { error: "no_such_application", reason: e.message }); return; }
+      // 35.6 rule 6: the hand-off refused by the snapshot (FIXTURE_REFUSED in production, SNAPSHOT_GAP, NO_LOAN_FUNDED) — the same 409 shape with the paths
+      if (e instanceof SnapshotRefused) { done(409, { error: "refused", command: "orchestration.fund", code: e.code, citation: "35.6 rule 6: the hand-off snapshot is built from the record; a production gap refuses the hand-off", reason: e.message, gaps: e.gaps }, { refused: e.code }); return; }
       if (e instanceof RoleDenied) { done(403, { error: "role_denied", reason: e.message }); return; }
       if (e instanceof AiPathUnavailable) { done(503, { error: "ai_path_unavailable", reason: e.message }); return; }
       if (e instanceof ToolNotFound) { done(404, { error: "no_such_tool", reason: e.message }); return; }

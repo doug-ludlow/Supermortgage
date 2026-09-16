@@ -51,11 +51,13 @@ export const defaultInstallments: InstallmentsPort = {
     return { version: Number(r?.n ?? 0), rows: Number(r?.n ?? 0), source: "loan_installments (rows as version until 35.5)" };
   },
 };
+/** 23.3's event name, the cause 35.8 records when its conditions.ctc screen opens 35.6's orchestration — named here, never appended (35.6 rule 3 / T2: the owner emits). */
+const CTC_ISSUED = "clear_to_close.issued";
 export const defaultOrchestration: OrchestrationPort = {
   releaseTool: null,
   async forApplication(q, applicationId) {
     if (await exists(q, "closing_orchestrations")) {
-      const [r] = await q.query<Row>(`SELECT id::text AS id, application_id::text AS application_id, step, status, waiting_on, funding_id::text AS funding_id, wire_id::text AS wire_id, updated_at::text AS since FROM closing_orchestrations WHERE application_id = $1 ORDER BY created_at DESC LIMIT 1`, [applicationId]).catch(() => [] as Row[]);
+      const [r] = await q.query<Row>(`SELECT id::text AS id, application_id::text AS application_id, step, status, waiting_on, funding_id::text AS funding_id, NULL::text AS wire_id, updated_at::text AS since FROM closing_orchestrations WHERE application_id = $1 ORDER BY updated_at DESC LIMIT 1`, [applicationId]).catch(() => [] as Row[]);
       if (r) return { orchestration_id: String(r["id"]), application_id: applicationId, step: String(r["step"] ?? ""), status: String(r["status"] ?? ""), waiting_on: (r["waiting_on"] as string | null) ?? null, funding_id: (r["funding_id"] as string | null) ?? null, wire_id: (r["wire_id"] as string | null) ?? null, since: (r["since"] as string | null) ?? null };
     }
     // the seam: 35.6's own event literals when its table has not landed (the last `orchestration.*` event of the application)
@@ -71,8 +73,8 @@ export const defaultOrchestration: OrchestrationPort = {
   },
   async openOnCtc(d, i) {
     const orchestration_id = randomUUID();
-    if (d.rt.tool("35.6", "orchestration.open")) { const r = await d.rt.execute({ process: "35.6", name: "orchestration.open", loanId: "", applicationId: i.application_id, actor: { kind: "system", id: "work-35-8" }, input: { application_id: i.application_id, cause: "clear_to_close.issued", by: i.by } }); const o = (r.output ?? {}) as Row; return { orchestration_id: String(o["orchestration_id"] ?? orchestration_id) }; }
-    d.events.append({ type: "orchestration.opened", applicationId: i.application_id, aggregate: { kind: "closing_orchestration", id: orchestration_id }, actor: { kind: "system", id: "work-35-8" }, payload: { orchestration_id, application_id: i.application_id, cause: "clear_to_close.issued", step: "opened", opened_at: i.at, by: i.by, source: "35.8 conditions.ctc (35.6 pending)" } });
+    if (d.rt.tool("35.6", "orchestration.open")) { const r = await d.rt.execute({ process: "35.6", name: "orchestration.open", loanId: "", applicationId: i.application_id, actor: { kind: "system", id: "work-35-8" }, input: { application_id: i.application_id, cause: CTC_ISSUED, by: i.by } }); const o = (r.output ?? {}) as Row; return { orchestration_id: String(o["orchestration_id"] ?? orchestration_id) }; }
+    d.events.append({ type: "orchestration.opened", applicationId: i.application_id, aggregate: { kind: "closing_orchestration", id: orchestration_id }, actor: { kind: "system", id: "work-35-8" }, payload: { orchestration_id, application_id: i.application_id, cause: CTC_ISSUED, step: "opened", opened_at: i.at, by: i.by, source: "35.8 conditions.ctc (35.6 pending)" } });
     return { orchestration_id };
   },
 };

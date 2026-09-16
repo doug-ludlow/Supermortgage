@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8661/8787 (98.6%): tids 2413/2480, tables 843/852, timers 2095/2097, notices 308/309, tools 1563/1579, figures 1439/1470; processes at 100%: 203/212; retired 27; hosted 1550/1579, persisted 128/852",
+ "brief": "spec units built 8726/8787 (99.3%): tids 2432/2480, tables 848/852, timers 2097/2097, notices 308/309, tools 1574/1579, figures 1467/1470; processes at 100%: 204/212; retired 27; hosted 1550/1579, persisted 128/852",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2413
+   "built": 2432
   },
   "tables": {
    "spec": 852,
-   "built": 843
+   "built": 848
   },
   "timers": {
    "spec": 2097,
-   "built": 2095
+   "built": 2097
   },
   "notices": {
    "spec": 309,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1579,
-   "built": 1563
+   "built": 1574
   },
   "figures": {
    "spec": 1470,
-   "built": 1439
+   "built": 1467
   },
   "units": {
    "spec": 8787,
-   "built": 8661
+   "built": 8726
   }
  },
  "exec_totals": {
@@ -468,9 +468,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 650,
+   "built": 715,
    "processes": 12,
-   "done": 11
+   "done": 12
   },
   "36": {
    "spec": 40,
@@ -677,6 +677,7 @@
   "35.3",
   "35.4",
   "35.5",
+  "35.6",
   "35.7",
   "35.8",
   "35.9",
@@ -11093,49 +11094,20 @@
    "title": "Closing, funding and delivery orchestration: the state machine from clear-to-close through the CD, consummation, funding, the hand-off from the record, delivery, purchase-advice reconciliation and the warehouse paydown",
    "tids": {
     "spec": 19,
-    "built": 0,
-    "todo": 19,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18,
-     19
-    ]
+    "built": 19,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "closing_orchestration_steps",
-     "closing_orchestrations",
-     "funding_snapshots",
-     "orchestration_daily_receipts",
-     "purchase_reconciliations"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 3,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_ORCH_PURCHASE_RECON_1BD",
-     "SM_ORCH_STEP_STALLED_2BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -11144,54 +11116,13 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "orchestration.open",
-     "orchestration.pass",
-     "orchestration.step",
-     "orchestration.snapshot",
-     "orchestration.fund",
-     "orchestration.reconcile",
-     "orchestration.hold",
-     "orchestration.release",
-     "orchestration.unwind",
-     "orchestration.board",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 40,
-    "built": 12,
-    "missing": [
-     "$1,067.72",
-     "$1,096.67",
-     "$1,240.00",
-     "$1,375.00",
-     "$1,415.00",
-     "$10,052.69",
-     "$2,774.00",
-     "$3,485.00",
-     "$403,760.00",
-     "$404,852.72",
-     "$410,339.52",
-     "$412,000.00",
-     "$416,120.00",
-     "$416,190.10",
-     "$515.00",
-     "$548,800.00",
-     "$549,550.64",
-     "$557,249.57",
-     "$564,503.33",
-     "$566,300.00",
-     "$6,579.52",
-     "$7,732.38",
-     "$70.10",
-     "$71.96",
-     "$725.64",
-     "$8,052.07",
-     "$831.00",
-     "$935.48"
-    ]
+    "built": 40,
+    "missing": []
    },
    "hosted": {
     "spec": 11,
@@ -11205,9 +11136,9 @@
    },
    "units": {
     "spec": 80,
-    "built": 15
+    "built": 80
    },
-   "pct": 18.8,
+   "pct": 100.0,
    "retired": []
   },
   {

@@ -528,7 +528,7 @@ export class PurchaseJourney {
   async miOrderAndCommitment(): Promise<void> {
     const scope = { app: this.appId }; const R = this.R;
     this.at(EDT("2026-10-26", "11:30")); await this.tool(scope, "24.6", "submitMiOrder", { order_type: "delegated", du_reliance: true, du_casefile_id: this.casefileId, du_recommendation: "Approve/Eligible" }, CLOSER);
-    this.at(EDT("2026-10-27", "09:00")); this.miCertificateNumber = `MGIC-${R}`;
+    this.at(EDT("2026-10-27", "09:00")); this.miCertificateNumber = `MG${R.slice(0, 8)}`;   // the insurer's certificate number is 10 characters at most (ULDD SID 412, FAQ Q25 — 29.3 refuses a longer one at delivery)
     const committed = await this.tool(scope, "24.6", "parseCommitment", { response: { decision: "commitment", commitment_number: `MGIC-C-${R}`, certificate_number: this.miCertificateNumber, coverage_pct: 25, premium_plan: "bpmi_monthly", rate_bps: 38, renewal_type: "constant", refundable: false, issued_at: EDT("2026-10-27", "09:00"), expires_at: EDT("2027-02-27", "23:59"), insurer_code: "06", master_policy_version: "MGIC-MP-2024" } }, CLOSER);
     assert.equal((committed.output["certificate"] as { status: string }).status, "committed");
   }

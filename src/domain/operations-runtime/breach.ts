@@ -43,6 +43,7 @@ import { BREACH_ENRICHERS } from "./stewardship.ts";
 // 35.8 timer table rows 1–3: the codes whose breach action this process's own pass executes (work-35-8/sweep.ts workBreachPass, after this pass) — the claim lapse escalates on the third lapse of one item, never on the first (35.8-T9); the age clocks open one escalation per role per sweep, never one per item — so a page opens no escalation for them (the breach is still recorded: timer.breached, the breached row, and 35.9's `escalated_only` action row)
 import { BREACH_HANDLED_BY_35_8 } from "./timers-35-8.ts";
 import { executeBreachActions } from "./default-35-9/sweep.ts";
+import { orchestrationBreachContext } from "./orchestration-35-6.ts";
 
 /** Rule 9's page: 500 due timers per transaction. */
 export const BREACH_PAGE_SIZE = 500;
@@ -106,7 +107,9 @@ async function breachPage(rt: Runtime, nowIso: string, pageSize: number, asOfDat
       const owner = enriched?.ownerRole ?? (cycles ? await breachRoleFor_35_3(q, b.instance, fallback) : fallback);
       // 35.10 T13: a closeout clock's escalation names its closeout (the arming step event's application_id, prior_loan_id, step, waiting_on)
       const refi = !cycles && b.instance.code.startsWith("SM_REFI_") ? breachPayloadOf((await q.query<{ payload: Row }>(`SELECT payload FROM loan_events WHERE id = $1`, [b.instance.armedByEventId]))[0]?.payload ?? null) : null;
-      const extra = cycles ? await enrichBreach_35_3(q, b.instance) : (refi ?? enriched?.payload ?? {});
+      // 35.6's clocks (SM_ORCH_*): the registry says the escalation names application_id, step and waiting_on (the orchestration row the timer's application is on)
+      const orch = !cycles && b.instance.code.startsWith("SM_ORCH_") ? await orchestrationBreachContext(rt, b.instance).catch(() => ({})) : null;
+      const extra = cycles ? await enrichBreach_35_3(q, b.instance) : (refi ?? orch ?? enriched?.payload ?? {});
       escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), severity: String(sev), slaTimerId: b.instance.id,
         payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText, ...extra } }, { kind: "system", id: "sweep" });
       breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });

@@ -218,7 +218,10 @@ export type DemoOverrides = Partial<OriginationSnapshot> & { readonly partner_na
  * and subject property, with the worked example's note / CD / escrow / consents / documents. `overrides` replace whole top-level
  * fields (the 30.2 correction rule: a snapshot is replaced, never edited).
  */
+/** How many times the demo fixture was read (35.6 rule 6 / T9: a hand-off built from a complete record never calls it; a nonprod gap does, with `fixture_used = true`). A live ESM binding for the tests to read. */
+export const DEMO_SNAPSHOT_CALLS = { count: 0 };
 export function demoSnapshot(app: ApplicationRecord, overrides: DemoOverrides = {}): OriginationSnapshot {
+  DEMO_SNAPSHOT_CALLS.count += 1;
   const { partner_name, ...rest } = overrides;
   const prop = app.properties[0];
   const address = prop ? `${prop.address_line1}, ${prop.city}, ${prop.state} ${prop.postal_code}` : "100 N Central Ave, Phoenix, AZ 85004";
@@ -298,6 +301,9 @@ import type { CreditBureauPort, CreditOrder, CreditReportResponse, BorrowerCredi
 import { FakeCbsv, FakeOfacScreener, FakeFraudTool, FakeMers as FakeMersSearch, identityPass, type IdentityVendorPort, type IdentityMethod, type IdentitySessionResult } from "../domain/verification/ops-22-6.ts";
 import { FakeAmc, FakePropertyDataApi } from "../domain/property/ops-24-1.ts";
 import { FakeUcdp } from "../domain/property/ops-24-2.ts";
+/** The FAKE UCDP's Doc File ID: 10 characters, leading digit ≥ 2 as UAD 3.6 issues them (29.3 R3(c) `docFileIdCheck`), stable per appraisal id. */
+const fakeDocFileId = (appraisalId: string): string => `2${String(createHash("sha256").update(appraisalId).digest().readUInt32BE(0) % 1_000_000_000).padStart(9, "0")}`;
+import { FakePurchaseAdviceApi, FakeCollectionBank } from "../domain/warehouse/ops-27-2.ts";
 import { FakeTitleVendor, FakeWireVerification, FakeAltaRegistry, FakeStateDoi } from "../domain/property/ops-24-4.ts";
 import { FakeERegistry26, FakeRonPlatform, type ERegistryPort26, type ERegistryAck } from "../domain/closing/ops-26-2.ts";
 import { FakeWarehouseBank, FakeWarehouseCustodian, FakeERegistry } from "../domain/warehouse/ops-27-1.ts";
@@ -380,6 +386,8 @@ export interface OriginationServiceSet {
   recordState(ctx: UowContext & { events: EventStore }): string[];
   /** The hydrated state hash of one key on a command (a test's witness), null when the key is not live on that command. */
   stateOf(ctx: { events: EventStore }, key: string): { sha: string; state: EncodedState } | null;
+  /** A runtime-wide vendor FAKE by its services key (`settlement`, `earlycheck`, `warehouse`, …) — the fixtures queue vendor events on it. */
+  vendor(key: string): unknown;
 }
 
 type SnapshotQueryRow = { service_key: string; through_sequence: bigint | number; state: EncodedState; state_sha256: string };
@@ -404,9 +412,11 @@ export function originationServices(clock: Clock): OriginationServiceSet {
     // vendor ports (INTEGRATIONS=fake) — one per runtime
     credit_bureau: new FixtureCreditBureau(clock), "fnma-du": new FakeDuPort(clock, { assetReport: lookupFakeAssetReport, messages: fakeDuMessages }),   // 32.18 rule 5: the FAKE validation service reads the FAKE Plaid's reports
     identity_vendor: new PassingIdentityVendor(), cbsv: new FakeCbsv(), ofac_screener: new FakeOfacScreener(), fraud_tool: new FakeFraudTool(), mers: new FakeMersSearch(),
-    amc: new FakeAmc(), propertyData: new FakePropertyDataApi(), ucdp: new FakeUcdp(), title: new FakeTitleVendor(), wire_verification: new FakeWireVerification(), alta_registry: new FakeAltaRegistry(), state_doi: new FakeStateDoi(),
+    amc: new FakeAmc(), propertyData: new FakePropertyDataApi(), ucdp: new FakeUcdp(fakeDocFileId), title: new FakeTitleVendor(), wire_verification: new FakeWireVerification(), alta_registry: new FakeAltaRegistry(), state_doi: new FakeStateDoi(),
     "26.2.eregistry": new UniqueERegistry26(), "26.2.ron": new FakeRonPlatform(), earlycheck: new FakeEarlyCheck(), pewl: new FakePewl({ price: "100.875" }), warehouse,
     fnma_loan_lookup: { lookup: (_loanId: string) => ({ owned: false, checked_at: clock.now() }) } satisfies LoanLookupPort,
+    // 27.2's ports (the Purchase Advice Sellers/Servicers APIs, the collection-bank credit feed): one FAKE set per runtime, so a queued advice or credit is seen by the pass's later command (35.6 T11)
+    settlement: { advices: new FakePurchaseAdviceApi(), collectionBank: new FakeCollectionBank() },
   };
   const construct = (key: string, ctx: UowContext & { events: EventStore }, escalations: EscalationServiceType, opts: ForCommandOptions, handles: Record<string, unknown>): object => {
     const events = ctx.events; const c = ctx.clock; const ledger = ctx.ledger;
@@ -415,7 +425,7 @@ export function originationServices(clock: Clock): OriginationServiceSet {
       case "le-21-2": return new LoanEstimateService({ events, clock: c, escalations });
       case "companion": return new CompanionDisclosureService({ events, clock: c, escalations, timers: ctx.timers });
       case "tolerance": return new ToleranceService({ events, clock: c, ledger, escalations });
-      case "secondary": return new CommitmentService({ events, clock: c, ledger, escalations, pewl: new FakePewl({ price: "100.875" }), salesDesk: new FakeSalesDesk() });
+      case "secondary": return new CommitmentService({ events, clock: c, ledger, escalations, pewl: fixed["pewl"] as FakePewl, salesDesk: new FakeSalesDesk() });
       case "delivery-29-3": return new DeliveryBuildService({ events, clock: c, escalations, earlycheck: fixed["earlycheck"] as FakeEarlyCheck });
       case "delivery-29-4": return new DeliveryService({ events, clock: c, escalations, registry: warehouse.registry });
       case "orig-boarding": return new OriginationBoardingService({ events, ledger, clock: c, timers: ctx.timers, escalations, ext: { licensed: (st) => DEFAULT_LICENSED_STATES.includes(st), onPlatform: () => false, mers: () => undefined }, prepurchaseTiAccountId: "", ...(opts.origBoarding ?? {}) });
@@ -457,6 +467,7 @@ export function originationServices(clock: Clock): OriginationServiceSet {
       const pricing = pricingFromStore(store);
       return { ...fixed, ...instances, ...handles, "tolerance-21-5": instances["tolerance"], ...(pricing ? { pricing } : {}) };
     },
+    vendor(key) { return fixed[key]; },
     recordState(ctx) {
       const live = liveByStore.get(ctx.events) ?? [];
       const changed: string[] = [];

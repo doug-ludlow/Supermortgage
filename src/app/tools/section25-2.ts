@@ -135,7 +135,10 @@ export const TOOLS_25_2: readonly ToolDef[] = defineTools("25.2", "disclosure", 
       const code = gateCode(gate); const s = i.snapshot as ComplianceSnapshot | undefined; if (!s || typeof s !== "object") throw new RangeError(`25.2 tool needs snapshot (25.1's canonical input snapshot for the ${GATES[code].checkpoint} checkpoint)`);
       const waivers = rt.store.list("compliance_waivers", (d) => d.application_id === application_id).map((r) => r.data as unknown as ComplianceWaiver);
       const existing = (rt.store.list("compliance_test_runs", (d) => d.application_id === application_id && d.gate === code && d.status !== "superseded").at(-1)?.data as unknown as ComplianceRun | undefined) ?? null;
-      const r = assertComplianceGateOpen(ctx.events, code, { ...s, application_id }, { now: ctx.now, waivers, escalations: rt.escalations, existing_run: existing && Array.isArray(existing.tests) ? existing : null });
+      // 25.1 persists a run's tests as `compliance_tests` rows (`<run_id>:<test_code>:<k>`), not on the run row — put them back so a fresh run (GATES[code].freshness_hours) is reused instead of re-run over a thinner snapshot
+      const existingTests = existing && !Array.isArray(existing.tests) ? rt.store.list("compliance_tests", (d) => d.run_id === existing.run_id).map((r) => ({ k: Number(r.id.split(":").at(-1)), t: r.data as unknown as ComplianceRun["tests"][number] })).sort((a, b) => a.k - b.k).map((x) => x.t) : null;
+      const existingRun = existing && Array.isArray(existing.tests) ? existing : existing && existingTests && existingTests.length ? { ...existing, tests: existingTests } : null;
+      const r = assertComplianceGateOpen(ctx.events, code, { ...s, application_id }, { now: ctx.now, waivers, escalations: rt.escalations, existing_run: existingRun });
       const apr = r.run.tests.find((t) => t.test_code === "APR_1026_22_ACCURACY");
       if (typeof i.disclosure_id === "string" && i.disclosure_id) svc.recordGateRun(i.disclosure_id, { run_id: r.run.run_id, open: r.open, apr_verdict: apr ? (apr.result === "fail" ? "fail" : "pass") : null, blocked_channels: r.blocked_channels });
       return { gate, open: r.open, run_id: r.run.run_id, blocked_channels: r.blocked_channels, apr_verdict: apr?.result ?? null }; }),

@@ -420,6 +420,8 @@ test("35.8-T7: Given an application with two open 23.3 conditions, when an `unde
   await invite("uma", UMA, ["ops_analyst"]); await grant("uma", "underwriting_reviewer");
   const l = await fixtureL1();
   const app = await runtime.createApplication({ partner_party_id: l.partnerPartyId, channel: "organic", transaction_type: "purchase", occupancy: "primary", borrowers: [{ legal_name: "Applicant Seven" }] }, { kind: "system", id: "test" }); const appId = app.application.id; const sub7 = { kind: "application", id: appId };
+  // 21.1's six items are on the log before any clear-to-close: 35.6's orchestration opens on the CTC (rule 7 here) only for an application whose log carries `application.trid_received`
+  await runtime.uow.run({ applicationId: appId }, (ctx) => ctx.events.append({ type: "application.trid_received", applicationId: appId, aggregate: { kind: "application", id: appId }, actor: { kind: "system", id: "test" }, payload: { application_id: appId, trid_received_at: clock.now(), trid_application_date: "2026-09-01", application_date: "2026-09-01", items: {} } }));
   // two open 23.3 conditions on the record (23.2's openCondition, the DU income template: a pay stub and a W-2) and the conditional approval of record
   const mem = new MemoryEventStore(clock);
   const cond = (n: number) => openCondition(mem, { application_id: appId, submission_id: "SUB-1", template_code: "COND_DU_VERIFY_INCOME_BASE", category: "income", stage: "ptd", text: "Your lender needs your most recent pay stub covering 30 days and your W-2 for the most recent year.", internal_text: `DU V100${n}`, du_message_id: `V100${n}`, evidence_kinds: ["paystub", "w2"], auto_clear_rule: "B3-3.2-01/DU:paystub_30d_w2_1y", requires_role: null, opened_at: clock.now(), message_ids: [`V100${n}`] }).condition;   // 23.2 keys the condition id on the DU message: two messages, two conditions
@@ -446,8 +448,10 @@ test("35.8-T7: Given an application with two open 23.3 conditions, when an `unde
   const input = JSON.parse((await db.query<{ document: string }>(`SELECT metadata->>'document' AS document FROM documents WHERE id = $1`, [ctc.body["document_id"]]))[0]!.document) as Json;
   assert.equal(((input["checklist"] as Json)["passed"]), true, "23.3's runCtcChecklist ran in the deriver"); assert.equal(Object.keys(input).includes("decision"), true);
   // 35.6's orchestration opens on the CTC (through the port: the seam's literal until 35.6's tool lands)
-  const opened = await events("orchestration.opened", "AND application_id = $2", [appId]); assert.equal(opened.length, 1); assert.equal(opened[0]!.payload["cause"], "clear_to_close.issued");
-  const screen = await read("uma", "underwriting_reviewer", "funding_release", sub7); assert.equal(screen.status, 200, JSON.stringify(screen.body)); assert.equal(((screen.body["projection"] as Json)["orchestration"] as Json)["orchestration_id"], opened[0]!.payload["orchestration_id"]);
+  // 35.6 landed: its `orchestration.open` (through the port) writes the closing_orchestrations row at the first step and logs `orchestration.step.entered` — the seam's `orchestration.opened{cause}` literal is history
+  const orch = await db.query<{ id: string; step: string; status: string }>(`SELECT id::text AS id, step, status FROM closing_orchestrations WHERE application_id = $1`, [appId]); assert.equal(orch.length, 1, "35.6's orchestration row for the application"); assert.equal(orch[0]!.step, "credit_ordered"); assert.equal(orch[0]!.status, "open");
+  const entered = await events("orchestration.step.entered", "AND application_id = $2", [appId]); assert.ok(entered.length >= 1, "35.6's entered event"); assert.equal(entered[0]!.payload["step"], "credit_ordered");
+  const screen = await read("uma", "underwriting_reviewer", "funding_release", sub7); assert.equal(screen.status, 200, JSON.stringify(screen.body)); assert.equal(((screen.body["projection"] as Json)["orchestration"] as Json)["orchestration_id"], orch[0]!.id);
   assertIdsOnly(screen.body, "the funding_release screen");
 });
 
@@ -473,6 +477,8 @@ test("35.8-T8: Given the console's five item kinds on the fixture book plus one 
   clock.set(at(MIN));
   const app = await runtime.createApplication({ partner_party_id: l.partnerPartyId, channel: "organic", transaction_type: "purchase", occupancy: "primary", borrowers: [{ legal_name: "Applicant Person" }] }, { kind: "system", id: "test" }); APP_ID = app.application.id;
   await runtime.uow.run({ applicationId: APP_ID }, (ctx) => ctx.events.append({ type: "orchestration.held", applicationId: APP_ID, aggregate: { kind: "closing_orchestration", id: `orch-${R}` }, actor: { kind: "system", id: "closing-35-6" }, payload: { orchestration_id: `orch-${R}`, step: "funding_authorized", waiting_on: "funding_approver", role: "funding_approver" } }), { clock });
+  // 35.6 landed: its closing_orchestrations row is what 35.8's `held` port reads (the seam's `orchestration.held` literal above stays for the record); a held row at funding_authorized waiting on the funding_approver
+  await db.query(`INSERT INTO closing_orchestrations (application_id, transaction_type, step, status, waiting_on, hold_reason, last_event_sequence, opened_at, updated_at) VALUES ($1::uuid, 'purchase', 'funding_authorized', 'held', 'funding_approver', 'fixture: waiting on the approver', 0, $2::timestamptz, $2::timestamptz)`, [APP_ID, clock.now()]);
   clock.set(at(MIN));
   const prop = await api("POST", `${screenPath("payoff_quote", sub(l))}/propose`, { action: "quote", decision: { requester_kind: "borrower", good_through: "2026-10-15", delivery: "portal" } }, bearer(await fresh("ana"), "ops_analyst")); assert.equal(prop.status, 200, JSON.stringify(prop.body)); assert.equal(prop.body["status"], "proposed");
   clock.set(at(MIN));

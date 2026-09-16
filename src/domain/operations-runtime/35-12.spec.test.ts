@@ -37,7 +37,10 @@ import { VendorOff } from "./posture-35-12/refusals.ts";
 import { goLiveNotBefore } from "./posture-35-12/go-live-gate.ts";
 import { posturePass } from "./posture-35-12/sweep.ts";
 import { parallelRunBoard, parseIncumbentFile } from "./posture-35-12/parallel-run.ts";
-import { setPosturePorts, type OurFigures } from "./posture-35-12/ports.ts";
+import { setPosturePorts, UNVERIFIED_ITEMS, type OurFigures } from "./posture-35-12/ports.ts";
+import { hashedDocument, writeDocument } from "./posture-35-12/deps.ts";
+import { GO_LIVE_VENDORS } from "./posture-35-12/types.ts";
+import { ROLES_QUEUE_SCAN } from "./roles-35-7/queue.ts";
 import { WORKED_A_UPB_CENTS, WORKED_A_ESCROW_L1_CENTS, WORKED_A_PI_CENTS, WORKED_A_LATE_CHARGE_BPS, WORKED_A_LATE_CHARGE_CENTS, WORKED_A_ESCROW_OURS_CENTS, WORKED_A_ESCROW_THEIRS_CENTS, WORKED_A_ESCROW_DELTA_CENTS, WORKED_A_MISMATCH_CENTS, WORKED_A_COMPARISONS, WORKED_A_MATCHED, WORKED_A_MISMATCHED, WORKED_B_RPO_S, WORKED_B_RTO_S, RECONCILE_FIELDS } from "./posture-35-12/types.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
@@ -181,6 +184,119 @@ async function handoversEnabled(db: Db, environment: string, nowIso: string): Pr
 void spawnSync; void ROOT; void HOUR; void MIN; void PgLoanRepository; void moneyFingerprint; void tinCipherKey; void loadConfig; void boardTransferBatch; void generateDemoBatch; void DEMO_BATCH; void encodeTransferBatch; void seedEntryDemo; void seedPartnerBookDemo; void evaluateGate; void buildPorts; void describePorts; void FakeSecretManager; void RealLockbox; void VendorOff; void goLiveNotBefore; void posturePass; void parallelRunBoard; void parseIncumbentFile; void setPosturePorts; void (null as unknown as OurFigures); void sha256hex; void isUuidLike; void noPii; void events; void count; void timers; void findings; void checks; void escalations; void decisions; void tool; void refusalOf; void secretsFresh; void nonprodAtHead; void hardened; void handoversEnabled; void world; void at; void AGENT;
 void WORKED_A_UPB_CENTS; void WORKED_A_ESCROW_L1_CENTS; void WORKED_A_PI_CENTS; void WORKED_A_LATE_CHARGE_BPS; void WORKED_A_LATE_CHARGE_CENTS; void WORKED_A_ESCROW_OURS_CENTS; void WORKED_A_ESCROW_THEIRS_CENTS; void WORKED_A_ESCROW_DELTA_CENTS; void WORKED_A_MISMATCH_CENTS; void WORKED_A_COMPARISONS; void WORKED_A_MATCHED; void WORKED_A_MISMATCHED; void WORKED_B_RPO_S; void WORKED_B_RTO_S; void RECONCILE_FIELDS;
 
+// ---------------------------------------------------------------- the parallel run's fixtures (worked example A)
+/** The three fixture loans' figures as of any day: loan 1 (all fields equal), loan 2 (our 2.7 late charge $62.50 = 5.000% × $1,250.00), loan 3 (our escrow $3,417.92). */
+function workedFigures(loanIds: readonly string[]): Map<string, OurFigures> {
+  return new Map<string, OurFigures>([
+    [loanIds[0]!, { upb_cents: WORKED_A_UPB_CENTS, escrow_balance_cents: WORKED_A_ESCROW_L1_CENTS, next_due_date: "2026-12-01", late_charges_accrued_cents: 0n, interest_paid_ytd_cents: 1_345_002n, amount_due_cents: 0n, days_delinquent: 0, form_496_remittance_cents: 0n }],
+    [loanIds[1]!, { upb_cents: 20_000_000n, escrow_balance_cents: 100_000n, next_due_date: "2026-11-01", late_charges_accrued_cents: WORKED_A_LATE_CHARGE_CENTS, interest_paid_ytd_cents: 900_000n, amount_due_cents: WORKED_A_PI_CENTS, days_delinquent: 16, form_496_remittance_cents: 0n }],
+    [loanIds[2]!, { upb_cents: 30_000_000n, escrow_balance_cents: WORKED_A_ESCROW_OURS_CENTS, next_due_date: "2026-12-01", late_charges_accrued_cents: 0n, interest_paid_ytd_cents: 1_000_000n, amount_due_cents: 0n, days_delinquent: 0, form_496_remittance_cents: 0n }],
+  ]);
+}
+const dollars = (c: bigint): string => `${c < 0n ? "-" : ""}${(c < 0n ? -c : c) / 100n}.${String((c < 0n ? -c : c) % 100n).padStart(2, "0")}`;
+/** The incumbent's trial balance for a day: our figures, with the overrides a case names (loan index → field → cents / value). */
+function incumbentCsv(loanIds: readonly string[], figures: Map<string, OurFigures>, overrides: Record<number, Partial<Record<string, bigint | string | number>>> = {}): string {
+  const header = "servicer_loan_number,loan_id,upb,escrow_balance,next_due_date,late_charges_accrued,interest_paid_ytd,amount_due,days_delinquent,form_496_remittance";
+  const rows = loanIds.map((id, k) => { const f = { ...figures.get(id)!, ...(overrides[k] ?? {}) } as Record<string, bigint | string | number | null>; const m = (key: string): string => dollars(f[key] as bigint); return [`INC-${k + 1}`, id, m("upb_cents"), m("escrow_balance_cents"), String(f["next_due_date"] ?? ""), m("late_charges_accrued_cents"), m("interest_paid_ytd_cents"), m("amount_due_cents"), String(f["days_delinquent"]), m("form_496_remittance_cents")].join(","); });
+  return [header, ...rows].join("\n");
+}
+async function fixtureLoans(db: Db, n: number): Promise<string[]> { const repo = new PgLoanRepository(db); const out: string[] = []; for (let k = 0; k < n; k++) out.push((await repo.createFixture({ fnmaLoanNumber: `${(Date.now() + k) % 1_000_000}${Math.floor(Math.random() * 1000)}`.padStart(10, "0"), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: "2021-07-15" as never, originalUpbCents: 26_000_000n, originalTermMonths: 360, firstPaymentDate: "2021-09-01" as never, maturityDate: "2051-08-01" as never })).loanId); return out; }
+/** A world with the cast, three fixture loans and the worked-example figures port (35.5's typed rows are being built in parallel; the port is the seam). */
+async function runWorld(suffix: string, nowIso: string): Promise<World & { loanIds: string[]; figures: Map<string, OurFigures> }> {
+  const w = await world(suffix, nowIso); await w.people.cast();
+  const loanIds = await fixtureLoans(w.db, 3); const figures = workedFigures(loanIds);
+  setPosturePorts(w.runtime, { ourFigures: { figures: async (_q, loanId) => figures.get(loanId) ?? null } });
+  return { ...w, loanIds, figures };
+}
+async function openRun(w: World, loanIds: readonly string[], openedOn: string): Promise<string> {
+  const r = await w.people.api("POST", "/ops/api/parallel-run/open", { environment: "production", incumbent_servicer: "Incumbent", loan_ids: loanIds, opened_on: openedOn }, w.people.as("osc", "officer"));
+  assert.equal(r.status, 200, JSON.stringify(r.body)); return r.body["parallel_run_id"] as string;
+}
+const reconcile = (w: World, runId: string, asOf: string, csv: string, who: "officer" | "agent" = "agent") => (who === "agent" ? tool(w, "parallel_run.reconcile", AGENT, { parallel_run_id: runId, as_of_date: asOf, incumbent_file_csv: csv }).then((r) => ({ status: 200, body: r.output as Json })) : w.people.api("POST", `/ops/api/parallel-run/${runId}/reconcile`, { as_of_date: asOf, incumbent_file_csv: csv }, w.people.as("osc", "officer")));
+/** The ledger and every numeric *_cents column of loans, fees, escrow_accounts and loan_installments, plus the notices rows — one hash (T11, T13, T19). */
+async function moneyAndNotices(db: Db): Promise<string> {
+  const cols = await db.query<{ t: string; c: string }>(`SELECT c.table_name AS t, c.column_name AS c FROM information_schema.columns c WHERE c.table_schema = 'public' AND c.table_name IN ('loans', 'fees', 'escrow_accounts', 'loan_installments') AND c.column_name LIKE '%\\_cents' AND c.data_type IN ('bigint', 'integer', 'smallint', 'numeric') ORDER BY 1, 2`);
+  const lines = [await moneyFingerprint(db)];
+  for (const k of cols) { const [r] = await db.query<{ n: string; sum: string; h: string }>(`SELECT count(*)::text AS n, coalesce(sum("${k.c}"), 0)::text AS sum, md5(coalesce(string_agg("${k.c}"::text, ',' ORDER BY "${k.c}"), '')) AS h FROM "${k.t}"`); lines.push(`${k.t}.${k.c}=${r!.n}/${r!.sum}/${r!.h}`); }
+  const [fees] = await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM fees`); lines.push(`fees=${fees!.n}`);
+  const [notices] = await db.query<{ n: string; h: string }>(`SELECT count(*)::text AS n, md5(coalesce(string_agg(id::text, ',' ORDER BY id), '')) AS h FROM notices`); lines.push(`notices=${notices!.n}/${notices!.h}`);
+  return sha256hex(lines.join("\n"));
+}
+void workedFigures; void incumbentCsv; void fixtureLoans; void runWorld; void openRun; void reconcile; void moneyAndNotices; void dollars;
+
+// ---------------------------------------------------------------- the go-live fixture (T15, T16): production rows satisfying every item
+/** The roles the cast holds beyond 34.1's staff words (35.7 roles.grant; the disjointness matrix respected): every kernel role staffed, the dual-control pairs on two people each. */
+const REVIEWER_GRANTS: readonly (readonly [string, string])[] = [
+  ["osc", "attorney"], ["osc", "signing_officer"], ["osc", "fnma_portal_operator"], ["osc", "human_agent"], ["osc", "lossmit_reviewer"], ["osc", "fraud_officer"], ["osc", "counsel"], ["osc", "mlo_of_record"], ["osc", "notary"], ["osc", "settlement_agent"], ["osc", "closing_attorney"], ["osc", "appraiser"], ["osc", "property_data_collector"], ["osc", "bsa_officer"], ["osc", "licensed_specialist"],
+  ["ana", "underwriting_reviewer"], ["ana", "funding_approver"], ["cid", "funding_approver"], ["cora", "qc_officer"], ["quin", "qc_officer"],
+];
+interface GoLiveWorld extends World { readonly prod: Runtime; readonly prodBase: string; papi(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Reply>; ptool(name: string, actor: Actor, input: Json): Promise<Json>; readonly ev: { manifest_id: string; run_id: string; drill_id: string; scan_run_id: string; parallel_run_id: string; retention_doc: string; scan_ids: string[]; attestations: string[]; reports: string[]; confirmations: string[]; switch_ids: Record<string, string> } }
+/**
+ * A production over the world's database on 2026-11-30: the doors run nonprod (the FAKE e-delivery signs the cast in), the production
+ * `Runtime` (INTEGRATIONS=real) records the manifests, runs the checks, the 35.7 board scan and the go-live tools. Rows: a hardened
+ * staging manifest 25 h before the production one (PST-13); every active staff OIDC-bound, passwords revoked (PST-06); every kernel
+ * role handed over (PST-10) and held by a person who signed in (GL-04); the vendors `o.vendors` switched real/live by ciso request +
+ * compliance confirmation with a canary row each (GL-05; this build carries a real adapter for lockbox_bai2 only — the canaries are
+ * fixture rows, [UNVERIFIED vendor-canary]); a passed drill (GL-03); thirty clean nonprod scans (GL-08); a parallel run over a book of
+ * zero loans reconciled 11-02 … 11-30 and closed passed (GL-06); counsel's retention matrix and the [UNVERIFIED] confirmations as
+ * documents (GL-07, GL-12); 35.4/35.11/35.5's rows through the ports (GL-10, GL-11, GL-09).
+ */
+async function goLiveWorld(suffix: string, o: { vendors: readonly string[] }): Promise<GoLiveWorld> {
+  for (const tag of ["oli", "quin"]) PEOPLE[tag] ??= person(tag);
+  const w = await world(suffix, "2026-11-01T14:00:00Z"); const db = w.db; const p = w.people;
+  await p.cast(); await p.invite("oli", ["officer"]); await p.invite("quin", ["ops_analyst"]);
+  for (const [tag, role] of REVIEWER_GRANTS) await p.grant(tag, role);
+  const prod = new Runtime({ db, registry: loadOverriddenRegistry(), clock: w.clock, logger, environment: "production", env: { INTEGRATIONS: "real", ENVIRONMENT: "production" } as NodeJS.ProcessEnv, reviewers: null });
+  const prodServer = createApiServer({ runtime: prod, apiToken: TOKEN, logger, borrower: { environment: "production", rpId: "localhost", allowedOrigins: ["http://localhost"], urlSecret: "test-secret" } });
+  const prodBase = `http://127.0.0.1:${await listen(prodServer, 0, "127.0.0.1")}`;
+  const papi = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Reply> => { const r = await fetch(prodBase + path, { method, headers: { "content-type": "application/json", "x-forwarded-for": "10.35.0.12", "user-agent": "35.12-spec", ...headers }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }); const text = await r.text(); return { status: r.status, body: text ? (JSON.parse(text) as Json) : {}, headers: r.headers }; };
+  const ptool = async (name: string, actor: Actor, input: Json): Promise<Json> => (await prod.execute({ process: "35.12", name, loanId: "", actor, input })).output as Json;
+  const attestations = [randomUUID(), randomUUID()]; const reports: string[] = []; for (let k = 6; k >= 0; k--) reports.push(randomUUID());
+  setPosturePorts(prod, {
+    servicingConfig: { status: async () => ({ config_rows: 0, profile_rows: 1, loans_without_config: 0, missing_tables: [] }) },
+    closeAttestations: { attestations: async () => attestations.map((id, k) => ({ id, period: k === 0 ? "2026-10" : "2026-11", attested_at: k === 0 ? "2026-11-03T21:00:00Z" : "2026-11-30T13:00:00Z" })) },   // the array is the port's rows: a test pops one to open GL-10
+    opsDailyReports: { reports: async () => reports.map((id, k) => ({ id, as_of_date: `2026-11-${String(24 + k).padStart(2, "0")}`, fake_approvals: 0 })) },
+  });
+  await handoversEnabled(db, "production", w.clock.now());
+  // thirty clean nonprod scans (05:46 ET each day) and the parallel run's daily reconciliation over a book of zero loans (a header alone)
+  const scan_ids: string[] = []; let parallel_run_id = "";
+  for (let k = 0; k < 30; k++) {
+    const d = `2026-11-${String(k + 1).padStart(2, "0")}`; w.clock.set(`${d}T10:46:00Z`);
+    scan_ids.push(((await tool(w, "data.scan", AGENT, { environment: "nonprod", kind: "nonprod_real_data" })).output as Json)["scan_id"] as string);
+    if (d === "2026-11-02") parallel_run_id = ((await prod.execute({ process: "35.12", name: "parallel_run.open", loanId: "", actor: p.actor("osc", "officer"), input: { environment: "production", incumbent_servicer: "Incumbent", loan_ids: [], opened_on: d } })).output as Json)["parallel_run_id"] as string;
+    if (d >= "2026-11-02") { w.clock.set(`${d}T23:30:00Z`); await tool(w, "parallel_run.reconcile", AGENT, { parallel_run_id, as_of_date: d, incumbent_file_csv: "servicer_loan_number,loan_id,upb,escrow_balance,next_due_date,late_charges_accrued,interest_paid_ytd,amount_due,days_delinquent,form_496_remittance" }); }
+  }
+  // the staging promotion 25 hours before the production manifest
+  const digest = `sha256:golive${R}`;
+  w.clock.set("2026-11-29T13:00:00Z");
+  const st = (await ptool("posture.record", AGENT, hardened("staging", w.clock.now(), digest)))["check"] as Json; assert.equal(st["failed"], 0, `staging: ${JSON.stringify((await checks(db, st["run_id"] as string)).filter((c) => c.result === "fail" || c.result === "unverifiable"))}`);
+  // 2026-11-30: the drill, the switches with their canaries, the closed run, the documents, the OIDC bindings, the production manifest, the board scan
+  w.clock.set("2026-11-30T14:00:00Z"); const now = w.clock.now();
+  const tables = (await db.query<{ t: string }>(`SELECT table_name AS t FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE' ORDER BY 1`)).map((r) => r.t);
+  const drill = await ptool("backup.drill", p.actor("cid", "ciso"), { environment: "production", source_backup_id: "backup-2026-11-30", backup_taken_at: "2026-11-30T07:00:00Z", pitr_target_at: "2026-11-30T11:00:00Z", newest_event_at: "2026-11-30T10:59:50Z", clone_instance: "supermortgage-drill-20261130", started_at: "2026-11-30T11:05:00Z", completed_at: "2026-11-30T12:30:00Z", row_checks: tables.map((t) => ({ table: t, source_count: 7, clone_count: 7 })), event_chain_ok: true, ledger_balanced: true, clone_destroyed_at: "2026-11-30T13:00:00Z", witnessed_by: p.ids["cara"] });
+  assert.equal(drill["result"], "passed", JSON.stringify(drill));
+  const switch_ids: Record<string, string> = {};
+  for (const v of o.vendors) {
+    const req = await ptool("integrations.switch", p.actor("cid", "ciso"), { op: "request", environment: "production", vendor: v, mode: "real", endpoint_class: "live", secret_ref: `supermortgage-vendor-${v}`, egress_rule: `egress-${v}`, rationale: "go-live" });
+    const ok = await ptool("integrations.switch", p.actor("cara", "compliance"), { op: "confirm", request_id: req["request_id"] }); assert.equal(ok["status"], "switched", JSON.stringify(ok)); switch_ids[v] = ok["switch_id"] as string;
+  }
+  await prod.uow.run({}, (ctx) => { for (const v of o.vendors) ctx.events.append({ type: "integration.canary", aggregate: { kind: "integration_switch", id: `production:${v}` }, actor: { kind: "system", id: "35.12-spec-fixture" }, payload: { vendor: v, environment: "production", as_of_date: "2026-11-30", ok: true, latency_ms: 40, probe: "fixture: the vendor's real adapter is outside this build (35.12 rule 4) — [UNVERIFIED vendor-canary]", endpoint_class: "live", at: now, origination: true } }); }, { clock: w.clock });
+  const closed = await prod.execute({ process: "35.12", name: "parallel_run.close", loanId: "", actor: p.actor("osc", "officer"), input: { parallel_run_id, outcome: "passed", reason: "28 days over the book, the last week clean" } }); assert.equal((closed.output as Json)["outcome"], "passed", JSON.stringify(closed.output));
+  const rm = hashedDocument("retention-matrix", { version: "2026-11", signed_by_role: "counsel" }); await writeDocument(db, rm, { kind: "retention_matrix", retention: "corporate_7y", metadata: { signed_by_role: "counsel", signed_by: p.ids["osc"], bucket_lock_applied: true }, created_at: now });
+  const confirmations: string[] = []; for (const key of UNVERIFIED_ITEMS) { const doc = hashedDocument("unverified-confirmation", { item_key: key, signed_by_role: "ciso" }); await writeDocument(db, doc, { kind: "unverified_confirmation", retention: "corporate_7y", metadata: { item_key: key, signed_by_role: "ciso", signed_by: p.ids["cid"] }, created_at: now }); confirmations.push(doc.id); }
+  // the sessions the tests use (the doors are nonprod: a password signs in), then every active staff bound to the provider with the passwords revoked (PST-06)
+  for (const tag of ["cid", "cara", "cora", "osc", "ana"]) await p.signIn(tag);
+  for (const u of await db.query<{ id: string }>(`SELECT id::text AS id FROM staff_users WHERE status = 'active'`)) await db.query(`INSERT INTO staff_oidc_identities (staff_user_id, environment, issuer, subject, bound_at) VALUES ($1, 'production', 'https://accounts.google.com', $2, $3::timestamptz)`, [u.id, `sub-${u.id}`, now]);
+  await db.query(`UPDATE staff_credentials SET revoked_at = $1 WHERE kind = 'password' AND revoked_at IS NULL`, [now]);
+  const m = hardened("production", now, digest); ((m["terraform"] as Json)["run"] as Json)["egress_rules"] = [...o.vendors]; m["secrets"] = [...(m["secrets"] as Json[]), ...o.vendors.map((v) => ({ name: `supermortgage-vendor-${v}`, version_created_at: at(-3 * DAY, now), placeholder: false }))];
+  const rec = await ptool("posture.record", AGENT, m); const chk = rec["check"] as Json;
+  assert.equal(chk["failed"], 0, `production: ${JSON.stringify((await checks(db, chk["run_id"] as string)).filter((c) => c.result === "fail" || c.result === "unverifiable").map((c) => [c.control_code, c.result, c.observed]))}`); assert.equal(chk["unverifiable"], 0);
+  const scan = await ROLES_QUEUE_SCAN.run(prod, { as_of: "2026-11-30", planned_by: "35.12-spec-fixture" });
+  const ev = { manifest_id: rec["manifest_id"] as string, run_id: chk["run_id"] as string, drill_id: drill["drill_id"] as string, scan_run_id: (scan as unknown as Json)["scan_run_id"] as string, parallel_run_id, retention_doc: rm.id, scan_ids, attestations, reports, confirmations, switch_ids };
+  return { ...w, prod, prodBase, papi, ptool, ev, close: async () => { await new Promise<void>((resolve) => { prodServer.closeAllConnections?.(); prodServer.close(() => resolve()); }); await w.close(); } };
+}
+void goLiveWorld; void GO_LIVE_VENDORS;
+
 test("35.12-T1: Given `INTEGRATIONS=real` and `ENVIRONMENT=production` with `integration_switches` rows `lockbox_bai2 = real(live)` and none for `eoscar`, when the runtime loads its config and constructs its ports, then `loadConfig` accepts `real`, the lockbox port is the adapter over the row's `secret_ref`, an 8.1 furnishing tool answers the typed refusal `VENDOR_OFF{eoscar}` before any row is written (events, ledger and `integration_messages` unchanged in the contract test), and no port of vendor `FAKE` exists; given `INTEGRATIONS=fake` with `ENVIRONMENT=production`, then the process refuses to start with `NO_FAKE_IN_PRODUCTION`.", { skip }, async () => {
   const w = await world("t1", "2026-11-16T14:00:00Z");
   try {
@@ -202,8 +318,8 @@ test("35.12-T1: Given `INTEGRATIONS=real` and `ENVIRONMENT=production` with `int
     assert.equal(desc.find((d) => d.port === "eoscar")!.adapter, "off");
     assert.ok(desc.every((d) => !JSON.stringify(d).includes("FAKE-")), "the description carries no secret payload");
     // a furnishing tool that needs the e-OSCAR port answers VENDOR_OFF{eoscar} before any row is written: events, ledger and integration_messages unchanged.
-    // 8.1's Metro 2 furnishing tools have no bus registration at HEAD (spec/registry/manifest.json lists none for 8.1); the credit-reporting agent's AUD
-    // correction (`eoscar.aud.submit`, section08.ts audSubmit, registered under 8.3) is the furnisher's e-OSCAR path — `validateAud` is its first call
+    // 8.1 registers bus tools (src/app/tools/section8-1.ts) but none of them reaches the e-OSCAR port: section08.ts registers `audSubmit` (eoscar.aud.submit) under
+    // 8.2/8.3 only, so the furnisher's e-OSCAR path this clause names is that AUD correction, driven under 8.3 — `validateAud` is its first call
     const prod = new Runtime({ db, registry: loadOverriddenRegistry(), clock: w.clock, logger, environment: "production", env: { INTEGRATIONS: "real", ENVIRONMENT: "production" } as NodeJS.ProcessEnv, reviewers: null, ports: built.ports });
     const f = await new PgLoanRepository(db).createFixture({ fnmaLoanNumber: `${Date.now() % 1_000_000}${Math.floor(Math.random() * 1000)}`.padStart(10, "0"), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: "2021-07-15" as never, originalUpbCents: 26_000_000n, originalTermMonths: 360, firstPaymentDate: "2021-09-01" as never, maturityDate: "2051-08-01" as never });
     const snapshot = async (): Promise<string> => `${await count(db, "loan_events")}|${await count(db, "ledger_lines")}|${await count(db, "ledger_entry_sets")}|${await count(db, "integration_messages")}|${await moneyFingerprint(db)}`;
@@ -533,19 +649,267 @@ test("35.12-T9: Given `ENVIRONMENT=nonprod`, when `POST /v1/transfers/batches` i
   } finally { await w.close(); }
 });
 
-test("35.12-T10: Given an `officer` opens the parallel run for production with `incumbent_servicer = \"Incumbent\"` on `opened_on = 2026-11-02` over the three fixture loans, then `parallel_runs{opened}` has `planned_end_on = 2026-11-30` and `loan_count = 3`, `parallel_run.opened` is logged, `SM_PROD_GO_LIVE_ATTEST_GATE` is armed for 2026-11-30, and `go_live.attest` on 2026-11-29 is refused `GO_LIVE_GATE{not_before: 2026-11-30}`; given an `ops_analyst` opening a run, then `ROLE_REQUIRED{officer}`.", { todo: true });
+test("35.12-T10: Given an `officer` opens the parallel run for production with `incumbent_servicer = \"Incumbent\"` on `opened_on = 2026-11-02` over the three fixture loans, then `parallel_runs{opened}` has `planned_end_on = 2026-11-30` and `loan_count = 3`, `parallel_run.opened` is logged, `SM_PROD_GO_LIVE_ATTEST_GATE` is armed for 2026-11-30, and `go_live.attest` on 2026-11-29 is refused `GO_LIVE_GATE{not_before: 2026-11-30}`; given an `ops_analyst` opening a run, then `ROLE_REQUIRED{officer}`.", { skip }, async () => {
+  const w = await runWorld("t10", "2026-11-02T15:00:00Z"); const p = w.people; const db = w.db;
+  try {
+    // an ops_analyst opening a run: ROLE_REQUIRED{officer} before any write
+    const denied = await p.api("POST", "/ops/api/parallel-run/open", { environment: "production", incumbent_servicer: "Incumbent", loan_ids: w.loanIds, opened_on: "2026-11-02" }, p.as("ana", "ops_analyst"));
+    assert.equal(denied.status, 403, JSON.stringify(denied.body)); assert.equal(denied.body["code"], "ROLE_REQUIRED"); assert.equal(denied.body["role"], "officer"); assert.equal(await count(db, "parallel_runs"), 0);
+    // the officer opens the run over the three fixture loans
+    const runId = await openRun(w, w.loanIds, "2026-11-02");
+    const [row] = await db.query<{ action: string; incumbent_servicer: string; opened_on: string; planned_end_on: string; loan_count: number; loan_ids: string[]; by: string; decision_id: string | null; environment: string }>(`SELECT action, incumbent_servicer, opened_on::text AS opened_on, planned_end_on::text AS planned_end_on, loan_count, loan_ids::text[] AS loan_ids, by::text AS by, decision_id::text AS decision_id, environment FROM parallel_runs WHERE parallel_run_id = $1`, [runId]);
+    assert.deepEqual({ action: row!.action, incumbent: row!.incumbent_servicer, opened_on: row!.opened_on, planned_end_on: row!.planned_end_on, loan_count: row!.loan_count, by: row!.by, environment: row!.environment }, { action: "opened", incumbent: "Incumbent", opened_on: "2026-11-02", planned_end_on: "2026-11-30", loan_count: 3, by: p.ids["osc"], environment: "production" });
+    assert.deepEqual([...row!.loan_ids].sort(), [...w.loanIds].sort()); assert.ok(row!.decision_id);
+    const opened = (await events(db, "parallel_run.opened")).filter((e) => e.payload["parallel_run_id"] === runId);
+    assert.equal(opened.length, 1); assert.deepEqual({ environment: opened[0]!.payload["environment"], incumbent_servicer: opened[0]!.payload["incumbent_servicer"], opened_on: opened[0]!.payload["opened_on"], planned_end_on: opened[0]!.payload["planned_end_on"], loan_count: opened[0]!.payload["loan_count"] }, { environment: "production", incumbent_servicer: "Incumbent", opened_on: "2026-11-02", planned_end_on: "2026-11-30", loan_count: 3 });
+    // SM_PROD_GO_LIVE_ATTEST_GATE armed on the global subject for 2026-11-30: the evaluator-backed gate (anchor opened_on; not_before = opened_on + 28 calendar days)
+    const gate = await timers(db, "SM_PROD_GO_LIVE_ATTEST_GATE"); assert.equal(gate.length, 1); assert.equal(gate[0]!.status, "armed"); assert.equal(gate[0]!.subject_kind, "global"); assert.equal(gate[0]!.anchor_date, "2026-11-02"); assert.match(gate[0]!.note ?? "", /evaluator:35\.12\.goLiveGate/);
+    assert.equal(goLiveNotBefore("2026-11-02"), "2026-11-30");
+    assert.equal(evaluateGate("35.12.goLiveGate", { opened_on: "2026-11-02", as_of_date: "2026-11-29" }).open, false); assert.equal(evaluateGate("35.12.goLiveGate", { opened_on: "2026-11-02", as_of_date: "2026-11-30" }).open, true);
+    assert.equal(loadOverriddenRegistry().get("SM_PROD_GO_LIVE_ATTEST_GATE")!.subjectOverride, "global");
+    // go_live.attest on 2026-11-29: GO_LIVE_GATE{not_before: 2026-11-30}
+    w.clock.set("2026-11-29T15:00:00Z"); await p.signIn("cid");
+    const early = await p.api("POST", "/ops/api/go-live/attest", { environment: "production" }, p.as("cid", "ciso"));
+    assert.equal(early.status, 409, JSON.stringify(early.body)); assert.equal(early.body["code"], "GO_LIVE_GATE"); assert.equal(early.body["not_before"], "2026-11-30"); assert.equal(early.body["as_of_date"], "2026-11-29");
+    assert.equal(await count(db, "go_live_checklists"), 0); assert.equal((await events(db, "go_live.attest.requested")).length, 0);
+  } finally { await w.close(); }
+});
 
-test("35.12-T11: Given worked example A's incumbent file for 2026-11-17 (loan 1 all fields equal with UPB **$248,310.55**; loan 2 late charges 0.00 against our 5.000% × **$1,250.00** = **$62.50**; loan 3 escrow **$3,412.92** against our **$3,417.92**), when `parallel_run.reconcile` runs, then the day row has `comparisons = 24`, `matched = 22`, `mismatched = 2`, `mismatch_cents = 6750n` (**$67.50**), two `parallel_run_diffs{opened}` rows exist (`late_charges_accrued_cents` delta `6250n`; `escrow_balance_cents` delta `500n` = **$5.00**), `parallel_run.day.reconciled` carries the same figures, the daily report document is hashed, and the loans' ledger and money columns are byte-identical before and after.", { todo: true });
+test("35.12-T11: Given worked example A's incumbent file for 2026-11-17 (loan 1 all fields equal with UPB **$248,310.55**; loan 2 late charges 0.00 against our 5.000% × **$1,250.00** = **$62.50**; loan 3 escrow **$3,412.92** against our **$3,417.92**), when `parallel_run.reconcile` runs, then the day row has `comparisons = 24`, `matched = 22`, `mismatched = 2`, `mismatch_cents = 6750n` (**$67.50**), two `parallel_run_diffs{opened}` rows exist (`late_charges_accrued_cents` delta `6250n`; `escrow_balance_cents` delta `500n` = **$5.00**), `parallel_run.day.reconciled` carries the same figures, the daily report document is hashed, and the loans' ledger and money columns are byte-identical before and after.", { skip }, async () => {
+  const w = await runWorld("t11", "2026-11-17T22:00:00Z"); const db = w.db; const [l1, l2, l3] = w.loanIds as [string, string, string];
+  try {
+    // the figures of worked example A, asserted to the cent against the section's constants
+    assert.equal(WORKED_A_UPB_CENTS, 24_831_055n); assert.equal(WORKED_A_PI_CENTS, 125_000n); assert.equal(WORKED_A_LATE_CHARGE_CENTS, 6_250n); assert.equal((WORKED_A_PI_CENTS * WORKED_A_LATE_CHARGE_BPS) / 10_000n, 6_250n, "5.000% × $1,250.00 = $62.50");
+    assert.equal(WORKED_A_ESCROW_OURS_CENTS, 341_792n); assert.equal(WORKED_A_ESCROW_THEIRS_CENTS, 341_292n); assert.equal(WORKED_A_ESCROW_OURS_CENTS - WORKED_A_ESCROW_THEIRS_CENTS, 500n); assert.equal(WORKED_A_ESCROW_DELTA_CENTS, 500n); assert.equal(WORKED_A_MISMATCH_CENTS, 6_750n); assert.equal(WORKED_A_LATE_CHARGE_CENTS + WORKED_A_ESCROW_DELTA_CENTS, WORKED_A_MISMATCH_CENTS);
+    assert.equal(WORKED_A_COMPARISONS, 3 * RECONCILE_FIELDS.length); assert.equal(WORKED_A_MATCHED, 22); assert.equal(WORKED_A_MISMATCHED, 2);
+    const runId = await openRun(w, w.loanIds, "2026-11-02");
+    // the incumbent's file for 2026-11-17: loan 1 equal (UPB $248,310.55), loan 2 late charges 0.00 against our $62.50, loan 3 escrow $3,412.92 against our $3,417.92
+    const csv = incumbentCsv(w.loanIds, w.figures, { 1: { late_charges_accrued_cents: 0n }, 2: { escrow_balance_cents: WORKED_A_ESCROW_THEIRS_CENTS } });
+    assert.match(csv, /248310\.55/); assert.match(csv, /3412\.92/); assert.equal(parseIncumbentFile(csv).length, 3); assert.equal(parseIncumbentFile(csv)[0]!.upb_cents, 24_831_055n); assert.equal(parseIncumbentFile(csv)[2]!.escrow_balance_cents, 341_292n);
+    const money0 = await moneyAndNotices(db);
+    const r = await reconcile(w, runId, "2026-11-17", csv, "officer"); assert.equal(r.status, 200, JSON.stringify(r.body));
+    const o = r.body; assert.deepEqual({ comparisons: o["comparisons"], matched: o["matched"], mismatched: o["mismatched"], mismatch_cents: o["mismatch_cents"], loans: o["loans"] }, { comparisons: 24, matched: 22, mismatched: 2, mismatch_cents: "6750", loans: 3 });
+    const [day] = await db.query<{ comparisons: number; matched: number; mismatched: number; mismatch_cents: string; report_document_id: string; incumbent_file_document_id: string; as_of_date: string }>(`SELECT comparisons, matched, mismatched, mismatch_cents::text AS mismatch_cents, report_document_id::text AS report_document_id, incumbent_file_document_id::text AS incumbent_file_document_id, as_of_date::text AS as_of_date FROM parallel_runs WHERE parallel_run_id = $1 AND action = 'day_reconciled'`, [runId]);
+    assert.deepEqual({ comparisons: day!.comparisons, matched: day!.matched, mismatched: day!.mismatched, as_of: day!.as_of_date }, { comparisons: 24, matched: 22, mismatched: 2, as_of: "2026-11-17" }); assert.equal(BigInt(day!.mismatch_cents), 6750n);
+    // two diffs: late_charges_accrued_cents delta 6250n on loan 2; escrow_balance_cents delta 500n on loan 3
+    const diffs = await db.query<{ loan_id: string; field: string; ours: string; theirs: string; delta_cents: string; action: string }>(`SELECT loan_id::text AS loan_id, field, ours, theirs, delta_cents::text AS delta_cents, action FROM parallel_run_diffs WHERE parallel_run_id = $1 ORDER BY field`, [runId]);
+    assert.equal(diffs.length, 2); assert.ok(diffs.every((d) => d.action === "opened"));
+    const esc = diffs.find((d) => d.field === "escrow_balance_cents")!; const lc = diffs.find((d) => d.field === "late_charges_accrued_cents")!;
+    assert.deepEqual({ loan: lc.loan_id, ours: lc.ours, theirs: lc.theirs }, { loan: l2, ours: "6250", theirs: "0" }); assert.equal(BigInt(lc.delta_cents), 6250n);
+    assert.deepEqual({ loan: esc.loan_id, ours: esc.ours, theirs: esc.theirs }, { loan: l3, ours: "341792", theirs: "341292" }); assert.equal(BigInt(esc.delta_cents), 500n);
+    assert.equal(diffs.some((d) => d.loan_id === l1), false, "loan 1 matched on every field");
+    // the event carries the same figures; the daily report and the incumbent file are hashed documents
+    const ev = (await events(db, "parallel_run.day.reconciled")).filter((e) => e.payload["parallel_run_id"] === runId);
+    assert.equal(ev.length, 1); assert.deepEqual({ as_of_date: ev[0]!.payload["as_of_date"], loans: ev[0]!.payload["loans"], comparisons: ev[0]!.payload["comparisons"], matched: ev[0]!.payload["matched"], mismatched: ev[0]!.payload["mismatched"], mismatch_cents: ev[0]!.payload["mismatch_cents"], report_document_id: ev[0]!.payload["report_document_id"] }, { as_of_date: "2026-11-17", loans: 3, comparisons: 24, matched: 22, mismatched: 2, mismatch_cents: "6750", report_document_id: day!.report_document_id });
+    const docs = await db.query<{ id: string; kind: string; sha256: string; retention_class: string; metadata: Json }>(`SELECT id::text AS id, kind, sha256, retention_class::text AS retention_class, metadata FROM documents WHERE id IN ($1, $2) ORDER BY kind`, [day!.report_document_id, day!.incumbent_file_document_id]);
+    assert.deepEqual(docs.map((d) => d.kind), ["incumbent_trial_balance", "parallel_run_daily_report"]); assert.ok(docs.every((d) => /^[0-9a-f]{64}$/.test(d.sha256) && d.retention_class === "corporate_7y"));
+    assert.equal(docs[1]!.metadata["mismatch_cents"], "6750"); assert.equal(docs[1]!.metadata["comparisons"], 24);
+    // the loans' ledger and money columns are byte-identical before and after
+    assert.equal(await moneyAndNotices(db), money0, "no ledger line, no money column, no notice moved");
+    // ours came from the typed-row port for each loan (the section constants), never from the file
+    assert.equal(w.figures.get(l2)!.late_charges_accrued_cents, WORKED_A_LATE_CHARGE_CENTS); assert.equal(w.figures.get(l3)!.escrow_balance_cents, WORKED_A_ESCROW_OURS_CENTS); assert.equal(w.figures.get(l1)!.upb_cents, WORKED_A_UPB_CENTS);
+  } finally { await w.close(); }
+});
 
-test("35.12-T12: Given the run reconciled 2026-11-16, then `SM_PROD_PARALLEL_RUN_DAILY` is armed on the global subject for 2026-11-17 21:00 America/New_York; when the sweep passes 21:01 on the 17th with no reconciliation, then sev 2 to `officer`, and the run's clean-week count reads 0 from that day; when the 17th's file arrives at 22:30 and is reconciled, then the clock is satisfied for the 17th and re-armed for the 18th, and a second file for the 17th is refused `DAY_ALREADY_RECONCILED`.", { todo: true });
+test("35.12-T12: Given the run reconciled 2026-11-16, then `SM_PROD_PARALLEL_RUN_DAILY` is armed on the global subject for 2026-11-17 21:00 America/New_York; when the sweep passes 21:01 on the 17th with no reconciliation, then sev 2 to `officer`, and the run's clean-week count reads 0 from that day; when the 17th's file arrives at 22:30 and is reconciled, then the clock is satisfied for the 17th and re-armed for the 18th, and a second file for the 17th is refused `DAY_ALREADY_RECONCILED`.", { skip }, async () => {
+  const w = await runWorld("t12", "2026-11-16T22:00:00Z"); const db = w.db;
+  try {
+    const runId = await openRun(w, w.loanIds, "2026-11-02");
+    const clean = incumbentCsv(w.loanIds, w.figures); const rows = () => timers(db, "SM_PROD_PARALLEL_RUN_DAILY");
+    // the run reconciled 2026-11-16: armed on the global subject for 2026-11-17 21:00 America/New_York (02:00Z on the 18th)
+    const r16 = await reconcile(w, runId, "2026-11-16", clean); assert.equal(r16.body["mismatched"], 0);
+    const t1 = await rows(); assert.equal(t1.length, 1); assert.equal(t1[0]!.status, "armed"); assert.equal(t1[0]!.subject_kind, "global"); assert.equal(t1[0]!.anchor_date, "2026-11-16"); assert.equal(t1[0]!.due_date, "2026-11-17"); assert.equal(Date.parse(t1[0]!.due_at!), Date.parse("2026-11-18T02:00:00Z"), "21:00 ET on the 17th");
+    // the sweep passes 21:01 on the 17th with no reconciliation (no file arrived): sev 2 to officer; the clean-week count reads 0 from that day
+    w.clock.set("2026-11-18T02:01:00Z");
+    const rep = await w.runtime.sweep(); assert.ok(rep.breaches.some((b) => b.code === "SM_PROD_PARALLEL_RUN_DAILY" && b.timer_id === t1[0]!.id), JSON.stringify(rep.breaches)); assert.equal(rep.posture?.reconciled.length, 0, "nothing to reconcile without the day's file");
+    const esc = await escalations(db, "payload->>'timer_code' = 'SM_PROD_PARALLEL_RUN_DAILY'"); assert.equal(esc.length, 1); assert.deepEqual({ kind: esc[0]!.kind, owner_role: esc[0]!.owner_role }, { kind: "sev2", owner_role: "officer" });
+    const board0 = await parallelRunBoard(db, runId, w.clock.now()); assert.equal(board0["as_of"], "2026-11-17"); assert.equal(board0["days_clean"], 0, "the clean-week count reads 0 from the missed day"); assert.equal(board0["days_reconciled"], 1);
+    // the 17th's file arrives at 22:30 and is reconciled: satisfied for the 17th and re-armed for the 18th
+    w.clock.set("2026-11-18T03:30:00Z"); await w.people.signIn("osc");
+    const r17 = await reconcile(w, runId, "2026-11-17", clean); assert.equal(r17.body["as_of_date"], "2026-11-17");
+    const t2 = await rows(); assert.equal(t2.length, 2); assert.match(t2[0]!.status, /^satisfied/); assert.equal(t2[1]!.status, "armed"); assert.equal(t2[1]!.anchor_date, "2026-11-17"); assert.equal(t2[1]!.due_date, "2026-11-18"); assert.equal(Date.parse(t2[1]!.due_at!), Date.parse("2026-11-19T02:00:00Z"));
+    const board1 = await parallelRunBoard(db, runId, w.clock.now()); assert.equal(board1["days_clean"], 2, "a late day counts once it is reconciled (edge cases)");
+    // a second file for the 17th: DAY_ALREADY_RECONCILED
+    const again = await w.people.api("POST", `/ops/api/parallel-run/${runId}/reconcile`, { as_of_date: "2026-11-17", incumbent_file_csv: clean }, w.people.as("osc", "officer"));
+    assert.equal(again.status, 409, JSON.stringify(again.body)); assert.equal(again.body["code"], "DAY_ALREADY_RECONCILED"); assert.equal(await count(db, "parallel_runs WHERE parallel_run_id = $1 AND action = 'day_reconciled'", [runId]), 2);
+    // the sweep reconciles a day itself when the day's file arrived as a document (the 21:00 ET cycle): a production run is that runtime's; here the runtime is nonprod, so the sweep finds nothing (a runtime reads its own environment)
+    assert.equal((await w.runtime.sweep()).posture?.reconciled.length, 0);
+  } finally { await w.close(); }
+});
 
-test("35.12-T13: Given the two open diffs of T11, when an `ops_analyst` dispositions one, then `ROLE_REQUIRED{officer}`; when an `officer` dispositions loan 2 `timing` and loan 3 `theirs_right` with reasons, then two `parallel_run_diffs{dispositioned}` rows, two `parallel_run.diff.dispositioned` events and two decision records with the reasons exist; when the agent proposes `ours_right` for loan 3 with confidence 0.62, then the decision record holds the proposal and no diff row changes; and no ledger line, `fees` row or `loans` column changed in any of these calls.", { todo: true });
+test("35.12-T13: Given the two open diffs of T11, when an `ops_analyst` dispositions one, then `ROLE_REQUIRED{officer}`; when an `officer` dispositions loan 2 `timing` and loan 3 `theirs_right` with reasons, then two `parallel_run_diffs{dispositioned}` rows, two `parallel_run.diff.dispositioned` events and two decision records with the reasons exist; when the agent proposes `ours_right` for loan 3 with confidence 0.62, then the decision record holds the proposal and no diff row changes; and no ledger line, `fees` row or `loans` column changed in any of these calls.", { skip }, async () => {
+  const w = await runWorld("t13", "2026-11-17T22:00:00Z"); const db = w.db; const p = w.people; const [, l2, l3] = w.loanIds as [string, string, string];
+  try {
+    const runId = await openRun(w, w.loanIds, "2026-11-02");
+    await reconcile(w, runId, "2026-11-17", incumbentCsv(w.loanIds, w.figures, { 1: { late_charges_accrued_cents: 0n }, 2: { escrow_balance_cents: WORKED_A_ESCROW_THEIRS_CENTS } }));
+    const diffs = await db.query<{ diff_id: string; loan_id: string; field: string }>(`SELECT diff_id::text AS diff_id, loan_id::text AS loan_id, field FROM parallel_run_diffs WHERE parallel_run_id = $1 AND action = 'opened' ORDER BY field`, [runId]);
+    assert.equal(diffs.length, 2); const d2 = diffs.find((d) => d.loan_id === l2)!; const d3 = diffs.find((d) => d.loan_id === l3)!;
+    const money0 = await moneyAndNotices(db); const rowsBefore = await count(db, "parallel_run_diffs");
+    // an ops_analyst dispositions one: ROLE_REQUIRED{officer}
+    const denied = await p.api("POST", `/ops/api/parallel-run/${runId}/diffs/${d2.diff_id}`, { disposition: "timing", reason: "x" }, p.as("ana", "ops_analyst"));
+    assert.equal(denied.status, 403, JSON.stringify(denied.body)); assert.equal(denied.body["code"], "ROLE_REQUIRED"); assert.equal(denied.body["role"], "officer"); assert.equal(await count(db, "parallel_run_diffs"), rowsBefore);
+    // the officer dispositions loan 2 timing and loan 3 theirs_right with reasons
+    const r2 = await p.api("POST", `/ops/api/parallel-run/${runId}/diffs/${d2.diff_id}`, { disposition: "timing", reason: "incumbent grace calendar; matches on the 18th" }, p.as("osc", "officer")); assert.equal(r2.status, 200, JSON.stringify(r2.body));
+    const r3 = await p.api("POST", `/ops/api/parallel-run/${runId}/diffs/${d3.diff_id}`, { disposition: "theirs_right", reason: "fee under the incumbent's schedule; not ours to post" }, p.as("osc", "officer")); assert.equal(r3.status, 200, JSON.stringify(r3.body));
+    const disp = await db.query<{ diff_id: string; disposition: string; reason: string; by: string; decision_id: string | null; field: string }>(`SELECT diff_id::text AS diff_id, disposition, reason, by::text AS by, decision_id::text AS decision_id, field FROM parallel_run_diffs WHERE parallel_run_id = $1 AND action = 'dispositioned' ORDER BY field`, [runId]);
+    assert.equal(disp.length, 2); assert.deepEqual(disp.map((d) => [d.diff_id, d.disposition, d.by]), [[d3.diff_id, "theirs_right", p.ids["osc"]], [d2.diff_id, "timing", p.ids["osc"]]]); assert.ok(disp.every((d) => d.decision_id && d.reason.length > 10));
+    const evs = (await events(db, "parallel_run.diff.dispositioned")).filter((e) => e.payload["parallel_run_id"] === runId); assert.equal(evs.length, 2);
+    assert.deepEqual(evs.map((e) => [e.payload["loan_id"], e.payload["field"], e.payload["disposition"], e.payload["by"]]).sort(), [[l2, "late_charges_accrued_cents", "timing", p.ids["osc"]], [l3, "escrow_balance_cents", "theirs_right", p.ids["osc"]]].sort());
+    const decs = (await decisions(db, "parallel_run.disposition")).filter((d) => [d2.diff_id, d3.diff_id].includes(d.subject_id ?? "")); assert.equal(decs.length, 2);
+    for (const d of decs) { const rec = JSON.parse(d.rationale) as Json; assert.equal(rec["by"], p.ids["osc"]); assert.match(String(rec["reason"]), /incumbent/); assert.equal(d.approved_by, p.ids["osc"]); assert.equal(rec["rule_set_version"], "posture.v1"); assert.equal(rec["model_version"], "deterministic"); }
+    // the agent proposes ours_right for loan 3 with confidence 0.62: the decision record holds the proposal; no diff row changes
+    const rowsAfter = await count(db, "parallel_run_diffs");
+    const prop = await tool(w, "parallel_run.disposition", AGENT, { op: "propose", diff_id: d3.diff_id, disposition: "ours_right", rationale: "our escrow analysis carries the disbursement; the incumbent's fee is not ours" }, { runId: `run-${R}`, modelVersion: "claude-opus-5", promptVersion: "35.12-v1", confidence: 0.62 });
+    assert.equal((prop.output as Json)["proposed"], true); assert.equal((prop.output as Json)["confidence"], 0.62);
+    const proposals = (await decisions(db, "parallel_run.disposition:propose")).filter((d) => d.subject_id === d3.diff_id); assert.equal(proposals.length, 1);
+    const rec = JSON.parse(proposals[0]!.rationale) as Json; assert.equal(rec["proposed_disposition"], "ours_right"); assert.equal(rec["confidence"], 0.62); assert.equal(rec["model_version"], "claude-opus-5"); assert.equal(Number(proposals[0]!.confidence), 0.62); assert.equal(proposals[0]!.agent, "compliance-sentinel");
+    assert.equal(await count(db, "parallel_run_diffs"), rowsAfter, "no diff row changes on a proposal");
+    assert.equal((await db.query<{ disposition: string }>(`SELECT disposition FROM parallel_run_diffs WHERE diff_id = $1 ORDER BY created_at DESC LIMIT 1`, [d3.diff_id]))[0]!.disposition, "theirs_right", "the officer's disposition stands");
+    // no ledger line, fees row or loans column changed in any of these calls
+    assert.equal(await moneyAndNotices(db), money0);
+  } finally { await w.close(); }
+});
 
-test("35.12-T14: Given a run opened 2026-11-02 with every day reconciled, the last seven days (2026-11-24 … 2026-11-30) at `mismatched = 0` on the six money fields and every diff dispositioned, when the officer closes it on 2026-11-30, then `parallel_runs{closed, outcome: passed, days: 28}` and `parallel_run.closed` exist and `GL-06` reads satisfied; given the same on 2026-11-29, then `PARALLEL_RUN_TOO_SHORT{days: 27}`; given one open diff, then `PARALLEL_RUN_OPEN_DIFFS{count: 1}`; given a money mismatch on 2026-11-27, then `PARALLEL_RUN_DIRTY_WEEK{days_clean: 3}`; given `abandoned` with a reason, then the gate is no longer satisfiable until a new run opens.", { todo: true });
+test("35.12-T14: Given a run opened 2026-11-02 with every day reconciled, the last seven days (2026-11-24 … 2026-11-30) at `mismatched = 0` on the six money fields and every diff dispositioned, when the officer closes it on 2026-11-30, then `parallel_runs{closed, outcome: passed, days: 28}` and `parallel_run.closed` exist and `GL-06` reads satisfied; given the same on 2026-11-29, then `PARALLEL_RUN_TOO_SHORT{days: 27}`; given one open diff, then `PARALLEL_RUN_OPEN_DIFFS{count: 1}`; given a money mismatch on 2026-11-27, then `PARALLEL_RUN_DIRTY_WEEK{days_clean: 3}`; given `abandoned` with a reason, then the gate is no longer satisfiable until a new run opens.", { skip }, async () => {
+  const w = await runWorld("t14", "2026-11-29T22:00:00Z"); const db = w.db; const p = w.people;
+  try {
+    const clean = incumbentCsv(w.loanIds, w.figures); const days = (from: string, to: string): string[] => { const out: string[] = []; for (let d = from; d <= to; d = new Date(Date.parse(`${d}T00:00:00Z`) + DAY).toISOString().slice(0, 10)) out.push(d); return out; };
+    const close = (runId: string, body: Json) => p.api("POST", `/ops/api/parallel-run/${runId}/close`, body, p.as("osc", "officer"));
+    // run A: opened 2026-11-02, every day reconciled, the last seven clean, every diff dispositioned
+    const A = await openRun(w, w.loanIds, "2026-11-02");
+    for (const d of days("2026-11-02", "2026-11-29")) assert.equal((await reconcile(w, A, d, clean)).body["mismatched"], 0);
+    // on 2026-11-29: PARALLEL_RUN_TOO_SHORT{days: 27}
+    const short = await close(A, { outcome: "passed", reason: "ready" }); assert.equal(short.status, 409, JSON.stringify(short.body)); assert.equal(short.body["code"], "PARALLEL_RUN_TOO_SHORT"); assert.equal(short.body["days"], 27);
+    // on 2026-11-30 with the 30th reconciled: closed passed, days 28; parallel_run.closed; GL-06 reads satisfied
+    w.clock.set("2026-11-30T22:00:00Z"); await p.signIn("osc"); await reconcile(w, A, "2026-11-30", clean);
+    const ok = await close(A, { outcome: "passed", reason: "28 days, last week clean" }); assert.equal(ok.status, 200, JSON.stringify(ok.body)); assert.equal(ok.body["outcome"], "passed"); assert.equal(ok.body["days"], 28); assert.equal(ok.body["days_clean"], 29);
+    const [closedRow] = await db.query<{ action: string; outcome: string; as_of_date: string; by: string }>(`SELECT action, outcome, as_of_date::text AS as_of_date, by::text AS by FROM parallel_runs WHERE parallel_run_id = $1 AND action = 'closed'`, [A]);
+    assert.deepEqual(closedRow, { action: "closed", outcome: "passed", as_of_date: "2026-11-30", by: p.ids["osc"] });
+    const closedEv = (await events(db, "parallel_run.closed")).filter((e) => e.payload["parallel_run_id"] === A); assert.equal(closedEv.length, 1); assert.deepEqual({ closed_on: closedEv[0]!.payload["closed_on"], outcome: closedEv[0]!.payload["outcome"], days: closedEv[0]!.payload["days"], final_week_mismatched: closedEv[0]!.payload["final_week_mismatched"] }, { closed_on: "2026-11-30", outcome: "passed", days: 28, final_week_mismatched: 0 });
+    const gl = await tool(w, "go_live.check", AGENT, { environment: "production" }); const gl06 = ((gl.output as Json)["items"] as Json[]).find((it) => it["item_code"] === "GL-06")!;
+    assert.equal(gl06["status"], "satisfied"); assert.equal(gl06["evidence_ref"], A, "GL-06 names the run");
+    // run B: a money mismatch on 2026-11-27 (escrow $5.00 on loan 3); with the diff open → PARALLEL_RUN_OPEN_DIFFS{count: 1}; dispositioned → PARALLEL_RUN_DIRTY_WEEK{days_clean: 3}
+    const B = await openRun(w, w.loanIds, "2026-11-02");
+    for (const d of days("2026-11-02", "2026-11-30")) await reconcile(w, B, d, d === "2026-11-27" ? incumbentCsv(w.loanIds, w.figures, { 2: { escrow_balance_cents: WORKED_A_ESCROW_THEIRS_CENTS } }) : clean);
+    const openDiff = await close(B, { outcome: "passed", reason: "x" }); assert.equal(openDiff.status, 409, JSON.stringify(openDiff.body)); assert.equal(openDiff.body["code"], "PARALLEL_RUN_OPEN_DIFFS"); assert.equal(openDiff.body["count"], 1);
+    const [diff] = await db.query<{ diff_id: string }>(`SELECT diff_id::text AS diff_id FROM parallel_run_diffs WHERE parallel_run_id = $1 AND action = 'opened'`, [B]);
+    const disp = await p.api("POST", `/ops/api/parallel-run/${B}/diffs/${diff!.diff_id}`, { disposition: "theirs_right", reason: "the incumbent's disbursement fee" }, p.as("osc", "officer")); assert.equal(disp.status, 200, JSON.stringify(disp.body));
+    const dirty = await close(B, { outcome: "passed", reason: "x" }); assert.equal(dirty.status, 409, JSON.stringify(dirty.body)); assert.equal(dirty.body["code"], "PARALLEL_RUN_DIRTY_WEEK"); assert.equal(dirty.body["days_clean"], 3, "2026-11-28 … 2026-11-30");
+    assert.equal((await parallelRunBoard(db, B, w.clock.now()))["days_clean"], 3);
+    // abandoned with a reason: closed, the gate cancelled — not satisfiable until a new run opens
+    const gateBefore = (await timers(db, "SM_PROD_GO_LIVE_ATTEST_GATE")).filter((t) => t.status === "armed"); assert.equal(gateBefore.length, 1, "run B's gate instance");
+    const ab = await close(B, { outcome: "abandoned", reason: "the incumbent's fee schedule is not reconcilable this cycle" }); assert.equal(ab.status, 200, JSON.stringify(ab.body)); assert.equal(ab.body["outcome"], "abandoned");
+    assert.equal((await timers(db, "SM_PROD_GO_LIVE_ATTEST_GATE")).filter((t) => t.status === "armed").length, 0, "no armed gate"); assert.equal((await timers(db, "SM_PROD_GO_LIVE_ATTEST_GATE", "AND id = $2", [gateBefore[0]!.id]))[0]!.status, "cancelled");
+    await p.signIn("cid");
+    const attest = await p.api("POST", "/ops/api/go-live/attest", { environment: "production" }, p.as("cid", "ciso")); assert.equal(attest.status, 409, JSON.stringify(attest.body)); assert.equal(attest.body["code"], "GO_LIVE_GATE"); assert.match(String(attest.body["reason"]), /abandoned/);
+    const C = await openRun(w, w.loanIds, "2026-11-30"); assert.equal((await timers(db, "SM_PROD_GO_LIVE_ATTEST_GATE")).filter((t) => t.status === "armed").length, 1, "a new run re-arms the gate"); void C;
+  } finally { await w.close(); }
+});
 
-test("35.12-T15: Given production rows satisfying every item but `GL-05` (the `eoscar` switch is `off`), when `go_live.check` runs, then twelve items are answered with an `evidence_ref` each (`GL-01` the manifest id, `GL-02` the run id, `GL-03` the drill id, `GL-04` the 35.7 board scan id, `GL-06` the run id, `GL-07` the counsel document id, `GL-08` the thirty scan ids, `GL-09` the config rows, `GL-10` the two 35.4 attestations, `GL-11` the seven `ops_daily_reports` ids, `GL-12` the confirmation documents), `GL-05` is `open` naming `eoscar`, and `go_live.attest` is refused `GO_LIVE_ITEM_OPEN{GL-05}`; when `compliance` waives `GL-08` with a reason, then `waived` with the person; when anyone waives `GL-05`, then refused.", { todo: true });
+test("35.12-T15: Given production rows satisfying every item but `GL-05` (the `eoscar` switch is `off`), when `go_live.check` runs, then twelve items are answered with an `evidence_ref` each (`GL-01` the manifest id, `GL-02` the run id, `GL-03` the drill id, `GL-04` the 35.7 board scan id, `GL-06` the run id, `GL-07` the counsel document id, `GL-08` the thirty scan ids, `GL-09` the config rows, `GL-10` the two 35.4 attestations, `GL-11` the seven `ops_daily_reports` ids, `GL-12` the confirmation documents), `GL-05` is `open` naming `eoscar`, and `go_live.attest` is refused `GO_LIVE_ITEM_OPEN{GL-05}`; when `compliance` waives `GL-08` with a reason, then `waived` with the person; when anyone waives `GL-05`, then refused.", { skip }, async () => {
+  // production rows satisfying every item but GL-05: the eoscar switch stays off (ten of the eleven vendors real/live with a canary)
+  const w = await goLiveWorld("t15", { vendors: GO_LIVE_VENDORS.filter((v) => v !== "eoscar") }); const db = w.db; const p = w.people; const ev = w.ev;
+  try {
+    const before = await count(db, "go_live_checklists");
+    const r = await w.papi("GET", "/ops/api/go-live?environment=production", undefined, p.as("cid", "ciso"));
+    assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 800)); const items = r.body["items"] as Json[]; assert.equal(items.length, 12);
+    const by = new Map(items.map((it) => [it["item_code"] as string, it]));
+    const evidence = (code: string): string => { const it = by.get(code)!; assert.equal(it["status"], "satisfied", `${code}: ${JSON.stringify(it)}`); return it["evidence_ref"] as string; };
+    // every item but GL-05 satisfied, each with the evidence the spec names
+    assert.equal(evidence("GL-01"), ev.manifest_id, "GL-01 the manifest id"); assert.equal(evidence("GL-02"), ev.run_id, "GL-02 the run id"); assert.equal(evidence("GL-03"), ev.drill_id, "GL-03 the drill id");
+    assert.equal(evidence("GL-04"), ev.scan_run_id, "GL-04 the 35.7 board scan id"); assert.equal(evidence("GL-06"), ev.parallel_run_id, "GL-06 the run id"); assert.equal(evidence("GL-07"), ev.retention_doc, "GL-07 the counsel document id");
+    const scanIds = evidence("GL-08").split(","); assert.equal(scanIds.length, 30, "GL-08 the thirty scan ids"); assert.deepEqual([...scanIds].sort(), [...ev.scan_ids].sort());
+    assert.equal(evidence("GL-09"), "loan_servicing_configs:0;servicer_profiles:1", "GL-09 the config rows");
+    assert.deepEqual(evidence("GL-10").split(",").sort(), [...ev.attestations].sort(), "GL-10 the two 35.4 attestations"); assert.deepEqual(evidence("GL-11").split(",").sort(), [...ev.reports].sort(), "GL-11 the seven ops_daily_reports ids");
+    assert.deepEqual(evidence("GL-12").split(",").sort(), [...ev.confirmations].sort(), "GL-12 the confirmation documents");
+    const gl05 = by.get("GL-05")!; assert.equal(gl05["status"], "open"); assert.equal(gl05["evidence_ref"], null); assert.deepEqual((gl05["detail"] as Json)["not_real_live"], ["eoscar"], "GL-05 names eoscar"); assert.deepEqual((gl05["detail"] as Json)["no_canary_24h"], []); assert.equal((gl05["detail"] as Json)["integrations"], "real");
+    assert.deepEqual(r.body["open"], ["GL-05"]); assert.equal(r.body["manifest_id"], ev.manifest_id);
+    // the check wrote one row per item (computed, never typed); a second check writes nothing new
+    const rows = await db.query<{ item_code: string; status: string; evidence_ref: string | null; by: string; manifest_id: string }>(`SELECT item_code, status, evidence_ref, by::text AS by, manifest_id::text AS manifest_id FROM go_live_checklists WHERE environment = 'production' ORDER BY item_code`);
+    assert.equal(rows.length, before + 12); assert.equal(rows.filter((x) => x.status === "open").map((x) => x.item_code).join(), "GL-05"); assert.ok(rows.every((x) => x.by === p.ids["cid"] && x.manifest_id === ev.manifest_id));
+    assert.equal(rows.find((x) => x.item_code === "GL-08")!.evidence_ref, evidence("GL-08"));
+    const again = await w.papi("GET", "/ops/api/go-live?environment=production", undefined, p.as("cid", "ciso")); assert.equal(again.status, 200); assert.equal(again.body["rows_written"], 0); assert.equal(await count(db, "go_live_checklists"), before + 12);
+    // go_live.attest with GL-05 open: GO_LIVE_ITEM_OPEN{GL-05}, no request event
+    const att = await w.papi("POST", "/ops/api/go-live/attest", { environment: "production" }, p.as("cid", "ciso"));
+    assert.equal(att.status, 409, JSON.stringify(att.body)); assert.equal(att.body["code"], "GO_LIVE_ITEM_OPEN"); assert.equal(att.body["item_code"], "GL-05", "GO_LIVE_ITEM_OPEN{GL-05}");
+    assert.equal((att.body["items"] as Json[]).length, 1); assert.equal((att.body["items"] as Json[])[0]!["item_code"], "GL-05"); assert.equal((await events(db, "go_live.attest.requested")).length, 0);
+    // compliance waives GL-08 with a reason: waived with the person; the item stays waived on the next check
+    const waive = await w.papi("POST", "/ops/api/go-live/waive", { environment: "production", item_code: "GL-08", reason: "the 2026-11-01 scan ran at 05:52 ET after a migration; every later day is clean" }, p.as("cara", "compliance"));
+    assert.equal(waive.status, 200, JSON.stringify(waive.body)); const w08 = (waive.body["items"] as Json[]).find((it) => it["item_code"] === "GL-08")!;
+    assert.deepEqual({ status: w08["status"], waived_by: w08["waived_by"], evidence_ref: w08["evidence_ref"] }, { status: "waived", waived_by: p.ids["cara"], evidence_ref: `waived_by:${p.ids["cara"]}` }); assert.match(String(w08["reason"]), /migration/);
+    const [wrow] = await db.query<{ status: string; by: string; reason: string; decision_id: string | null }>(`SELECT status, by::text AS by, reason, decision_id::text AS decision_id FROM go_live_checklists WHERE environment = 'production' AND item_code = 'GL-08' ORDER BY created_at DESC, id DESC LIMIT 1`);
+    assert.deepEqual({ status: wrow!.status, by: wrow!.by }, { status: "waived", by: p.ids["cara"] }); assert.ok(wrow!.decision_id && wrow!.reason.length > 10);
+    const waivedEv = (await events(db, "go_live.item.waived")).filter((e) => e.payload["item_code"] === "GL-08"); assert.equal(waivedEv.length, 1); assert.equal(waivedEv[0]!.payload["by"], p.ids["cara"]);
+    // computed, never typed: GL-08 is satisfied by its thirty scans, so the next check reports the evidence (the waiver row stays on the checklist); a waiver stands while its item is open —
+    // GL-10 with one 35.4 attestation (the port's rows) reads open, compliance waives it, the next checks read waived until the second attestation lands
+    const after = await w.papi("GET", "/ops/api/go-live?environment=production", undefined, p.as("cid", "ciso")); assert.equal(((after.body["items"] as Json[]).find((it) => it["item_code"] === "GL-08")!)["status"], "satisfied", "evidence wins over a waiver");
+    const second = ev.attestations.pop()!;
+    const open10 = await w.papi("GET", "/ops/api/go-live?environment=production", undefined, p.as("cid", "ciso")); assert.deepEqual(open10.body["open"], ["GL-05", "GL-10"]);
+    const waive10 = await w.papi("POST", "/ops/api/go-live/waive", { environment: "production", item_code: "GL-10", reason: "October's close attested; November's closes 2026-12-01 with the tape" }, p.as("cara", "compliance")); assert.equal(waive10.status, 200, JSON.stringify(waive10.body));
+    const stands = await w.papi("GET", "/ops/api/go-live?environment=production", undefined, p.as("cid", "ciso")); const it10 = (stands.body["items"] as Json[]).find((it) => it["item_code"] === "GL-10")!;
+    assert.deepEqual({ status: it10["status"], waived_by: it10["waived_by"], open: stands.body["open"] }, { status: "waived", waived_by: p.ids["cara"], open: ["GL-05"] }, "the waiver stands on the next check");
+    ev.attestations.push(second); const back = await w.papi("GET", "/ops/api/go-live?environment=production", undefined, p.as("cid", "ciso")); assert.equal(((back.body["items"] as Json[]).find((it) => it["item_code"] === "GL-10")!)["status"], "satisfied");
+    // anyone waiving GL-05: refused — compliance GO_LIVE_ITEM_NOT_WAIVABLE (only GL-08 and GL-10 may be), the ciso ROLE_REQUIRED{compliance}; no row
+    const n0 = await count(db, "go_live_checklists");
+    const notWaivable = await w.papi("POST", "/ops/api/go-live/waive", { environment: "production", item_code: "GL-05", reason: "the bureau goes live next week" }, p.as("cara", "compliance"));
+    assert.equal(notWaivable.status, 409, JSON.stringify(notWaivable.body)); assert.equal(notWaivable.body["code"], "GO_LIVE_ITEM_NOT_WAIVABLE"); assert.deepEqual(notWaivable.body["waivable"], ["GL-08", "GL-10"]);
+    const ciso = await w.papi("POST", "/ops/api/go-live/waive", { environment: "production", item_code: "GL-05", reason: "x" }, p.as("cid", "ciso")); assert.equal(ciso.status, 403, JSON.stringify(ciso.body)); assert.equal(ciso.body["code"], "ROLE_REQUIRED");
+    const officer = await w.papi("POST", "/ops/api/go-live/waive", { environment: "production", item_code: "GL-05", reason: "x" }, p.as("osc", "officer")); assert.equal(officer.status, 403, JSON.stringify(officer.body));
+    const money = await w.ptool("go_live.check", AGENT, { op: "waive", environment: "production", item_code: "GL-06", reason: "x" }).then(() => null, (e: unknown) => e as { code?: string });
+    assert.equal(money?.code, "ROLE_REQUIRED", "the agent has no compliance role; the money items are satisfied by evidence"); assert.equal(await count(db, "go_live_checklists"), n0, "no row from a refused waiver");
+  } finally { await w.close(); }
+});
 
-test("35.12-T16: Given every item satisfied or waived on 2026-11-30, when a `ciso` requests `go_live.attest` and a `compliance` session confirms within 10 minutes, then `go_live_checklists{GL-00, attested}` names both people and the `manifest_id`, `go_live.attested` is logged, `SM_PROD_GO_LIVE_ATTEST_GATE` is satisfied, and thereafter `integrations.switch{production, any vendor, mode: fake}` is refused `NO_FAKE_IN_PRODUCTION`; given the requester confirms, then `TWO_PERSON_GO_LIVE`; given a confirmation at 11 minutes, then the request has expired and nothing is attested.", { todo: true });
+test("35.12-T16: Given every item satisfied or waived on 2026-11-30, when a `ciso` requests `go_live.attest` and a `compliance` session confirms within 10 minutes, then `go_live_checklists{GL-00, attested}` names both people and the `manifest_id`, `go_live.attested` is logged, `SM_PROD_GO_LIVE_ATTEST_GATE` is satisfied, and thereafter `integrations.switch{production, any vendor, mode: fake}` is refused `NO_FAKE_IN_PRODUCTION`; given the requester confirms, then `TWO_PERSON_GO_LIVE`; given a confirmation at 11 minutes, then the request has expired and nothing is attested.", { skip }, async () => {
+  // every item satisfied on 2026-11-30 (the eleven vendors real/live with a canary each) — GL-08 waived by compliance for the item's own reason is the other allowed state
+  const w = await goLiveWorld("t16", { vendors: GO_LIVE_VENDORS }); const db = w.db; const p = w.people; const ev = w.ev;
+  try {
+    const gl = await w.papi("GET", "/ops/api/go-live?environment=production", undefined, p.as("cid", "ciso")); assert.equal(gl.status, 200, JSON.stringify(gl.body).slice(0, 600)); assert.deepEqual(gl.body["open"], [], JSON.stringify((gl.body["items"] as Json[]).filter((it) => it["status"] === "open")));
+    const gate0 = (await timers(db, "SM_PROD_GO_LIVE_ATTEST_GATE")).filter((t) => t.status === "armed"); assert.equal(gate0.length, 1, "the gate armed by the run opened 2026-11-02"); assert.equal(gate0[0]!.anchor_date, "2026-11-02");
+    const t0 = w.clock.now();
+    // the ciso requests: an event, no row yet
+    const req = await w.papi("POST", "/ops/api/go-live/attest", { environment: "production", reason: "every item satisfied; the incumbent's tape stops 2026-12-01" }, p.as("cid", "ciso"));
+    assert.equal(req.status, 200, JSON.stringify(req.body)); assert.equal(req.body["status"], "requested"); const requestId = req.body["request_id"] as string; assert.ok(isUuidLike(requestId)); assert.equal(req.body["manifest_id"], ev.manifest_id); assert.equal(req.body["not_before"], "2026-11-30");
+    assert.equal(await count(db, "go_live_checklists WHERE item_code = 'GL-00'"), 0, "no row before the confirmation"); assert.equal((await events(db, "go_live.attest.requested")).filter((e) => e.payload["request_id"] === requestId).length, 1);
+    // the requester confirms: TWO_PERSON_GO_LIVE
+    const self = await w.papi("POST", "/ops/api/go-live/attest", { environment: "production", request_id: requestId }, p.as("cid", "ciso"));
+    assert.equal(self.status, 403, JSON.stringify(self.body)); assert.equal(self.body["code"], "TWO_PERSON_GO_LIVE"); assert.equal(await count(db, "go_live_checklists WHERE item_code = 'GL-00'"), 0);
+    // a compliance session confirms 6 minutes later: GL-00 attested naming both people and the manifest; go_live.attested; the gate satisfied
+    w.clock.set(at(6 * MIN, t0));
+    const ok = await w.papi("POST", "/ops/api/go-live/attest", { environment: "production", request_id: requestId }, p.as("cara", "compliance"));
+    assert.equal(ok.status, 200, JSON.stringify(ok.body)); assert.deepEqual({ status: ok.body["status"], by: ok.body["by"], confirmed_by: ok.body["confirmed_by"], manifest_id: ok.body["manifest_id"], attested_at: ok.body["attested_at"] }, { status: "attested", by: p.ids["cid"], confirmed_by: p.ids["cara"], manifest_id: ev.manifest_id, attested_at: w.clock.now() });
+    const rows = await db.query<{ checklist_id: string; status: string; by: string; by_role: string; confirmed_by: string; manifest_id: string; request_id: string; decision_id: string | null; evidence_ref: string }>(`SELECT checklist_id::text AS checklist_id, status, by::text AS by, by_role, confirmed_by::text AS confirmed_by, manifest_id::text AS manifest_id, request_id::text AS request_id, decision_id::text AS decision_id, evidence_ref FROM go_live_checklists WHERE environment = 'production' AND item_code = 'GL-00'`);
+    assert.equal(rows.length, 1); assert.deepEqual({ status: rows[0]!.status, by: rows[0]!.by, by_role: rows[0]!.by_role, confirmed_by: rows[0]!.confirmed_by, manifest_id: rows[0]!.manifest_id, request_id: rows[0]!.request_id, evidence_ref: rows[0]!.evidence_ref }, { status: "attested", by: p.ids["cid"], by_role: "ciso", confirmed_by: p.ids["cara"], manifest_id: ev.manifest_id, request_id: requestId, evidence_ref: `manifest:${ev.manifest_id}` });
+    assert.ok(rows[0]!.decision_id, "the decision row on the attestation row"); assert.equal(rows[0]!.checklist_id, ok.body["checklist_id"]); assert.equal(rows[0]!.checklist_id, gl.body["checklist_id"], "the attempt the items were checked under");
+    const attested = (await events(db, "go_live.attested")).filter((e) => e.payload["request_id"] === requestId);
+    assert.equal(attested.length, 1); assert.deepEqual({ by: attested[0]!.payload["by"], confirmed_by: attested[0]!.payload["confirmed_by"], manifest_id: attested[0]!.payload["manifest_id"], environment: attested[0]!.payload["environment"], not_before: attested[0]!.payload["not_before"] }, { by: p.ids["cid"], confirmed_by: p.ids["cara"], manifest_id: ev.manifest_id, environment: "production", not_before: "2026-11-30" });
+    assert.equal(attested[0]!.aggregate_kind, "go_live_checklist"); assert.equal(attested[0]!.actor_id, p.ids["cara"]);
+    const gate1 = (await timers(db, "SM_PROD_GO_LIVE_ATTEST_GATE", "AND id = $2", [gate0[0]!.id]))[0]!; assert.match(gate1.status, /^satisfied/, "SM_PROD_GO_LIVE_ATTEST_GATE satisfied by go_live.attested"); assert.equal((await timers(db, "SM_PROD_GO_LIVE_ATTEST_GATE")).filter((t) => t.status === "armed").length, 0);
+    const dec = (await decisions(db, "go_live.attest:confirm")).filter((d) => d.subject_id === rows[0]!.checklist_id); assert.equal(dec.length, 1); assert.equal(dec[0]!.approved_by, p.ids["cara"]); const rec = JSON.parse(dec[0]!.rationale) as Json; assert.equal(rec["by"], p.ids["cid"]); assert.equal(rec["confirmed_by"], p.ids["cara"]);
+    // the check afterwards reports the attestation it was made against
+    const after = await w.papi("GET", "/ops/api/go-live?environment=production", undefined, p.as("cid", "ciso")); assert.equal(after.status, 200); assert.deepEqual({ by: (after.body["attested"] as Json)["by"], confirmed_by: (after.body["attested"] as Json)["confirmed_by"], manifest_id: (after.body["attested"] as Json)["manifest_id"] }, { by: p.ids["cid"], confirmed_by: p.ids["cara"], manifest_id: ev.manifest_id });
+    // thereafter integrations.switch{production, any vendor, mode: fake}: NO_FAKE_IN_PRODUCTION at the request — no event, no row (the ciso session and the bus alike)
+    const s0 = await count(db, "integration_switches"); const e0 = await count(db, "loan_events WHERE type = 'integration.switch.requested'");
+    for (const vendor of ["print_mail", "ach_nacha", "google_oidc"]) {
+      const fake = await w.papi("POST", "/ops/api/integrations/switch", { environment: "production", vendor, mode: "fake", rationale: "a demo" }, p.as("cid", "ciso"));
+      assert.equal(fake.status, 409, JSON.stringify(fake.body)); assert.equal(fake.body["code"], "NO_FAKE_IN_PRODUCTION");
+    }
+    const bus = await refusalOf(w.ptool("integrations.switch", p.actor("cid", "ciso"), { op: "request", environment: "production", vendor: "evault", mode: "fake" })); assert.equal(bus.code, "NO_FAKE_IN_PRODUCTION"); assert.equal(bus.extra["vendor"] ?? "evault", "evault");
+    assert.equal(await count(db, "integration_switches"), s0); assert.equal(await count(db, "loan_events WHERE type = 'integration.switch.requested'"), e0, "not even a request");
+    const status = await w.ptool("integrations.status", AGENT, { environment: "production" }); assert.ok((status["vendors"] as Json[]).every((v) => !GO_LIVE_VENDORS.includes(v["vendor"] as string) || v["mode"] === "real"), "the eleven vendors stay real");
+    // a second request confirmed at 11 minutes: the request has expired and nothing is attested (the sweep's pass logs the expiry; a stale request never attests)
+    w.clock.set(at(20 * MIN, t0)); const t1 = w.clock.now();
+    const req2 = await w.papi("POST", "/ops/api/go-live/attest", { environment: "production" }, p.as("cid", "ciso")); assert.equal(req2.status, 200, JSON.stringify(req2.body)); const request2 = req2.body["request_id"] as string; assert.equal(req2.body["expires_at"], at(10 * MIN, t1));
+    w.clock.set(at(11 * MIN, t1));
+    const late = await refusalOf(w.ptool("go_live.attest", p.actor("cara", "compliance"), { op: "confirm", request_id: request2 }));
+    assert.equal(late.code, "REQUEST_EXPIRED", late.message); assert.equal(late.extra["request_id"], request2);
+    assert.equal(await count(db, "go_live_checklists WHERE item_code = 'GL-00'"), 1, "nothing new attested"); assert.equal((await events(db, "go_live.attested")).length, 1);
+    const pass = await posturePass(w.prod, w.clock.now()); assert.equal(pass.attest_requests_expired, 1);
+    const expired = (await events(db, "go_live.attest.request.expired")).filter((e) => e.payload["request_id"] === request2); assert.equal(expired.length, 1); assert.equal(expired[0]!.payload["requested_by"], p.ids["cid"]);
+    const afterExpiry = await refusalOf(w.ptool("go_live.attest", p.actor("cara", "compliance"), { op: "confirm", request_id: request2 })); assert.equal(afterExpiry.code, "REQUEST_EXPIRED");
+    assert.equal(await count(db, "go_live_checklists WHERE item_code = 'GL-00'"), 1);
+  } finally { await w.close(); }
+});
 
 test("35.12-T17: Given a production manifest whose `secrets` lists `supermortgage-tin-cipher-key` with `placeholder = true` and `supermortgage-api-token` with a version created 91 days ago, when `posture.check` runs, then `PST-09` fails sev 1 naming the secret and `PST-14` fails sev 2 with `observed.age_days = 91`, and the runtime under the same env refuses to start per src/infra/pii/tin.ts:17; given every secret current and no placeholder, then both pass.", { skip }, async () => {
   const w = await world("t17", "2026-11-16T14:00:00Z");
@@ -609,4 +973,78 @@ test("35.12-T18: Given a production environment with three active `staff_users`,
   } finally { await w.close(); }
 });
 
-test("35.12-T19: Given any 35.12 route or cycle in a contract test over the fixture book, then the ledger, every `*_cents` column of `loans`, `fees`, `escrow_accounts` and `loan_installments`, and every `notices` row are identical before and after; every event and row this process wrote matches no e-mail, no name field and no 9-digit TIN pattern; every action route recorded a `staff_actions` row and an `agent_decisions` row naming the person and, where the rule requires, the confirmer.", { todo: true });
+test("35.12-T19: Given any 35.12 route or cycle in a contract test over the fixture book, then the ledger, every `*_cents` column of `loans`, `fees`, `escrow_accounts` and `loan_installments`, and every `notices` row are identical before and after; every event and row this process wrote matches no e-mail, no name field and no 9-digit TIN pattern; every action route recorded a `staff_actions` row and an `agent_decisions` row naming the person and, where the rule requires, the confirmer.", { skip }, async () => {
+  // the fixture book: the demo transfer batch, the 32.14 entry demo and the 33.1 partner book (every row synthetic), plus the three worked-example loans
+  const w = await runWorld("t19", "2026-11-16T14:00:00Z"); const db = w.db; const p = w.people;
+  try {
+    const demo = generateDemoBatch(); await boardTransferBatch(w.runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), { kind: "system", id: "seed-demo" }, { synthetic: true });
+    const entry = await seedEntryDemo(w.runtime, {}); await seedPartnerBookDemo(w.runtime, { partner_id: entry.partner_id });
+    assert.ok((await count(db, "ledger_lines")) > 0 && (await count(db, "notices")) > 0, "a book with a ledger and notices");
+    const money0 = await moneyAndNotices(db);
+    // every route once, as the person the route names; each call's new decision rows are attributed to that person
+    type Call = { method: string; path: string; tag: string; command: string; status: number; decisions: { action: string; by: string; confirmed_by: string | null; approved_by: string | null }[] };
+    const calls: Call[] = [];
+    const decisionIds = async (): Promise<Set<string>> => new Set((await db.query<{ id: string }>(`SELECT id::text AS id FROM agent_decisions WHERE rule_set_version = 'posture.v1'`)).map((r) => r.id));
+    const call = async (method: string, path: string, body: unknown, tag: string, role: string, command: string, expect: number[]): Promise<Reply> => {
+      const before = await decisionIds(); const r = await p.api(method, path, body, p.as(tag, role));
+      assert.ok(expect.includes(r.status), `${method} ${path} → ${r.status} ${JSON.stringify(r.body).slice(0, 400)}`);
+      const rows = (await db.query<{ id: string; action: string; rationale: string; approved_by: string | null }>(`SELECT id::text AS id, action, rationale, approved_by::text AS approved_by FROM agent_decisions WHERE rule_set_version = 'posture.v1'`)).filter((d) => !before.has(d.id));
+      calls.push({ method, path, tag, command, status: r.status, decisions: rows.map((d) => { const rec = JSON.parse(d.rationale) as Json; return { action: d.action, by: String(rec["by"]), confirmed_by: (rec["confirmed_by"] as string | null | undefined) ?? null, approved_by: d.approved_by }; }) });
+      return r;
+    };
+    const digest = `sha256:t19${R}`; const t0 = w.clock.now();
+    const m1 = await call("POST", "/ops/api/posture/manifests", nonprodAtHead("production", t0, digest), "cid", "ciso", "posture.record", [200]);
+    await call("POST", "/ops/api/posture/check", { environment: "production" }, "cid", "ciso", "posture.check", [200]);
+    const f08 = (await findings(db, "environment = 'production' AND action = 'opened' AND control_code = 'PST-08'"))[0]!;
+    const [ex] = await db.query<{ id: string }>(`INSERT INTO control_exceptions (control_code, scope, justification, compensating_controls, approved_by, approved_at, expires_at, review_due_at) VALUES ('CTL-SEC-04', 'production WAF preview', 'the WAF signatures stay in preview until the tuning window closes', 'rate limit and allow-list stay enforced', $1, $2::timestamptz, ($2::timestamptz + interval '6 months')::date, ($2::timestamptz + interval '3 months')::date) RETURNING id::text AS id`, [`human:${p.ids["cid"]}`, t0]);
+    await call("POST", `/ops/api/posture/findings/${f08.finding_id}/resolve`, { cause: "exception", exception_id: ex!.id, reason: "19.2 exception approved by the Qualified Individual" }, "cid", "ciso", "posture.drift.resolve", [200]);
+    const tables = (await db.query<{ t: string }>(`SELECT table_name AS t FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE' ORDER BY 1`)).map((r) => r.t);
+    await call("POST", "/ops/api/posture/drills", { environment: "production", source_backup_id: "backup-2026-11-16", backup_taken_at: "2026-11-16T07:00:00Z", pitr_target_at: "2026-11-16T11:00:00Z", newest_event_at: "2026-11-16T10:59:50Z", clone_instance: "supermortgage-drill-20261116", started_at: "2026-11-16T11:05:00Z", completed_at: "2026-11-16T12:30:00Z", row_checks: tables.map((t) => ({ table: t, source_count: 7, clone_count: 7 })), event_chain_ok: true, ledger_balanced: true, clone_destroyed_at: "2026-11-16T13:00:00Z", witnessed_by: p.ids["cara"] }, "cid", "ciso", "backup.drill", [200]);
+    const scan = await call("POST", "/ops/api/posture/scans", { environment: "nonprod", kind: "nonprod_real_data" }, "cara", "compliance", "data.scan", [200]); assert.equal(scan.body["real_data_found"], false, "the fixture book is synthetic throughout");
+    const nonprodManifest = await call("POST", "/ops/api/posture/manifests", hardened("nonprod", t0, digest), "cid", "ciso", "posture.record", [200]);
+    await call("POST", `/ops/api/posture/scans/${scan.body["scan_id"]}/purged`, { environment: "nonprod", rebuilt_manifest_id: nonprodManifest.body["manifest_id"] }, "cara", "compliance", "data.scan", [200, 409]);
+    const sw = await call("POST", "/ops/api/integrations/switch", { environment: "nonprod", vendor: "print_mail", mode: "real", endpoint_class: "sandbox", secret_ref: "supermortgage-vendor-print-mail", egress_rule: "egress-print-mail", rationale: "canary" }, "cid", "ciso", "integrations.switch", [200]);
+    await call("POST", "/ops/api/integrations/switch", { request_id: sw.body["request_id"] }, "cara", "compliance", "integrations.switch", [200]);
+    await call("GET", "/ops/api/integrations?environment=nonprod", undefined, "ana", "ops_analyst", "integrations.status", [200]);
+    const run = await call("POST", "/ops/api/parallel-run/open", { environment: "production", incumbent_servicer: "Incumbent", loan_ids: w.loanIds, opened_on: "2026-11-16" }, "osc", "officer", "parallel_run.open", [200]); const runId = run.body["parallel_run_id"] as string;
+    await call("POST", `/ops/api/parallel-run/${runId}/reconcile`, { as_of_date: "2026-11-16", incumbent_file_csv: incumbentCsv(w.loanIds, w.figures, { 2: { escrow_balance_cents: WORKED_A_ESCROW_THEIRS_CENTS } }) }, "osc", "officer", "parallel_run.reconcile", [200]);
+    const [diff] = await db.query<{ diff_id: string }>(`SELECT diff_id::text AS diff_id FROM parallel_run_diffs WHERE parallel_run_id = $1 AND action = 'opened'`, [runId]);
+    await call("POST", `/ops/api/parallel-run/${runId}/diffs/${diff!.diff_id}`, { disposition: "theirs_right", reason: "the incumbent's disbursement fee, not ours to post" }, "osc", "officer", "parallel_run.disposition", [200]);
+    await call("GET", `/ops/api/parallel-run/${runId}`, undefined, "ana", "ops_analyst", "parallel_run.board", [200]);
+    await call("POST", `/ops/api/parallel-run/${runId}/close`, { outcome: "abandoned", reason: "the incumbent's tape format changes on the 17th; a new run opens on it" }, "osc", "officer", "parallel_run.close", [200]);
+    await call("GET", "/ops/api/go-live?environment=production", undefined, "cid", "ciso", "go_live.check", [200]);
+    await call("POST", "/ops/api/go-live/waive", { environment: "production", item_code: "GL-10", reason: "one month-end close in the run so far; the second closes with November" }, "cara", "compliance", "go_live.check", [200]);
+    const early = await call("POST", "/ops/api/go-live/attest", { environment: "production" }, "cid", "ciso", "go_live.attest", [409]); assert.equal(early.body["code"], "GO_LIVE_GATE");
+    await call("GET", "/ops/api/posture?environment=production", undefined, "ana", "ops_analyst", "posture.board", [200]);
+    // the cycles on the nonprod runtime: a nonprod run reconciled by the 21:00 pass from the day's file (a document), the 05:30 check, the 05:45 scan, the canary
+    const run2 = await call("POST", "/ops/api/parallel-run/open", { environment: "nonprod", incumbent_servicer: "Incumbent", loan_ids: w.loanIds, opened_on: "2026-11-16" }, "osc", "officer", "parallel_run.open", [200]); const run2Id = run2.body["parallel_run_id"] as string;
+    const file = hashedDocument("incumbent-trial-balance", { parallel_run_id: run2Id, as_of_date: "2026-11-17", csv: incumbentCsv(w.loanIds, w.figures) });
+    await writeDocument(db, file, { kind: "incumbent_trial_balance", retention: "corporate_7y", metadata: { parallel_run_id: run2Id, as_of_date: "2026-11-17", incumbent_servicer: "Incumbent", content: incumbentCsv(w.loanIds, w.figures), rows: 3, source: "sftp" }, created_at: t0 });
+    w.clock.set("2026-11-17T10:31:00Z"); const pass1 = await posturePass(w.runtime, w.clock.now()); assert.ok(pass1.daily_check, "the 05:30 check ran on the nonprod manifest"); assert.equal(pass1.daily_check!.environment, "nonprod");
+    w.clock.set("2026-11-17T10:46:00Z"); const pass2 = await posturePass(w.runtime, w.clock.now()); assert.ok(pass2.daily_scan, "the 05:45 scan ran"); assert.equal(pass2.daily_scan!.real_data_found, false);
+    w.clock.set("2026-11-18T02:01:00Z"); const pass3 = await posturePass(w.runtime, w.clock.now()); assert.equal(pass3.reconciled.length, 1, "the 21:00 pass reconciled the day's file"); assert.equal(pass3.reconciled[0]!.incumbent_file_document_id, file.id); assert.equal(pass3.reconciled[0]!.mismatched, 0);
+    assert.equal(pass1.canaries.length + pass2.canaries.length + pass3.canaries.length >= 1, true, "the print_mail canary ran once in the day"); await w.runtime.sweep();
+    // the ledger, every *_cents column of loans, fees, escrow_accounts and loan_installments, and every notices row are identical before and after
+    assert.equal(await moneyAndNotices(db), money0, "no ledger line, money column or notice moved through any route or cycle");
+    // every event and row this process wrote: no e-mail, no name field of a person, no 9-digit TIN pattern (a `name` key naming a secret or a table is a resource name)
+    const ROW_PII_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|"(?:legal_name|first_name|last_name|full_name|borrower_name|display_name)"\s*:\s*"[^"]+"|\b\d{3}-?\d{2}-?\d{4}\b/;
+    const scrub = (rows: unknown[], what: string): void => { assert.ok(rows.length > 0, `${what}: rows exist`); for (const r of rows) { const text = JSON.stringify(r, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v)); assert.ok(!ROW_PII_RE.test(text), `${what}: ${text.slice(0, 300)}`); } };
+    for (const t of ["environment_manifests", "posture_checks", "posture_findings", "integration_switches", "restore_drills", "data_scans", "parallel_runs", "parallel_run_diffs", "go_live_checklists"]) scrub(await db.query(`SELECT * FROM ${t}`), t);
+    scrub(await db.query(`SELECT kind, sha256, storage_uri, metadata FROM documents WHERE storage_uri LIKE 'fake-blob://posture/%'`), "the process's documents");
+    scrub(await db.query(`SELECT type, actor_kind::text AS actor_kind, actor_id, aggregate_kind, aggregate_id, payload FROM loan_events WHERE type LIKE 'posture.%' OR type LIKE 'integration.%' OR type LIKE 'backup.%' OR type LIKE 'parallel_run.%' OR type LIKE 'go_live.%'`), "the process's events");
+    scrub(await db.query(`SELECT action, subject_kind, subject_id, rationale FROM agent_decisions WHERE rule_set_version = 'posture.v1'`), "the process's decisions");
+    // every action route recorded a staff_actions row (34.1 rule 4: one per request, written after the answer — the log is read once it has caught up) naming the person, and an agent_decisions row naming the person and, for a confirmation, the confirmer
+    const posts = calls.filter((c) => c.method === "POST");
+    for (let i = 0; i < 200 && (await count(db, "staff_actions WHERE method = 'POST' AND route LIKE '/ops/api/%' AND (route LIKE '/ops/api/posture%' OR route LIKE '/ops/api/integrations%' OR route LIKE '/ops/api/parallel-run%' OR route LIKE '/ops/api/go-live%')")) < posts.length; i++) await new Promise((r) => setTimeout(r, 25));
+    for (const c of calls) {
+      const rows = await db.query<{ staff_user_id: string; command: string | null; result: string; role: string | null }>(`SELECT staff_user_id::text AS staff_user_id, command, result, role FROM staff_actions WHERE method = $1 AND route LIKE $2 ORDER BY at`, [c.method, `${c.path.split("?")[0]}%`]);
+      assert.ok(rows.some((r) => r.staff_user_id === p.ids[c.tag] && r.result === (c.status === 200 ? "ok" : "refused")), `${c.method} ${c.path}: a staff_actions row for ${c.tag} (${JSON.stringify(rows)})`);
+      if (c.status === 200 && c.method === "POST") {
+        assert.ok(rows.some((r) => r.staff_user_id === p.ids[c.tag] && r.command === `35.12 ${c.command}`), `${c.path}: the row names the bus command with its process (35.7 T10) ${c.command} (${JSON.stringify(rows.map((r) => r.command))})`);
+        assert.ok(c.decisions.length >= 1, `${c.path}: an agent_decisions row`); assert.ok(c.decisions.every((d) => d.by === p.ids[c.tag] || d.confirmed_by === p.ids[c.tag] || d.approved_by === p.ids[c.tag]), `${c.path}: the decision names ${c.tag} (${JSON.stringify(c.decisions)})`);
+      }
+    }
+    const confirm = calls.find((c) => c.path === "/ops/api/integrations/switch" && c.tag === "cara")!; assert.deepEqual(confirm.decisions.map((d) => [d.action, d.by, d.confirmed_by]), [["integrations.switch:confirm", p.ids["cid"], p.ids["cara"]]], "the confirmation names both people");
+    assert.ok(calls.filter((c) => c.status === 200 && c.method === "POST").length >= 14, `${calls.length} routes driven`); void m1;
+  } finally { await w.close(); }
+});

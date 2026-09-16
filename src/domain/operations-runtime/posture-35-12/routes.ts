@@ -29,6 +29,7 @@ import { CommandRefused } from "../../../app/commands.ts";
 import { StaffError } from "../../../runtime/staff/roles.ts";
 import type { ControlsRoute, ControlsRequest, ControlsResponse } from "../../../runtime/controls/routes.ts";
 import { postureBoard } from "./board.ts";
+import { parallelRunBoard } from "./parallel-run.ts";
 import { PROCESS_35_12, isUuid, s } from "./types.ts";
 
 type Row = Record<string, unknown>;
@@ -69,6 +70,7 @@ export function postureRoutes(deps: { readonly runtime: Runtime }): ControlsRout
     { method: "GET", path: "/api/go-live", roles: GO_LIVE_READ_ROLES, command: "go_live.check", handler: (r) => act("go_live.check", r.actor, { op: "check", ...qenv(r) }, null) },
     { method: "POST", path: "/api/go-live/waive", roles: ["compliance"], command: "go_live.check", handler: (r) => act("go_live.check", r.actor, { op: "waive", ...env(r), item_code: r.body["item_code"], reason: r.body["reason"] }, null) },
     { method: "POST", path: "/api/go-live/attest", roles: ["ciso", "compliance"], command: "go_live.attest", handler: (r) => act("go_live.attest", r.actor, { ...(r.body["request_id"] ? { op: "confirm", request_id: s(r.body["request_id"]) } : { op: "request" }), ...env(r), reason: r.body["reason"] }, isUuid(r.body["request_id"]) ? { kind: "request", id: r.body["request_id"] } : null) },
+    { method: "GET", path: "/api/parallel-run/:id", roles: POSTURE_READ_ROLES, command: null, handler: async (r) => { const id = uuidParam(r.params, "id"); const board = await parallelRunBoard(rt.db, id, rt.clock.now()); return board["found"] === false ? { status: 404, body: { error: "not_found", code: "RUN_NOT_FOUND", parallel_run_id: id }, subject: null } : { status: 200, body: board, subject: { kind: "parallel_run", id } }; } },
     { method: "GET", path: "/api/posture", roles: POSTURE_READ_ROLES, command: null, handler: async (r) => ({ status: 200, body: await postureBoard(rt, { environment: r.query.get("environment") }), subject: null }) },
   ];
 }

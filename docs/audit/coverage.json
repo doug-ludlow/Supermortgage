@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8186/8756 (93.5%): tids 2287/2458, tables 789/848, timers 2055/2097, notices 308/308, tools 1466/1578, figures 1281/1467; processes at 100%: 194/205",
+ "brief": "spec units built 8202/8756 (93.7%): tids 2295/2458, tables 789/848, timers 2055/2097, notices 308/308, tools 1466/1578, figures 1289/1467; processes at 100%: 195/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2287
+   "built": 2295
   },
   "tables": {
    "spec": 848,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1467,
-   "built": 1281
+   "built": 1289
   },
   "units": {
    "spec": 8756,
-   "built": 8186
+   "built": 8202
   }
  },
  "sections": {
@@ -237,9 +237,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 162,
+   "built": 178,
    "processes": 12,
-   "done": 2
+   "done": 3
   }
  },
  "done": [
@@ -436,7 +436,8 @@
   "34.3",
   "34.4",
   "35.1",
-  "35.7"
+  "35.7",
+  "35.12"
  ],
  "processes": [
   {
@@ -8666,10 +8667,9 @@
    },
    "figures": {
     "spec": 19,
-    "built": 1,
+    "built": 2,
     "missing": [
      "$1,233,000.00",
-     "$1,250.00",
      "$1,253,050.55",
      "$1,254,300.55",
      "$1,265,500.55",
@@ -8690,9 +8690,9 @@
    },
    "units": {
     "spec": 55,
-    "built": 1
+    "built": 2
    },
-   "pct": 1.8
+   "pct": 3.6
   },
   {
    "process": "35.5",
@@ -8772,7 +8772,7 @@
    },
    "figures": {
     "spec": 53,
-    "built": 4,
+    "built": 6,
     "missing": [
      "$1,351.71",
      "$1,500.00",
@@ -8784,7 +8784,6 @@
      "$1,900.91",
      "$1,971.20",
      "$10.24",
-     "$100.00",
      "$17.27",
      "$2,192.57",
      "$2,292.57",
@@ -8804,7 +8803,6 @@
      "$3,088.94",
      "$3,384.35",
      "$3,401.62",
-     "$300,000.00",
      "$370,543.62",
      "$371,048.86",
      "$377.05",
@@ -8827,9 +8825,9 @@
    },
    "units": {
     "spec": 97,
-    "built": 6
+    "built": 8
    },
-   "pct": 6.2
+   "pct": 8.2
   },
   {
    "process": "35.6",
@@ -9411,18 +9409,9 @@
    "title": "Production posture: a production environment apart from nonprod, private networking, a person behind every credential, secrets and data classes, `INTEGRATIONS` as a real switch per vendor, backups and the restore drill, the go-live checklist, the four-week parallel run, and no borrower data in nonprod",
    "tids": {
     "spec": 19,
-    "built": 11,
-    "todo": 8,
-    "missing": [
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     19
-    ]
+    "built": 19,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 12,
@@ -9447,20 +9436,14 @@
    },
    "figures": {
     "spec": 7,
-    "built": 2,
-    "missing": [
-     "$1,250.00",
-     "$3,412.92",
-     "$3,417.92",
-     "$62.50",
-     "$67.50"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 58,
-    "built": 45
+    "built": 58
    },
-   "pct": 77.6
+   "pct": 100.0
   }
  ]
 }

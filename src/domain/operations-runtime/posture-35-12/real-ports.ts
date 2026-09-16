@@ -70,9 +70,11 @@ export class RealAdapterMissing extends Error {
 }
 export function offPort<T extends object>(vendor: string, reason: "off" | "missing" = "off"): T {
   const tag = { vendor, reason };
-  return new Proxy({} as T, { get: (_t, prop) => { if (prop === PORT_TAG) return tag; if (prop === "then" || typeof prop === "symbol") return undefined; return () => { throw reason === "off" ? new VendorOff(vendor, String(prop)) : new RealAdapterMissing(vendor, String(prop)); }; }, has: (_t, prop) => prop === PORT_TAG });
+  return new Proxy({} as T, { get: (_t, prop) => { if (prop === PORT_TAG) return tag; if (typeof prop === "symbol" || PLAIN_PROPS.has(prop)) return undefined; return () => { throw reason === "off" ? new VendorOff(vendor, String(prop)) : new RealAdapterMissing(vendor, String(prop)); }; }, has: (_t, prop) => prop === PORT_TAG });
 }
 export const PORT_TAG = Symbol.for("supermortgage.port.tag");
+/** Properties serialisation and inspection read (`JSON.stringify`, `String(port)`, template literals, `await`): never a vendor call, so never a refusal. */
+const PLAIN_PROPS: ReadonlySet<string> = new Set(["then", "toJSON", "valueOf", "toString", "toLocaleString", "constructor", "inspect", "nodejs.util.inspect.custom", "asymmetricMatch", "$$typeof"]);
 export const REAL_ADAPTER_VENDORS: readonly string[] = ["lockbox_bai2"];
 /** Which runtime ports each switchable vendor constructs (a port not named by any vendor is `off` under INTEGRATIONS=real: nothing real exists for it here). */
 export const VENDOR_PORTS: Readonly<Record<string, readonly (keyof Ports)[]>> = { lockbox_bai2: ["lockbox"], ach_nacha: ["nacha", "custodialBank"], eoscar: ["eoscar"], credit_bureau: ["metro2"], fnma_p360: ["p360"], fnma_smdu: ["smdu"], fnma_lsdu: ["lsdu", "servicingEvents"], fnma_du: ["connect"], print_mail: ["printMail"], edelivery: ["edelivery"], telephony_sms_email: ["telephony"], evault: ["evault", "custodian"], mers: ["mers"], google_oidc: ["oidc"], tavus: ["tavus"] };

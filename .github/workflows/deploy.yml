@@ -320,6 +320,84 @@ jobs:
             --format 'value(status.url)')"
           echo "Cloud Run URL (ingress is load-balancer only, so this is not reachable directly): ${url}"
 
+      # 35.12 rule 1: the deploy records what it deployed — an environment manifest of facts (names, flags, version dates;
+      # never a secret's payload) posted to /v1/posture/manifests under a 35.7 service principal (POSTURE_PRINCIPAL_TOKEN,
+      # issued once with principals.issue and stored as a repository secret; the shared API token opens nothing here).
+      # posture.record hashes the manifest, runs the posture check (PST-01 … PST-17) and opens drift findings. Without the
+      # secret the step says so and skips; a failure never fails the deploy. Facts this runner cannot read stay absent, so
+      # their controls answer `unverifiable` rather than a guess ([UNVERIFIED fields]: Cloud Armor, the deployer's IAM
+      # roles, org policies, the audit sink, the log sample).
+      - name: Record the environment manifest (35.12 posture.record)
+        continue-on-error: true
+        env:
+          POSTURE_PRINCIPAL_TOKEN: ${{ secrets.POSTURE_PRINCIPAL_TOKEN }}
+          API_HOSTNAME: ${{ needs.terraform.outputs.api_hostname }}
+          LB_IP: ${{ needs.terraform.outputs.lb_ip }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          SQL: ${{ needs.terraform.outputs.sql_connection_name }}
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          if [ -z "${POSTURE_PRINCIPAL_TOKEN}" ]; then
+            echo "::notice::No POSTURE_PRINCIPAL_TOKEN secret: the environment manifest was not recorded (issue a 35.7 service principal with principals.issue and store its token as the repository secret)."
+            exit 0
+          fi
+          echo "::add-mask::${POSTURE_PRINCIPAL_TOKEN}"
+          instance="${SQL##*:}"
+          sql="$(gcloud sql instances describe "${instance}" --project "${PROJECT}" --format json)"
+          api="$(gcloud run services describe supermortgage-api --region "${REGION}" --project "${PROJECT}" --format json)"
+          digest="$(gcloud artifacts docker images describe "${IMAGE}" --format 'value(image_summary.digest)' 2>/dev/null || echo "${IMAGE##*:}")"
+          migration_head="$(gcloud run jobs describe supermortgage-migrate --region "${REGION}" --project "${PROJECT}" --format 'value(metadata.annotations.supermortgage/migration-head)' 2>/dev/null || true)"
+          # the secret names and their latest version's creation instant — never `versions access`
+          secrets='[]'
+          for name in $(gcloud secrets list --project "${PROJECT}" --filter 'name~supermortgage-' --format 'value(name)'); do
+            created="$(gcloud secrets versions describe latest --secret "${name}" --project "${PROJECT}" --format 'value(createTime)' 2>/dev/null || true)"
+            secrets="$(echo "${secrets}" | jq -c --arg n "${name}" --arg c "${created}" '. + [{name: $n, version_created_at: ($c | select(. != "")), placeholder: ($c == "")}]')"
+          done
+          manifest="$(jq -cn \
+            --arg environment "${ENVIRONMENT}" --arg project "${PROJECT}" --arg region "${REGION}" --arg digest "${digest}" \
+            --arg migration_head "${migration_head:-unknown}" --arg run_id "${GITHUB_RUN_ID}" \
+            --argjson sql "${sql}" --argjson api "${api}" --argjson secrets "${secrets}" '
+            {
+              environment: $environment, project_id: $project, region: $region, image_digest: $digest, migration_head: $migration_head, deploy_run_id: $run_id,
+              terraform: {
+                sql: {
+                  ipv4_enabled: ($sql.settings.ipConfiguration.ipv4Enabled // false),
+                  private_service_access: (($sql.settings.ipConfiguration.privateNetwork // "") != ""),
+                  availability_type: ($sql.settings.availabilityType // "UNKNOWN"),
+                  pitr: ($sql.settings.backupConfiguration.pointInTimeRecoveryEnabled // false),
+                  log_retention_days: ($sql.settings.backupConfiguration.transactionLogRetentionDays // 0),
+                  retained_backups: ($sql.settings.backupConfiguration.backupRetentionSettings.retainedBackups // 0),
+                  cmek_key: ($sql.diskEncryptionConfiguration.kmsKeyName // null)
+                },
+                run: {
+                  env_names: [ ($api.spec.template.spec.containers[0].env // [])[] | .name ],
+                  ingress: ($api.metadata.annotations["run.googleapis.com/ingress"] // "all"),
+                  vpc_egress: ($api.spec.template.metadata.annotations["run.googleapis.com/vpc-access-egress"] // "private-ranges-only")
+                }
+              },
+              secrets: $secrets,
+              runtime: {
+                environment: $environment,
+                integrations: (([ ($api.spec.template.spec.containers[0].env // [])[] | select(.name == "INTEGRATIONS") | .value ] | first) // "fake"),
+                fake_reviewers: (([ ($api.spec.template.spec.containers[0].env // [])[] | select(.name == "FAKE_REVIEWERS") | .value ] | first) // "on"),
+                env_names: [ ($api.spec.template.spec.containers[0].env // [])[] | .name ]
+              }
+            }')"
+          # the demo clock's answer from the deployed service (35.12 PST-11): 403 outside nonprod
+          demo_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --resolve "${API_HOSTNAME}:443:${LB_IP}" -X POST "https://${API_HOSTNAME}/v1/demo/clock" -H 'content-type: application/json' --data '{}' || echo 0)"
+          manifest="$(echo "${manifest}" | jq -c --argjson st "${demo_status}" '.runtime.demo_clock_status = $st')"
+          out="$(curl --silent --show-error --write-out '\n%{http_code}' \
+            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
+            -X POST "https://${API_HOSTNAME}/v1/posture/manifests" \
+            -H "authorization: Bearer ${POSTURE_PRINCIPAL_TOKEN}" -H 'content-type: application/json' \
+            --data "${manifest}")"
+          code="$(echo "${out}" | tail -n1)"
+          body="$(echo "${out}" | sed '$d')"
+          echo "posture.record → ${code}"
+          echo "${body}" | jq '{manifest_id: .output.manifest_id, env_hash: .output.env_hash, check: {run_id: .output.check.run_id, failed: .output.check.failed, unverifiable: .output.check.unverifiable, findings_opened: .output.check.findings_opened}}' 2>/dev/null || echo "${body}" | head -c 600
+          test "${code}" = "200"
+
       # Ingress is restricted to the load balancer, so the only honest smoke
       # test is through it. --resolve pins the hostname to the LB IP so the
       # test works before DNS propagates; TLS is still fully verified, which is

@@ -177,7 +177,10 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const blobs = opts.blobs ?? new FakeBlobStore();
   const urlSecret = opts.urlSecret ?? process.env["BORROWER_URL_SECRET"] ?? randomBytes(32).toString("hex");
   const returnUrlBase = opts.returnUrlBase ?? process.env["BORROWER_APP_URL"] ?? "https://app.supermortgage.example";
-  const auth = new BorrowerAuth(runtime.db);
+  // 35.12 rule 6: a party this door creates is synthetic when the vendors that vouched for it (identity, Sign in with Google, the telephony webhooks) are the in-repo FAKEs — marked by the writer, never by environment
+  const oidcWired = opts.oidc ?? runtime.ports.oidc;
+  const doorVendorsFake = stripe instanceof FakeStripeIdentity && (!oidcWired || oidcWired instanceof FakeGoogleOidc) && (!opts.telephonyWebhooks || opts.telephonyWebhooks.vendorName === "FAKE");
+  const auth = new BorrowerAuth(runtime.db, { synthetic: doorVendorsFake });
   const credentials = new PgBorrowerCredentialRepository(runtime.db);   // 32.16 DELTA-29
   const ui = new PgBorrowerUiRepository(runtime.db);
   const reader = new BorrowerRecordReader(runtime.db);

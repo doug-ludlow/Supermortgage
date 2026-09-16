@@ -33,7 +33,9 @@ export const normalizeDestination = (channel: "sms" | "email", d: string): strin
 
 export class PgBorrowerPartyRepository {
   private readonly db: Queryable;
-  constructor(db: Queryable) { this.db = db; }
+  /** 35.12 rule 6: every party this repository creates carries `parties.synthetic` = the door's identity vendors answered `vendor: "FAKE"` (the writer marks; never the environment). */
+  private readonly synthetic: boolean;
+  constructor(db: Queryable, opts: { synthetic?: boolean } = {}) { this.db = db; this.synthetic = opts.synthetic === true; }
 
   async get(partyId: string, q: Queryable = this.db): Promise<PartyRow | undefined> {
     const rows = await q.query<PartyRow & Record<string, unknown>>(`SELECT id, party_type, legal_name, contact, created_at FROM parties WHERE id = $1`, [partyId]);
@@ -61,13 +63,13 @@ export class PgBorrowerPartyRepository {
     const ab = abs.find((b) => emailOrPhone(b.contact)[key].includes(dest));
     const legalName = ab?.legal_name ?? (channel === "email" ? dest : "Borrower (phone)");
     const contact = channel === "email" ? { email: dest } : { phone: dest };
-    const rows = await q.query<PartyRow & Record<string, unknown>>(`INSERT INTO parties (party_type, legal_name, contact) VALUES ('borrower', $1, $2::jsonb) RETURNING id, party_type, legal_name, contact, created_at`, [legalName, toJson(contact)]);
+    const rows = await q.query<PartyRow & Record<string, unknown>>(`INSERT INTO parties (party_type, legal_name, contact, synthetic) VALUES ('borrower', $1, $2::jsonb, $3) RETURNING id, party_type, legal_name, contact, created_at`, [legalName, toJson(contact), this.synthetic]);
     const party = rows[0]!;
     return { party, created: true, linked_application_borrowers: await this.linkUnlinkedBorrowers(party.id, channel, dest, q) };
   }
   /** 32.17 rule 11: the party the video door opens before a name or an e-mail exists — a provisional name (never a first name to the model or the vendor) and an empty contact; video.identify fills both once. */
   async createProvisional(door: "video", q: Queryable = this.db): Promise<PartyRow> {
-    const rows = await q.query<PartyRow & Record<string, unknown>>(`INSERT INTO parties (party_type, legal_name, contact) VALUES ('borrower', $1, $2::jsonb) RETURNING id, party_type, legal_name, contact, created_at`, [`Borrower (${door})`, toJson({ provisional: door })]);
+    const rows = await q.query<PartyRow & Record<string, unknown>>(`INSERT INTO parties (party_type, legal_name, contact, synthetic) VALUES ('borrower', $1, $2::jsonb, $3) RETURNING id, party_type, legal_name, contact, created_at`, [`Borrower (${door})`, toJson({ provisional: door }), this.synthetic]);
     return rows[0]!;
   }
   /** A name the platform made up (an e-mail address, "Borrower (phone)", "Borrower (video)") — not the borrower's own. */

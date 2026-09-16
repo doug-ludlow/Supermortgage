@@ -52,6 +52,8 @@ export type PartnerBookImportInput = {
   readonly profile: "m3-v1";
   readonly tape: { readonly filename: string; readonly content: Uint8Array };
   readonly supplement?: { readonly filename: string; readonly content: Uint8Array };
+  /** 35.12 rule 6: `true` from a fixture or seed writer (seedPartnerBookDemo, the fixture books) — every party the import creates is synthetic; a real partner tape (the 33.1 tool, the ops door) leaves it unset. */
+  readonly synthetic?: boolean;
 };
 export type PartnerBookImportResult = {
   readonly import_id: string;
@@ -108,8 +110,6 @@ export async function planPartner(rt: Runtime, partner: PartnerBookImportInput["
   return { id, legal_name: legal, exists: !!existing, entity: store.versionsSince(mark).length ? store : null, entity_mark: mark, program_id: hasProgram ? null : `prog-refi-${id.slice(0, 8)}` };
 }
 /** The import's `before` hook: the parties{servicer} row the loans reference. */
-/** 35.12 rule 6: outside production every partner-book party (the partner and its homeowners) is synthetic — nonprod holds no real person; a production import never marks. */
-const syntheticIn = (rt: Runtime): boolean => rt.environment !== "production" && rt.environment !== "prod";
 async function writePartnerParty(q: Queryable, plan: PartnerPlan, partner: PartnerBookImportInput["partner"], synthetic = false): Promise<void> {
   if (plan.exists) return;
   await q.query(`INSERT INTO parties (id, party_type, legal_name, servicer_number, mers_org_id, contact, synthetic) VALUES ($1, 'servicer', $2, $3, $4, $5::jsonb, $6)`, [plan.id, plan.legal_name, partner.servicer_number ?? null, partner.mers_org_id ?? null, toJson({ nmlsr_id: partner.nmlsr_id }), synthetic]);
@@ -124,10 +124,10 @@ async function registerPartnerProgram(rt: Runtime, plan: PartnerPlan, actor: Act
   await rt.execute({ process: "20.1", name: "loadUniverse", loanId: "", actor: SYSTEM_PARTNER_BOOK, input: { op: "register_program", program: { program_id: plan.program_id, partner_id: plan.id, effective_from: rt.clock.now().slice(0, 10), approved_by: `${actor.kind}:${actor.id}` } } });
 }
 
-export async function ensurePartner(rt: Runtime, partner: PartnerBookImportInput["partner"], actor: Actor): Promise<{ id: string; legal_name: string; written: string[] }> {
+export async function ensurePartner(rt: Runtime, partner: PartnerBookImportInput["partner"], actor: Actor, synthetic = false): Promise<{ id: string; legal_name: string; written: string[] }> {
   const plan = await planPartner(rt, partner, actor);
   const written: string[] = [];
-  if (!plan.exists || plan.entity) await rt.uow.run({}, async () => undefined, { clock: rt.clock, before: async (q) => { await writePartnerParty(q, plan, partner, syntheticIn(rt)); }, commit: async (q) => { await writePartnerEntity(rt, q, plan); } });
+  if (!plan.exists || plan.entity) await rt.uow.run({}, async () => undefined, { clock: rt.clock, before: async (q) => { await writePartnerParty(q, plan, partner, synthetic); }, commit: async (q) => { await writePartnerEntity(rt, q, plan); } });
   if (!plan.exists) written.push(`parties/${plan.id}`);
   if (plan.entity) written.push(`partners/${plan.id}`);
   await registerPartnerProgram(rt, plan, actor);
@@ -256,7 +256,7 @@ export async function importPartnerBook(rt: Runtime, input: PartnerBookImportInp
       payload: { import_id: importId, partner_id: partner.id, actor_id: actorId, as_of_date: asOf, status: "loaded", rows_total: parsed.rows_total, rows_loaded: plan.loans.length, rows_exception: rowsWithExceptions(plan.exceptions), loans_created: created, loans_updated: updated, parties_created: plan.parties_created, parties_linked: plan.parties_linked, invitations_sent: invitationsSent, gaps: plan.gaps, origination: true } });
     return { invitationsSent };
   }, { clock: rt.clock,
-    before: async (q) => { await writePartnerParty(q, partner, input.partner, syntheticIn(rt)); await writeBaselineRows(q, plan, partner.id, realParty, asOf, syntheticIn(rt)); },
+    before: async (q) => { await writePartnerParty(q, partner, input.partner, input.synthetic === true); await writeBaselineRows(q, plan, partner.id, realParty, asOf, input.synthetic === true); },
     commit: async (q) => {
       await writePartnerEntity(rt, q, partner);
       await q.query(`INSERT INTO partner_book_imports (id, partner_party_id, as_of_date, profile, status, tape_sha256, supplement_sha256, rows_total, rows_loaded, rows_exception, loans_created, loans_updated, parties_created, parties_linked, invitations_sent, report, actor_id, created_at) VALUES ($1, $2, $3, $4, 'loaded', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17)`,
@@ -350,7 +350,7 @@ export async function seedPartnerBookDemo(runtime: Runtime, opts: { partner_id?:
     partner = { legal_name: party.legal_name, nmlsr_id: nmlsr, ...(row?.servicer_number ? { servicer_number: row.servicer_number.trim() } : {}), ...(row?.mers_org_id ? { mers_org_id: row.mers_org_id.trim() } : {}) };
   }
   const book = demoBook();
-  return importPartnerBook(runtime, { partner, as_of_date: DEMO_AS_OF, profile: "m3-v1", tape: { filename: "partner-book-demo.xlsx", content: book.tape }, supplement: { filename: "partner-book-demo-supplement.csv", content: new Uint8Array(Buffer.from(book.supplement, "utf8")) } }, SEED_ACTOR);
+  return importPartnerBook(runtime, { partner, as_of_date: DEMO_AS_OF, profile: "m3-v1", tape: { filename: "partner-book-demo.xlsx", content: book.tape }, supplement: { filename: "partner-book-demo-supplement.csv", content: new Uint8Array(Buffer.from(book.supplement, "utf8")) }, synthetic: true }, SEED_ACTOR);
 }
 
 /**

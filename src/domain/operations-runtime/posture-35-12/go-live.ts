@@ -102,7 +102,7 @@ export async function goLiveCheck(d: PostureDeps, i: CheckInput): Promise<Checkl
     if (!GO_LIVE_ITEMS.includes(code)) throw new RangeError("item_code ∈ GL-01 … GL-12");
     if (!WAIVABLE_ITEMS.includes(code)) refuse(409, "GO_LIVE_ITEM_NOT_WAIVABLE", `${code} cannot be waived: only GL-08 and GL-10 may be, by compliance with a reason; the money and identity items are satisfied by evidence (35.12 rule 10)`, { item_code: code, waivable: WAIVABLE_ITEMS });
     if (!reason) throw new RangeError("a waiver needs a reason");
-    d.deferWrite(async (q) => { const decision_id = await decisionFor(q, "checklist", checklist_id); await q.query(`INSERT INTO go_live_checklists (checklist_id, environment, item_code, status, evidence_ref, reason, by, by_role, manifest_id, decision_id, created_at) VALUES ($1, $2, $3, 'waived', $4, $5, $6, $7, $8, $9, $10::timestamptz)`, [checklist_id, environment, code, `waived_by:${compliance.id}`, reason, by, d.actor.role ?? null, manifest?.id ?? null, decision_id, now]); });
+    d.deferWrite(async (q) => { const decision_id = await decisionFor(q, "checklist", checklist_id); await q.query(`INSERT INTO go_live_checklists (checklist_id, environment, item_code, status, evidence_ref, reason, by, by_role, manifest_id, decision_id) VALUES ($1, $2, $3, 'waived', $4, $5, $6, $7, $8, $9)`, [checklist_id, environment, code, `waived_by:${compliance.id}`, reason, by, d.actor.role ?? null, manifest?.id ?? null, decision_id]); });
     d.events.append({ type: "go_live.item.waived", aggregate: { kind: "go_live_checklist", id: checklist_id }, actor: d.actor, payload: P({ checklist_id, environment, item_code: code, reason, by: compliance.id }) });
     const items = await computeItems(d.runtime, d.db, environment, now);
     const merged = items.map((it) => (it.item_code === code ? { ...it, status: "waived" as const, evidence_ref: `waived_by:${compliance.id}`, waived_by: compliance.id, reason } : applyWaiver(it, rows.get(it.item_code))));
@@ -112,8 +112,9 @@ export async function goLiveCheck(d: PostureDeps, i: CheckInput): Promise<Checkl
   await requireRoleOrService(d, CHECK_ROLES, "go_live.check", environment);
   const items = (await computeItems(d.runtime, d.db, environment, now)).map((it) => applyWaiver(it, rows.get(it.item_code)));
   const changed = items.filter((it) => { const prev = rows.get(it.item_code); return it.status !== "waived" && (!prev || prev.status !== it.status || (prev.evidence_ref ?? null) !== (it.evidence_ref ?? null)); });
-  if (changed.length) d.deferWrite(async (q) => { const decision_id = await decisionFor(q, "checklist", checklist_id); for (const it of changed) await q.query(`INSERT INTO go_live_checklists (checklist_id, environment, item_code, status, evidence_ref, by, by_role, manifest_id, decision_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz)`, [checklist_id, environment, it.item_code, it.status, it.evidence_ref, by, d.actor.role ?? null, manifest?.id ?? null, decision_id, now]); });
-  const att = cl.attested && !cl.fresh && cl.checklist_id === checklist_id ? { by: cl.attested.by, confirmed_by: cl.attested.confirmed_by, manifest_id: cl.attested.manifest_id, attested_at: cl.attested.created_at } : null;
+  if (changed.length) d.deferWrite(async (q) => { const decision_id = await decisionFor(q, "checklist", checklist_id); for (const it of changed) await q.query(`INSERT INTO go_live_checklists (checklist_id, environment, item_code, status, evidence_ref, by, by_role, manifest_id, decision_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [checklist_id, environment, it.item_code, it.status, it.evidence_ref, by, d.actor.role ?? null, manifest?.id ?? null, decision_id]); });
+  // the latest attestation is reported with the manifest it was made against (a check after it begins a new attempt; the attestation stands)
+  const att = cl.attested ? { by: cl.attested.by, confirmed_by: cl.attested.confirmed_by, manifest_id: cl.attested.manifest_id, attested_at: cl.attested.created_at } : null;
   return { environment, checklist_id, as_of: now, items, open: items.filter((x) => x.status === "open").map((x) => x.item_code), attested: att, manifest_id: manifest?.id ?? null, rows_written: changed.length, by: byOf(d.actor) };
 }
 const applyWaiver = (it: ChecklistItem, prev: ChecklistRow | undefined): ChecklistItem => (prev && prev.status === "waived" && it.status === "open" ? { ...it, status: "waived", evidence_ref: prev.evidence_ref, waived_by: prev.by, reason: prev.reason } : it);
@@ -132,12 +133,13 @@ async function attestRequest(q: Queryable, id: string): Promise<AttestRequest | 
 async function assertAttestable(d: PostureDeps, environment: string): Promise<{ not_before: string; checklist_id: string; items: ChecklistItem[] }> {
   const run = await latestRunOf(d.db, environment); const asOf = wallClock(Date.parse(d.now), ET).date;
   const notBefore = run ? run.planned_end_on : null;
-  const gate = run ? evaluateGate("35.12.goLiveGate", { opened_on: run.opened_on, planned_end_on: run.planned_end_on, as_of_date: asOf }) : { open: false, reason: "no parallel run opened" };
+  // rule 9: an abandoned run un-satisfies the gate until a new run opens; a closed-passed run's day has passed
+  const gate = !run ? { open: false, reason: "no parallel run opened" } : run.action === "closed" && run.outcome === "abandoned" ? { open: false, reason: `parallel run ${run.parallel_run_id} was abandoned; the gate is not satisfiable until a new run opens` } : evaluateGate("35.12.goLiveGate", { opened_on: run.opened_on, planned_end_on: run.planned_end_on, as_of_date: asOf });
   if (!gate.open) refuse(409, "GO_LIVE_GATE", `go_live.attest holds until the parallel run's 28th day${notBefore ? ` (${notBefore})` : ""}: ${gate.reason ?? "closed"} (35.12 rule 9; SM_PROD_GO_LIVE_ATTEST_GATE)`, { environment, not_before: notBefore, as_of_date: asOf });
   const cl = await currentChecklist(d.db, environment); const checklist_id = cl.attested ? randomUUID() : cl.checklist_id; const rows = cl.attested ? new Map<string, ChecklistRow>() : cl.rows;
   const items = (await computeItems(d.runtime, d.db, environment, d.now)).map((it) => applyWaiver(it, rows.get(it.item_code)));
   const open = items.filter((it) => it.status === "open");
-  if (open.length) refuse(409, "GO_LIVE_ITEM_OPEN", `${open.map((x) => x.item_code).join(", ")} open: every item is satisfied or waived before the attestation (35.12 rule 10)`, { environment, code: open[0]!.item_code, items: open.map((x) => ({ item_code: x.item_code, detail: x.detail })) });
+  if (open.length) refuse(409, "GO_LIVE_ITEM_OPEN", `${open.map((x) => x.item_code).join(", ")} open: every item is satisfied or waived before the attestation (35.12 rule 10)`, { environment, item_code: open[0]!.item_code, items: open.map((x) => ({ item_code: x.item_code, detail: x.detail })) });
   return { not_before: notBefore!, checklist_id, items };
 }
 export async function goLiveAttest(d: PostureDeps, i: AttestInput): Promise<AttestResult> {
@@ -161,7 +163,7 @@ export async function goLiveAttest(d: PostureDeps, i: AttestInput): Promise<Atte
   if (compliance.id === r.by) refuse(403, "TWO_PERSON_GO_LIVE", "the requester may not confirm (35.12 rule 10)", { request_id: r.request_id });
   const { not_before, checklist_id } = await assertAttestable(d, r.environment);
   const now = d.now; const manifest_id = r.manifest_id ?? (await latestManifest(d.db, r.environment))?.id ?? null;
-  d.deferWrite(async (q) => { const decision_id = await decisionFor(q, "checklist", checklist_id); await q.query(`INSERT INTO go_live_checklists (checklist_id, environment, item_code, status, evidence_ref, by, by_role, confirmed_by, manifest_id, request_id, decision_id, created_at) VALUES ($1, $2, 'GL-00', 'attested', $3, $4, 'ciso', $5, $6, $7, $8, $9::timestamptz)`, [checklist_id, r.environment, `manifest:${manifest_id ?? "none"}`, r.by, compliance.id, manifest_id, r.request_id, decision_id, now]); });
+  d.deferWrite(async (q) => { const decision_id = await decisionFor(q, "checklist", checklist_id); await q.query(`INSERT INTO go_live_checklists (checklist_id, environment, item_code, status, evidence_ref, by, by_role, confirmed_by, manifest_id, request_id, decision_id) VALUES ($1, $2, 'GL-00', 'attested', $3, $4, 'ciso', $5, $6, $7, $8)`, [checklist_id, r.environment, `manifest:${manifest_id ?? "none"}`, r.by, compliance.id, manifest_id, r.request_id, decision_id]); });
   d.events.append({ type: ATTESTED, aggregate: { kind: "go_live_checklist", id: checklist_id }, actor: d.actor, payload: P({ environment: r.environment, checklist_id, request_id: r.request_id, by: r.by, confirmed_by: compliance.id, attested_at: now, manifest_id, not_before }) });
   return { status: "attested", environment: r.environment, checklist_id, request_id: r.request_id, manifest_id, by: r.by, confirmed_by: compliance.id, attested_at: now, expires_at: null, not_before };
 }

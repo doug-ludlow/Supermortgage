@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8506/8787 (96.8%): tids 2363/2480, tables 820/852, timers 2083/2097, notices 308/309, tools 1525/1579, figures 1407/1470; processes at 100%: 200/212; retired 27; hosted 1512/1579, persisted 97/852",
+ "brief": "spec units built 8561/8787 (97.4%): tids 2378/2480, tables 826/852, timers 2087/2097, notices 308/309, tools 1536/1579, figures 1426/1470; processes at 100%: 201/212; retired 27; hosted 1512/1579, persisted 97/852",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2363
+   "built": 2378
   },
   "tables": {
    "spec": 852,
-   "built": 820
+   "built": 826
   },
   "timers": {
    "spec": 2097,
-   "built": 2083
+   "built": 2087
   },
   "notices": {
    "spec": 309,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1579,
-   "built": 1525
+   "built": 1536
   },
   "figures": {
    "spec": 1470,
-   "built": 1407
+   "built": 1426
   },
   "units": {
    "spec": 8787,
-   "built": 8506
+   "built": 8561
   }
  },
  "exec_totals": {
@@ -464,9 +464,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 495,
+   "built": 550,
    "processes": 12,
-   "done": 8
+   "done": 9
   },
   "36": {
    "spec": 40,
@@ -671,6 +671,7 @@
   "35.1",
   "35.2",
   "35.3",
+  "35.4",
   "35.5",
   "35.7",
   "35.9",
@@ -10982,48 +10983,20 @@
    "title": "Month-end and year-end close: close periods, the dependency-ordered chain, the balance attestation, reopen, and the tax-year close that drives 1098 and 1099",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "close_attestations",
-     "close_period_events",
-     "close_period_steps",
-     "close_periods",
-     "close_reopens",
-     "tax_year_closes"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "SM_CLOSE_ATTEST_BD5",
-     "SM_CLOSE_PERIOD_OPEN_BD1",
-     "SM_CLOSE_STEP_STALLED_2BD",
-     "SM_TAX_YEAR_CLOSE_3BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -11032,44 +11005,13 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "close.open",
-     "close.plan",
-     "close.step.start",
-     "close.step.complete",
-     "close.step.skip",
-     "close.board",
-     "close.attest",
-     "close.review",
-     "close.reopen",
-     "close.tax_year",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 19,
-    "built": 1,
-    "missing": [
-     "$1,233,000.00",
-     "$1,250.00",
-     "$1,253,050.55",
-     "$1,254,300.55",
-     "$1,265,500.55",
-     "$1,266,750.55",
-     "$10.00",
-     "$12,450.00",
-     "$22,580.00",
-     "$23,412.55",
-     "$3,210.15",
-     "$33,695.07",
-     "$412.40",
-     "$45,000.00",
-     "$6,870.40",
-     "$600.00",
-     "$8,120.40",
-     "$9,870.12"
-    ]
+    "built": 19,
+    "missing": []
    },
    "hosted": {
     "spec": 11,
@@ -11083,9 +11025,9 @@
    },
    "units": {
     "spec": 55,
-    "built": 1
+    "built": 55
    },
-   "pct": 1.8,
+   "pct": 100.0,
    "retired": []
   },
   {
@@ -11660,9 +11602,8 @@
    },
    "figures": {
     "spec": 7,
-    "built": 3,
+    "built": 4,
     "missing": [
-     "$1,250.00",
      "$3,412.92",
      "$3,417.92",
      "$67.50"
@@ -11680,9 +11621,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 7
+    "built": 8
    },
-   "pct": 12.1,
+   "pct": 13.8,
    "retired": []
   },
   {

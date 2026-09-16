@@ -25,7 +25,12 @@
  *                  form496MonthlyRunner      the interim Form 496 unit (T6): section I from the FAKE custodial bank's prior-day
  *                                            statement for the period end, the cashbook from the custodial account's ledger cash,
  *                                            then 6.3's own `form496.generate` command as `custodial-recon` — the money figures are
- *                                            6.3's input under 6.3's rules (rule 12), never written here
+ *                                            6.3's input under 6.3's rules (rule 12), never written here; registered behind 35.4's
+ *                                            unit (cycles-35-4.ts form496MonthlyRunnerOf: the chain's own figures once the close
+ *                                            period exists, this one for a period the chain has not opened)
+ *                  cycles-35-4.ts            35.4's units for the cycles cycles.ts names it owner of — `ledger_period_close` (6.3's
+ *                                            cut-off), `investor_period_close` (5.1's close), `form_496a_monthly` (6.4's form),
+ *                                            `star_monthly` (18.3's compute) — each the owning section's own command as its actor
  *                  refiDailyRunner, partnerBookReviewRunner, partnerBookReadinessRunner, partnerBookDailyReportRunner
  *                                            the four sweep-body functions (app.ts) wrapped as one unit each — unchanged code,
  *                                            idempotent by their own day gates, so the board and `expected_by` cover them
@@ -50,6 +55,7 @@ import type { Bureau } from "../credit-reporting/disputes.ts";
 import type { AppliedInstallment } from "../boarding/delinquency.ts";
 import { loanCashState, statementUnitIn, form1098UnitIn, unitIoOf } from "../../runtime/servicing.ts";
 import { cashieringDailyRunner, cashieringDailyReceipt } from "./cycles-35-5.ts";
+import { form496MonthlyRunnerOf, form496aMonthlyRunner, investorPeriodCloseRunner, ledgerPeriodCloseRunner, starMonthlyRunner } from "./cycles-35-4.ts";
 import { delinquencyUnitIn } from "../../runtime/delinquency.ts";
 import { RUNNERS_35_9 } from "./cycles-35-9.ts";
 import { refiDailyRun } from "../../runtime/refi-daily.ts";
@@ -199,7 +205,9 @@ export const busToolRunner = (process: string, name: string, extra: Record<strin
 
 const RUNNERS: Readonly<Record<string, NamedRunner>> = {
   month_end: monthEndRunner, statements: statementsRunner, form_1098: form1098Runner, delinquency_counters: delinquencyCountersRunner, metro2_monthly: metro2MonthlyRunner,
-  cashiering_daily: cashieringDailyRunner, form_496_monthly: form496MonthlyRunner,
+  cashiering_daily: cashieringDailyRunner, form_496_monthly: form496MonthlyRunnerOf(form496MonthlyRunner),
+  // 35.4's units for the cycles it owns as runner (cycles-35-4.ts) — the close chain plans them as jobs, this executor runs them
+  ledger_period_close: ledgerPeriodCloseRunner, investor_period_close: investorPeriodCloseRunner, form_496a_monthly: form496aMonthlyRunner, star_monthly: starMonthlyRunner,
   refi_daily: refiDailyRunner, partner_book_review: partnerBookReviewRunner, partner_book_readiness: partnerBookReadinessRunner, partner_book_daily_report: partnerBookDailyReportRunner,
   projection_verify: busToolRunner("35.1", "record.verify"), document_integrity: busToolRunner("35.2", "documents.verify", { op: "run" }),   // 35.2: the daily integrity unit is `documents.verify{op: run}` (section35-2.ts) — the owner emits `document.integrity.run_completed` and re-arms SM_DOC_INTEGRITY_DAILY
   "roles.queue_scan": busToolRunner("35.7", "roles.queue_scan"), work_log_recon: busToolRunner("35.8", "work.log.recon"),

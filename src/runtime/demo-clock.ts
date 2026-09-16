@@ -277,7 +277,8 @@ async function runSweepMinute(deps: DemoAdvanceDeps, step: PlannedStep, meta: { 
     const o = await originationDailySweep(runtime, step.at); origination = { deemed: o.deemed.length, warned: o.warned.length, expired: o.expired.length };
     const s = await servicingDailySweep(runtime, step.at); servicing = { loans: s.loans, posted: s.posted.length, late_charge_runs: s.late_charge_runs.length, errors: s.errors.length };
     for (const err of s.errors) logger?.warn("demo clock: servicing sweep error", { at: step.at, ...err });
-    const d = await delinquencyDailySweep(runtime, step.at); delinquency = { loans: d.loans.length, windows_opened: d.loans.reduce((a, l) => a + l.windows_opened.length, 0) };
+    // once per loan-day (35.3 rule 3), as 10-hardship's tick runs it: a day step and the target step on one civil day count the loan once (13.1's `delinquency.counters.updated` is appended on every run otherwise)
+    const d = await delinquencyDailySweep(runtime, step.at, undefined, { oncePerDay: true }); delinquency = { loans: d.loans.length, windows_opened: d.loans.reduce((a, l) => a + l.windows_opened.length, 0) };
   }
   let sweep: StepReport["sweep"]; let refi: HookOutcome = "absent";
   try { const r: SweepReport = await runtime.sweep(step.at, { cycles: "skip" }); sweep = { due: r.due, breaches: r.breaches.length }; refi = refiDailyOutcome(r); }

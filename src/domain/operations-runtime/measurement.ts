@@ -133,13 +133,13 @@ export async function runHostedProbe(i: HostedProbeInput): Promise<HostedProbeRu
       base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
       // the seed: one loan through POST /v1/transfers/batches (the demo batch, the route's own fallback actor) and one application through POST /v1/applications
       const boarded = await post("/v1/transfers/batches/demo", sharedToken, {});
-      if (boarded.status !== 200) throw new Error(`seed loan refused: ${boarded.status} ${JSON.stringify(boarded.body).slice(0, 200)}`);
+      if (boarded.status !== 200) throw new Error(`seed loan refused: ${boarded.status} ${String(boarded.body["code"] ?? boarded.body["error"] ?? "")}`);
       loanId = (await db.query<{ id: string }>(`SELECT id::text AS id FROM loans ORDER BY created_at, id LIMIT 1`))[0]?.id ?? "";
       if (!loanId) throw new Error("seed loan refused: no loans row after the demo batch");
       const party = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', 'Probe Partner Bank', '123456789', '1000123') RETURNING id::text AS id`))[0]!.id;
       const app = await post("/v1/applications", sharedToken, { actor: { kind: "agent", id: "intake" }, application: { partner_party_id: party, channel: "organic", transaction_type: "purchase", occupancy: "primary", borrowers: [{ legal_name: "Probe Fixture" }] } });
       applicationId = String(((app.body["application"] as Row | undefined) ?? {})["id"] ?? "");
-      if (app.status !== 200 || !applicationId) throw new Error(`seed application refused: ${app.status} ${JSON.stringify(app.body).slice(0, 200)}`);
+      if (app.status !== 200 || !applicationId) throw new Error(`seed application refused: ${app.status} ${String(app.body["code"] ?? app.body["error"] ?? "")}`);
       // one service principal per bus agent (35.7): the door resolves each to its agent actor — every request leaves a staff_actions{surface: v1, principal_id} row
       const adminId = (await db.query<{ id: string }>(`INSERT INTO staff_users (email_hash, email_encrypted, legal_name, roles, status, enrolled_at) VALUES ($1, '\\x00'::bytea, 'Probe Admin', '{admin}', 'active', now()) RETURNING id::text AS id`, [sha256(`probe-admin-${run_id}`)]))[0]!.id;
       const agents = loadAgentsFile().agents;
@@ -207,7 +207,7 @@ export interface Measurement { readonly section: number; readonly process: strin
 export interface PersistedRun {
   readonly run_id: string; readonly database_name: string; readonly migration_head: string; readonly git_sha: string; readonly journeys: readonly string[]; readonly journey_databases: readonly { name: string; database: string; present: boolean }[];
   readonly post_migrate_at: string; readonly measured_at: string; readonly outcome: "completed" | "failed"; readonly failure: string | null; readonly as_of_date: string;
-  readonly tables_total: number; readonly tables_with_rows: number; readonly sections_complete: readonly number[]; readonly sections_measured: readonly number[]; readonly untouched_expected: readonly { table: string; expected_by: string }[]; readonly projection_gaps: number; readonly measurements: readonly Measurement[]; readonly sha256: string;
+  readonly tables_total: number; readonly tables_with_rows: number; readonly sections_complete: readonly number[]; readonly sections_measured: readonly number[]; readonly sections_gaps: Readonly<Record<string, number>>; readonly untouched_expected: readonly { table: string; expected_by: string }[]; readonly projection_gaps: number; readonly measurements: readonly Measurement[]; readonly sha256: string;
 }
 interface ManifestRow { process: string; tables: string[] }
 /** The manifest's tables (one row each, the lowest-numbered owning process) plus the kernel's own baseline tables (db/migrations/0001_baseline.sql: loan_events, timers, ledger_entries, ledger_lines, agent_decisions, … — no process's Data model names them, every journey writes them), as section 0 / process `kernel`. */
@@ -286,7 +286,7 @@ export async function runPersistedCount(i: PersistedInput = {}): Promise<Persist
   const sectionsComplete = sectionsMeasured.filter((s) => gapsOfSection(s) === 0n && measurements.filter((m) => m.section === s && m.expected).every((m) => m.verdict === "persisted"));
   const untouched = measurements.filter((m) => m.expected && m.verdict === "untouched").map((m) => ({ table: m.table_name, expected_by: m.expected_by ?? "" }));
   const run: PersistedRun = { run_id, database_name: dbName(base), migration_head, git_sha, journeys: decls.map((d) => d.name), journey_databases: journeyDbs, post_migrate_at: postAt, measured_at: clock.now(), outcome: failure ? "failed" : "completed", failure, as_of_date,
-    tables_total: measurements.length, tables_with_rows: measurements.filter((m) => m.verdict === "persisted").length, sections_complete: sectionsComplete, sections_measured: sectionsMeasured, untouched_expected: untouched, projection_gaps: Number(gaps), measurements, sha256: sha256(canonicalJson(measurements.map((m) => ({ t: m.table_name, p: m.post_migrate_count, a: m.after_journey_count, v: m.verdict })))) };
+    tables_total: measurements.length, tables_with_rows: measurements.filter((m) => m.verdict === "persisted").length, sections_complete: sectionsComplete, sections_measured: sectionsMeasured, sections_gaps: Object.fromEntries(sectionsMeasured.map((s) => [String(s), Number(gapsOfSection(s))])), untouched_expected: untouched, projection_gaps: Number(gaps), measurements, sha256: sha256(canonicalJson(measurements.map((m) => ({ t: m.table_name, p: m.post_migrate_count, a: m.after_journey_count, v: m.verdict })))) };
   if (!failure && i.writeAuditFile !== false) writePersistedJson(run, i.auditDir);
   return run;
 }

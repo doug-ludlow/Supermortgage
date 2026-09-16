@@ -214,6 +214,12 @@ export async function resolveException(d: StewardDeps, i: ResolveInput, known?: 
   triage(d, { exception_id: row.id, action: i.disposition, kind: row.kind, confidence: Number(row.confidence ?? 0), reason: i.reason ?? i.cause?.event_type ?? null, signals: i.cause ? { cause: i.cause.event_type, source_event_id: i.cause.event_id } : {}, event_id: recovered?.id ?? ev.id, decision_action: `ops.exceptions.resolve:${i.disposition}` });
   return { exception_id: row.id, status: i.disposition, resolved_at: d.now };
 }
+/** The period key before `key` for the day (`YYYY-MM-DD`) and month (`YYYY-MM`) grammars; null for a grammar the steward cannot step (then a miss counts as the first). */
+export function previousPeriodKey(key: string): string | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(key)) { const d = new Date(`${key}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); }
+  if (/^\d{4}-\d{2}$/.test(key)) { const [y, m] = key.split("-").map(Number) as [number, number]; const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1; return `${py}-${String(pm).padStart(2, "0")}`; }
+  return null;
+}
 const splitSource = (source_id: string): [string, string] => { const k = source_id.indexOf(":"); return k < 0 ? [source_id, ""] : [source_id.slice(0, k), source_id.slice(k + 1)]; };
 
 // ---------------------------------------------------------------- the registry watch (rule 2)
@@ -227,9 +233,10 @@ export async function watchCycles(d: StewardDeps, i: { as_of?: string; cycle_cod
     if (await d.ports.cycles.hasReceipt(d.q, c.cycle_code, c.period_key)) continue;
     const source_id = `${c.cycle_code}:${c.period_key}`;
     if (await liveException(d.q, "cycle_registry", source_id)) { already++; continue; }
-    // consecutive misses: 1 + the previous, still unresolved miss of the same cycle (a resolved one had its receipt)
-    const prev = (await d.q.query<{ n: string }>(`SELECT coalesce((SELECT t.signals->>'consecutive_misses' FROM exception_triages t WHERE t.exception_id = e.id AND t.action = 'opened' LIMIT 1), '1') AS n FROM ops_exceptions e WHERE e.source_kind = 'cycle_registry' AND e.source_id LIKE $1 AND e.source_id <> $2 AND e.status IN ('open', 'triaged', 'assigned', 'abandoned') ORDER BY e.opened_at DESC LIMIT 1`, [`${c.cycle_code}:%`, source_id]))[0];
-    const consecutive = prev ? Number(prev.n) + 1 : 1;
+    // consecutive misses (rule 2: the number of consecutive period keys without a receipt): 1 + the count of the immediately preceding period's still-unresolved miss, walking back one period at a time
+    const prevKey = previousPeriodKey(c.period_key);
+    const prev = prevKey ? (await d.q.query<{ n: string }>(`SELECT coalesce((SELECT t.signals->>'consecutive_misses' FROM exception_triages t WHERE t.exception_id = e.id AND t.action = 'opened' LIMIT 1), '1') AS n FROM ops_exceptions e WHERE e.source_kind = 'cycle_registry' AND e.source_id = $1 AND e.status IN ('open', 'triaged', 'assigned', 'abandoned') ORDER BY e.opened_at DESC LIMIT 1`, [`${c.cycle_code}:${prevKey}`]))[0] : undefined;
+    const consecutive = prev && !(await d.ports.cycles.hasReceipt(d.q, c.cycle_code, prevKey!)) ? Number(prev.n) + 1 : 1;
     const runbook = await runbookForCycle(d.q, c.cycle_code, d.ports);
     const o = await openException(d, { source_kind: "cycle_registry", source_id, kind: "missed_cycle", owner_role: c.escalation_role ?? "ops_analyst", signals: { consecutive_misses: consecutive, next_expected_by: c.next_expected_by, owner_process: c.owner_process, owner_agent: c.owner_agent } });
     await classifyException(d, { exception_id: o.exception_id, follow_up: false });
@@ -381,8 +388,10 @@ export const BREACH_ENRICHERS: ReadonlyMap<string, BreachEnricher> = new Map<str
   [ADAPTER_DOWN_CODE, async (q, inst, nowIso) => {
     if (inst.subject.kind !== "ops_exception") return null;
     const x = await exceptionById(q, inst.subject.id); if (!x) return null;
+    // the dead count the classification stored (rule 3's D15 at classified_at) and the window at the breach instant
+    const classified = (await q.query<{ signals: Row }>(`SELECT signals FROM exception_triages WHERE exception_id = $1::uuid AND action = 'classified' ORDER BY created_at DESC, id DESC LIMIT 1`, [x.id]))[0];
     const sig = await messageSignals(q, { message_id: x.source_id, adapter: x.adapter ?? "", now: nowIso });
-    return { payload: { code: "ADAPTER_DOWN_1H", exception_id: x.id, adapter: x.adapter, message_id: x.source_id, kind: x.kind, D15: sig.D15, S60: sig.S60, classified_at: x.classified_at, runbook: runbookForTimer(ADAPTER_DOWN_CODE)?.breach_text ?? null } };
+    return { payload: { code: "ADAPTER_DOWN_1H", exception_id: x.id, adapter: x.adapter, message_id: x.source_id, kind: x.kind, D15: Number(classified?.signals["D15"] ?? sig.D15), S60: Number(classified?.signals["S60"] ?? sig.S60), D15_now: sig.D15, S60_now: sig.S60, classified_at: x.classified_at, runbook: runbookForTimer(ADAPTER_DOWN_CODE)?.breach_text ?? null } };
   }],
   [CYCLE_MISSED_CODE, async (q, inst, _nowIso) => {
     if (inst.subject.kind !== "ops_exception") return null;

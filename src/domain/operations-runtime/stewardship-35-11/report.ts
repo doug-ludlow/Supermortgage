@@ -41,8 +41,8 @@ export function rate4(num: number, den: number): string | null {
   return `${whole}.${frac.toString().padStart(4, "0")}`;
 }
 const outOfBand = (r: string | null): boolean => r !== null && (Number(r) < 0.02 || Number(r) > 0.15);
-/** A day with fewer decisions than this has no override rate (null, never out of band): the 32.16 governance precedent (MIN_SESSIONS_PER_DAY) applied to 18.1's band — 2% of fewer than thirty decisions is not a measurable rate, and a switch tripped by two quiet days would empty the human path for nothing. */
-export const MIN_DECISIONS_PER_DAY = 30;
+/** Rule 6: a day with zero decisions is the null day (decision_volume 0, a null rate, never out of band); every other day has a rate. */
+export const MIN_DECISIONS_PER_DAY = 1;
 const n = (v: unknown): number => Number(v ?? 0);
 
 export async function reportRanOn(q: Queryable, environment: string, produced_on: string): Promise<boolean> {
@@ -172,7 +172,8 @@ export async function runDailyReport(d: StewardDeps, i: ReportInput): Promise<Da
   const monitored = await monitor(d, as_of_date, monitoring, i.agents);
   // rule 7: a FAKE actor in production is a sev-1 control failure — once per day, however many rows
   let fake: DailyReportResult["fake_in_production"] = null;
-  if (isProduction(i.environment) && columns.fake_approvals > 0) {
+  // rule 7 keys on the runtime's ENVIRONMENT (35.7's one source), never on the input: a nonprod console asking for "production" opens nothing, a production runtime cannot opt out
+  if (isProduction(d.environment) && columns.fake_approvals > 0) {
     const o = await openException(d, { source_kind: "fake_actor", source_id: as_of_date, kind: "fake_in_production", owner_role: "compliance", environment: i.environment, signals: { count: columns.fake_approvals, roles: columns.fake_roles } });
     let escalation_id: string | null = null;
     if (o.created) {

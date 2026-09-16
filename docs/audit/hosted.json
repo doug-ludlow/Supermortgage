@@ -1,9 +1,9 @@
 {
- "run_id": "a9048ba1-be4b-4541-9a1f-82c7f9113c0d",
+ "run_id": "5c8aacc5-4632-41a8-9c2f-2bd47abd560c",
  "target": "probe",
  "database_name": "supermortgage_probe",
  "migration_head": "0231_seed_inventories.sql",
- "git_sha": "18237210371ca4d4eb52afd5356717145780e2f1",
+ "git_sha": "cd489e297c98d203f189bc2454e2e2c651a18e99",
  "as_of_date": "2026-09-15",
  "tools_total": 1464,
  "executed": 341,

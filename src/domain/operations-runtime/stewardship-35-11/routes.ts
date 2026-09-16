@@ -4,7 +4,8 @@
  * with the session's actor, the outcome completing the staff_actions row of 34.1 rule 4). Every handler runs its tool ON THE
  * BUS (`runtime.execute`, process 35.11) with the session's actor {kind: human, id: staff_user_id, role}.
  *
- *   GET  /ops/api/stewardship/report?environment=&as_of_date=                       ops_analyst | compliance   → ops.report{force: false} (the day's row: read, produce when absent)
+ *   GET  /ops/api/stewardship/report?environment=&as_of_date=                       ops_analyst | compliance   the day's latest row (a read; 404 when no report exists)
+ *   POST /ops/api/stewardship/report {environment?, as_of_date?, force?}             ops_analyst | compliance   → ops.report (a person's forced run)
  *   GET  /ops/api/stewardship/exceptions?environment=&status=&kind=&adapter=&source_kind=   ops_analyst | compliance | officer | admin → ops.exceptions.list
  *   POST /ops/api/stewardship/exceptions/{id}/classify                              ops_analyst                → ops.exceptions.classify
  *   POST /ops/api/stewardship/exceptions/{id}/assign {role, reason}                 ops_analyst                → ops.exceptions.assign
@@ -43,7 +44,13 @@ export function stewardshipRoutes(deps: { readonly runtime: Runtime }): Controls
   const uuidParam = (p: Record<string, string>, k: string): string => { const v = p[k] ?? ""; if (!isUuid(v)) throw new RangeError(`${k} is a uuid`); return v; };
   const q = (r: ControlsRequest, k: string): string | undefined => { const v = r.query.get(k); return v === null || v === "" ? undefined : v; };
   return [
-    { method: "GET", path: "/api/stewardship/report", roles: STEWARDSHIP_REPORT_ROLES, command: "ops.report", handler: (r) => act("ops.report", r.actor, { environment: q(r, "environment") ?? rt.environment, as_of_date: q(r, "as_of_date"), force: false }, null) },
+    { method: "GET", path: "/api/stewardship/report", roles: STEWARDSHIP_REPORT_ROLES, command: null, handler: async (r) => {
+      const environment = q(r, "environment") ?? rt.environment; const day = q(r, "as_of_date");
+      const rows = await rt.db.query<Row>(`SELECT id::text AS report_id, environment, as_of_date::text AS as_of_date, produced_on::text AS produced_on, sweep, cycles, breaches, escalations, outbox, exceptions, fake_approvals, fake_roles, kill_switches, projection, documents, roles, override_rates, sha256, document_id::text AS document_id, produced_by, created_at::text AS created_at FROM ops_daily_reports WHERE environment = $1 AND ($2::date IS NULL OR as_of_date = $2::date) ORDER BY as_of_date DESC, created_at DESC LIMIT 2`, [environment, day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null]);
+      if (!rows.length) return { status: 404, body: { error: "no_report", code: "NO_REPORT", reason: `no ops report for ${environment}${day ? ` on ${day}` : ""}` }, command: null, subject: null };
+      return { status: 200, body: { report: rows[0], previous: rows[1] ?? null }, command: null, subject: { kind: "ops_report", id: String(rows[0]!["report_id"]) } };
+    } },
+    { method: "POST", path: "/api/stewardship/report", roles: STEWARDSHIP_REPORT_ROLES, command: "ops.report", handler: (r) => act("ops.report", r.actor, { environment: s(r.body["environment"]) || rt.environment, as_of_date: s(r.body["as_of_date"]) || undefined, force: r.body["force"] === true }, null) },
     { method: "GET", path: "/api/stewardship/exceptions", roles: STEWARDSHIP_READ_ROLES, command: "ops.exceptions.list", handler: (r) => act("ops.exceptions.list", r.actor, { environment: q(r, "environment"), status: q(r, "status"), kind: q(r, "kind"), adapter: q(r, "adapter"), source_kind: q(r, "source_kind"), limit: q(r, "limit") }, null) },
     { method: "POST", path: "/api/stewardship/exceptions/:id/classify", roles: STEWARDSHIP_ACT_ROLES, command: "ops.exceptions.classify", handler: (r) => act("ops.exceptions.classify", r.actor, { exception_id: uuidParam(r.params, "id") }, { kind: "ops_exception", id: r.params["id"]! }) },
     { method: "POST", path: "/api/stewardship/exceptions/:id/assign", roles: STEWARDSHIP_ACT_ROLES, command: "ops.exceptions.assign", handler: (r) => act("ops.exceptions.assign", r.actor, { exception_id: uuidParam(r.params, "id"), role: r.body["role"], reason: r.body["reason"] }, { kind: "ops_exception", id: r.params["id"]! }) },

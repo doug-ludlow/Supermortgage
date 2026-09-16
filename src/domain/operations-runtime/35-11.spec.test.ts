@@ -198,7 +198,7 @@ test("35.11-T5: Given the adapter of T4 sends one message successfully 20 minute
   const [ex2] = await exceptions(`source_kind = 'integration_message' AND adapter = 'fnma-smdu' AND status = 'triaged'`); assert.ok(ex2); assert.equal(ex2!.kind, "adapter_down");
   const c2 = (await timers("SM_OPS_ADAPTER_DOWN_1H", `AND subject_id = $2`, [ex2!.id]))[0]!; assert.equal(c2.status, "armed");
   clock.set(new Date(Date.parse(c2.due_at!) + 30_000).toISOString()); const rep3 = await runtime.sweep(); assert.ok(rep3.breaches.some((b) => b.timer_id === c2.id), JSON.stringify(rep3.breaches));
-  const esc = await escalations(`payload->>'timer_id' = $1`, [c2.id]); assert.equal(esc.length, 1); assert.equal(esc[0]!.kind, "sev2"); assert.equal(esc[0]!.owner_role, "ops_analyst"); assert.equal(esc[0]!.payload["adapter"], "fnma-smdu"); assert.equal(typeof esc[0]!.payload["D15"], "number"); assert.ok(Number(esc[0]!.payload["D15"]) >= 0);
+  const esc = await escalations(`payload->>'timer_id' = $1`, [c2.id]); assert.equal(esc.length, 1); assert.equal(esc[0]!.kind, "sev2"); assert.equal(esc[0]!.owner_role, "ops_analyst"); assert.equal(esc[0]!.payload["adapter"], "fnma-smdu"); assert.equal(esc[0]!.payload["D15"], 3, "the dead count the classification stored (three deaths in the window)"); assert.equal(esc[0]!.payload["S60"], 0);
   assert.equal((await timers("SM_OPS_ADAPTER_DOWN_1H", `AND subject_id = $2`, [ex2!.id]))[0]!.status, "breached");
 });
 
@@ -291,7 +291,7 @@ test("35.11-T9: Given the day's state on the fixture, when `ops.report` runs twi
 
 test("35.11-T10: Given 61 overrides over 340 decisions on day 1 and 52 over 310 on day 2 for a T1 agent, when the two days' reports run, then `ai_monitoring_metrics` holds `override_rate = 0.1794` and `0.1677` for those days, `recordOverrideRate` was called with each, the agent is AI-off after day 2 with a reason naming `17.9%, 16.8%`, and `ai.kill_switch.tripped{metric: override_rate}` is logged; given day 1 were 48 over 400 (`0.1200`), then nothing trips; given a day with zero decisions, then `decision_volume = 0`, a null rate, and the null day does not count as out of band.", { skip }, async () => {
   const t1 = "cashiering", inBand = "boarding", gappy = "transfer";
-  for (const code of [t1, inBand, gappy]) await db.query(`INSERT INTO ai_systems (code, name, kind, purpose, risk_tier, owner_role) VALUES ($1, $1, 'agent', '35.11-T10 fixture: a T1 bus agent', 'T1_consequential', 'ai_governance_owner') ON CONFLICT (code) DO NOTHING`, [code]);
+  for (const code of [t1, inBand, gappy]) await db.query(`INSERT INTO ai_systems (code, name, kind, purpose, risk_tier, owner_role) VALUES ($1, $1, 'agent', '35.11-T10 fixture: a T1 bus agent', 'T1_consequential', 'ai_governance_owner') ON CONFLICT (code) DO UPDATE SET risk_tier = 'T1_consequential'`, [code]);   // 19.3's assessment: these three are T1 (the 0231 seed inventories every agent at T3_internal)
   const seed = async (agent: string, day: string, decisions: number, overrides: number): Promise<void> => { for (let k = 0; k < decisions; k++) await db.query(`INSERT INTO agent_decisions (agent, action, rule_set_version, rationale, confidence, created_at) VALUES ($1, $2, 'test.v1', '35.11-T10 fixture', 1, $3::timestamptz)`, [agent, k < overrides ? "post_payment_rejected" : "post_payment", `${day}T15:00:00.000Z`]); };
   const D1 = "2026-09-01", D2 = "2026-09-02", D3 = "2026-09-03";
   await seed(t1, D1, 340, 61); await seed(t1, D2, 310, 52);
@@ -509,7 +509,7 @@ test("35.11-T18: Given the §35 journeys have run (35.5's daily cashiering year,
   const r = await tool("audit.persisted.count", QC, { journeys: [{ name: "35-11.spec.test.ts#t18", database_url: T17_WORLD.url, steps }, "lifecycle.test.ts", "purchase-lifecycle.test.ts", "35-5.spec.test.ts", "35-6.spec.test.ts", "35-9.spec.test.ts", "35-10.spec.test.ts"], audit_dir: dir }); const o = r.output as Json;
   assert.equal(o["outcome"], "completed", String(o["failure"]));
   const complete = o["sections_complete"] as number[]; for (const s of [2, 7, 16]) assert.ok(complete.includes(s), `sections_complete includes ${s}: ${JSON.stringify(complete)} (measured ${JSON.stringify(o["sections_measured"])})`);
-  assert.equal(typeof o["projection_gaps"], "number");   // the total over every journey read; the per-section gate is what sections_complete encodes
+  const sectionGaps = o["sections_gaps"] as Record<string, number>; for (const s of [2, 7, 16]) assert.equal(sectionGaps[String(s)], 0, `projection_gaps for section ${s} is 0`);
   const untouched = o["untouched_expected"] as { table: string; expected_by: string }[];
   for (const t of notRun.map((x) => x.table_name)) assert.ok(untouched.some((u) => u.table === t && /35\.6 the closing/.test(u.expected_by)), `${t} listed with the step that should have written it: ${JSON.stringify(untouched)}`);
   assert.ok(!complete.includes(notRunSection), `section ${notRunSection}, whose expected table is untouched, is not complete`);

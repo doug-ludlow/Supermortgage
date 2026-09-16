@@ -1,8 +1,8 @@
 {
- "run_id": "5a79abf5-c533-4c8e-b2e4-2356c873dc9b",
+ "run_id": "72104595-23d1-4bfd-bcd2-f028619c3715",
  "database_name": "supermortgage_test",
  "migration_head": "0231_seed_inventories.sql",
- "git_sha": "18237210371ca4d4eb52afd5356717145780e2f1",
+ "git_sha": "cd489e297c98d203f189bc2454e2e2c651a18e99",
  "as_of_date": "2026-09-15",
  "journeys": [
   "lifecycle.test.ts",
@@ -15,32 +15,32 @@
  "journey_databases": [
   {
    "name": "lifecycle.test.ts",
-   "database": "supermortgage_t_025f82cf_runtime_lifecycle",
+   "database": "supermortgage_t_55d4e6a3_runtime_lifecycle",
    "present": true
   },
   {
    "name": "purchase-lifecycle.test.ts",
-   "database": "supermortgage_t_44a72624_runtime_purchase_lifecycle",
+   "database": "supermortgage_t_ed65e49c_runtime_purchase_lifecycle",
    "present": true
   },
   {
    "name": "35-5.spec.test.ts",
-   "database": "supermortgage_t_94d349a9_operations_runtime_35_5_spec",
+   "database": "supermortgage_t_dd24fe4a_operations_runtime_35_5_spec",
    "present": false
   },
   {
    "name": "35-6.spec.test.ts",
-   "database": "supermortgage_t_92aefbc0_operations_runtime_35_6_spec",
+   "database": "supermortgage_t_96bef4ed_operations_runtime_35_6_spec",
    "present": false
   },
   {
    "name": "35-9.spec.test.ts",
-   "database": "supermortgage_t_d25a1c9a_operations_runtime_35_9_spec",
+   "database": "supermortgage_t_2ac02485_operations_runtime_35_9_spec",
    "present": false
   },
   {
    "name": "35-10.spec.test.ts",
-   "database": "supermortgage_t_0da8d874_operations_runtime_35_10_spec",
+   "database": "supermortgage_t_f14341d8_operations_runtime_35_10_spec",
    "present": false
   }
  ],

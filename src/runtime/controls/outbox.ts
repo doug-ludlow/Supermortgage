@@ -33,7 +33,7 @@ export interface OutboxFilter { readonly adapter?: string | null; readonly statu
 
 const SELECT = `SELECT m.id::text AS id, m.adapter, m.direction::text AS direction, m.idempotency_key, m.status, m.attempts, m.error, m.loan_id::text AS loan_id, m.document_id::text AS document_id,
     m.created_at::text AS created_at, m.last_attempt_at::text AS last_attempt_at, m.next_attempt_at::text AS next_attempt_at, m.sent_at::text AS sent_at, m.acked_at::text AS acked_at,
-    coalesce((SELECT jsonb_agg(jsonb_build_object('by', r.actor_id, 'role', r.actor_role, 'at', r.occurred_at) ORDER BY r.sequence) FROM loan_events r WHERE r.type = 'outbox.requeued' AND r.payload->>'message_id' = m.id::text AND r.actor_kind = 'human'), '[]'::jsonb) AS requeued_by,
+    coalesce((SELECT jsonb_agg(jsonb_build_object('by', r.actor_id, 'role', r.actor_role, 'at', r.occurred_at) ORDER BY r.sequence) FROM loan_events r WHERE r.type = 'outbox.requeued' AND r.payload->>'message_id' = m.id::text AND r.actor_kind = 'human' AND coalesce((r.payload->>'auto')::boolean, false) = false), '[]'::jsonb) AS requeued_by,
     (SELECT e.id::text FROM escalations e WHERE e.completed_at IS NULL AND e.payload->>'message_id' = m.id::text AND e.payload->>'code' = 'REQUEUE_CAP_3' ORDER BY e.opened_at DESC LIMIT 1) AS cap_escalation_id
   FROM integration_messages m`;
 const toRow = (r: Row): OutboxRow => {

@@ -10,7 +10,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { connect } from "../src/infra/db/client.ts";
-import { baseTestDatabaseUrl, dropDatabase, ensureTemplate, adminUrlOf, provisionDatabase, withDatabase } from "../src/infra/db/test-db.ts";
+import { execFileSync } from "node:child_process";
+import { baseTestDatabaseUrl, ensureTemplate, adminUrlOf, provisionDatabase, withDatabase } from "../src/infra/db/test-db.ts";
 import { Runtime } from "../src/runtime/app.ts";
 import { loadOverriddenRegistry } from "../src/domain/timer-overrides.ts";
 import { createLogger } from "../src/runtime/log.ts";
@@ -18,8 +19,11 @@ import { JOURNEY_WRITES } from "../src/domain/operations-runtime/stewardship-35-
 
 const base = baseTestDatabaseUrl();
 const names = (process.env["PERSISTED_JOURNEYS"] ?? JOURNEY_WRITES.map((j) => j.name).join(",")).split(",").map((s) => s.trim()).filter(Boolean);
-const measureUrl = withDatabase(base, `${new URL(base).pathname.replace(/^\//, "")}_measure_run_${randomUUID().slice(0, 8)}`);
-await ensureTemplate(adminUrlOf(base)); await provisionDatabase(measureUrl);
+// the measurement database keeps every run's persisted_measurement_runs / persisted_measurements rows (rule 11's evidence): provisioned from the migrated template once, migrated forward by db/migrate.sh, never dropped
+const measureUrl = process.env["MEASURE_DATABASE_URL"] ?? withDatabase(base, `${new URL(base).pathname.replace(/^\//, "")}_measure`);
+await ensureTemplate(adminUrlOf(base));
+{ const admin = connect(adminUrlOf(base)); const exists = (await admin.query<{ n: string }>(`SELECT count(*)::text AS n FROM pg_database WHERE datname = $1`, [new URL(measureUrl).pathname.replace(/^\//, "")]))[0]!.n !== "0"; await admin.end(); if (!exists) await provisionDatabase(measureUrl); else execFileSync(new URL("../db/migrate.sh", import.meta.url).pathname, { env: { ...process.env, DATABASE_URL: measureUrl }, stdio: "ignore" }); }
+void randomUUID;
 const db = connect(measureUrl);
 const logger = createLogger("json", (line) => { if (/error/i.test(line)) process.stderr.write(line + "\n"); });
 const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), logger, environment: "nonprod", env: { INTEGRATIONS: "fake" } as NodeJS.ProcessEnv, reviewers: null });
@@ -32,5 +36,5 @@ try {
   for (const u of untouched) process.stdout.write(`  expected but untouched: ${u.table} ← ${u.expected_by}\n`);
   if (o["outcome"] !== "completed") { process.stdout.write(`  failure: ${String(o["failure"])}\n`); code = 1; }
 } catch (e) { process.stderr.write(`persisted count failed: ${e instanceof Error ? e.message : String(e)}\n`); code = 1; }
-finally { await db.end().catch(() => undefined); await dropDatabase(measureUrl).catch(() => undefined); }
+finally { await db.end().catch(() => undefined); }
 process.exit(code);

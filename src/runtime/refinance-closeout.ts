@@ -66,10 +66,12 @@ export const defaultHandoff: HandoffPort = {
     const base = demoSnapshot(app, recorded);
     const funding = [...store.list("fundings", (d) => d["application_id"] === c.application_id)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.data ?? null;
     const cd = [...store.list("disclosures", (d) => d["application_id"] === c.application_id && String(d["kind"] ?? "").startsWith("cd"))].sort((a, b) => Number(b.data["cd_version"] ?? 0) - Number(a.data["cd_version"] ?? 0))[0]?.data ?? null;
-    const cdLoan = (cd?.["figures"] as Row | undefined)?.["loan"] as Row | undefined; const cdEscrow = (cd?.["figures"] as Row | undefined)?.["escrow"] as Row | undefined;
-    const gross: Cents = funding ? BigInt(String(funding["gross_loan_cents"])) : cdLoan ? BigInt(String(cdLoan["loan_amount_cents"])) : base.note.amount_cents;
-    const rate = funding ? String(funding["note_rate_pct"]) : cdLoan ? String(cdLoan["rate_pct"]) : base.note.note_rate_pct;
-    const term = cdLoan ? Number(cdLoan["term_months"]) : base.note.term_months;
+    // 25.2's cdFigureSnapshot is flat (rate_pct, loan_amount_cents, monthly_escrow_cents, …); a loan / escrow sub-object is accepted too
+    const figures = cd?.["figures"] as Row | undefined;
+    const cdLoan = (figures?.["loan"] as Row | undefined) ?? (figures && figures["loan_amount_cents"] != null ? figures : undefined); const cdEscrow = (figures?.["escrow"] as Row | undefined) ?? (figures && figures["monthly_escrow_cents"] != null ? figures : undefined);
+    const gross: Cents = funding && funding["gross_loan_cents"] != null ? BigInt(String(funding["gross_loan_cents"])) : cdLoan ? BigInt(String(cdLoan["loan_amount_cents"])) : base.note.amount_cents;
+    const rate = funding && funding["note_rate_pct"] != null ? String(funding["note_rate_pct"]) : cdLoan ? String(cdLoan["rate_pct"]) : base.note.note_rate_pct;
+    const term = cdLoan && cdLoan["term_months"] != null ? Number(cdLoan["term_months"]) : base.note.term_months;
     const state = app.properties[0]?.state ?? base.property.state;
     // 26.1 computes the note terms (P&I, first payment, maturity, the data hash) — its calculator, its tool
     const terms = (await rt.execute({ process: "26.1", name: "computeNoteTerms", loanId: "", applicationId: c.application_id, actor: CLOSER, input: { principal_cents: gross, note_rate_pct: rate, term_months: term, scheduled_disbursement_date: funded.disbursement_date, state } })).output as { pi_cents: Cents; first_payment_date: PlainDate; maturity_date: PlainDate; data_hash: string; late_charge_pct: string; late_charge_days: number };
@@ -80,7 +82,9 @@ export const defaultHandoff: HandoffPort = {
     const cushion = monthly * 2n;
     const overrides: DemoOverrides = {
       ...recorded,
-      note: { ...base.note, amount_cents: gross, note_rate_pct: rate, term_months: term, first_payment_date: terms.first_payment_date, maturity_date: terms.maturity_date, late_charge_pct: terms.late_charge_pct, late_charge_grace_days: terms.late_charge_days, ...(recorded.note ?? {}) },
+      note: { ...base.note, amount_cents: gross, note_rate_pct: rate, term_months: term, first_payment_date: terms.first_payment_date, maturity_date: terms.maturity_date, late_charge_pct: terms.late_charge_pct, late_charge_grace_days: terms.late_charge_days, ...(recorded.note ?? {}), ...(recorded.note?.data_hash ? {} : { data_hash: terms.data_hash }) },
+      // OB-002: the signed note's data hash is the record's (26.1's rendered eNote) when it has one, else 26.1's computed terms hash for these figures
+      closing: { ...base.closing, ...(recorded.closing ?? {}), ...(recorded.closing?.note_terms_hash ? {} : { note_terms_hash: terms.data_hash }) },
       final_cd: { ...base.final_cd, pi_cents: terms.pi_cents, monthly_escrow_cents: monthly, initial_escrow_deposit_cents: deposit, prepaid_interest_cents: funded.interest_credit ? 0n : prepaid.prepaid_interest_cents, prepaid_interest_days: prepaid.days },
       escrow_analysis: base.escrow_analysis ? { ...base.escrow_analysis, monthly_escrow_cents: monthly, required_start_balance_cents: deposit - cushion, cushion_cents: cushion, lines: [{ line_type: "county_tax", annual_amount_cents: monthly * 12n - (monthly * 12n) / 4n, monthly_cents: monthly - monthly / 4n }, { line_type: "hazard", annual_amount_cents: (monthly * 12n) / 4n, monthly_cents: monthly / 4n }] } : null,
     } as DemoOverrides;
@@ -143,16 +147,22 @@ export async function closeoutPass(rt: Runtime, nowIso: string, opts: CloseoutPa
     examined += 1;
     for (let k = 0; k < (opts.max_transitions ?? 8); k += 1) {
       const current = await closeoutByApplication(rt.db, c.application_id); if (!current) break; c = current;
-      if (["completed", "unwound", "cancelled", "held"].includes(c.status)) { if (c.status === "held") held += 1; break; }
+      if (["completed", "unwound", "cancelled"].includes(c.status)) break;
       const events = [...await rt.uow.events.byLoan(c.prior_loan_id), ...await rt.uow.events.byApplication(c.application_id)].filter((e, i, all) => all.findIndex((x) => x.id === e.id) === i).sort((a, b) => a.sequence - b.sequence);
       const f = fold(events, c);
+      // rule 5 / T12: a closeout held{money_mismatch} resumes on its own once the officer's disposeVariance (`payoff.shortage.resolved`) is on the prior loan's log; every other hold waits for closeout.resume
+      if (c.status === "held" && c.hold_reason === "money_mismatch" && f.disposeVariance && (c.last_event_sequence === null || BigInt(f.disposeVariance.sequence) > c.last_event_sequence)) {
+        c = await rt.db.tx(async (q) => { await appendStep(q, { closeout_id: c.id, application_id: c.application_id, prior_loan_id: c.prior_loan_id, step: c.step, kind: "resumed", waiting_on: null, actor_kind: PAYOFF_RELEASE.kind, actor_id: PAYOFF_RELEASE.id, trigger_event_id: f.disposeVariance!.id, detail: { reason: "the officer disposed the variance (16.2 disposeVariance): the settlement resumes", disposition: (f.disposeVariance!.payload as Row)["disposition"] ?? null }, sweep_run_id: rt.root.sweepRunId }, nowIso); return updateCloseout(q, c.id, { status: "open", hold_reason: null, waiting_on: null, step_attempts: 0 }, nowIso); });
+      }
+      if (c.status === "held") { held += 1; break; }
       // 35.6's hand-off (the port): the new loan is staged and boarded before the closeout settles (rule 10: closeout.pass runs after orchestration.pass)
       if (f.funded && f.confirmed && !f.unwind && !c.new_loan_id) {
         const app = await rt.applications.get(c.application_id);
         if (app && !app.loan_id) {
           try {
             const store = new EntityStore(); store.seed(await rt.entities.load({ loanId: c.prior_loan_id, applicationId: c.application_id }));
-            const credit = c.escrow_treatment === "credit_to_new_loan" || (c.escrow_treatment === null && creditConsent(store, events, c.prior_loan_id, c.application_id) !== null) ? c.escrow_balance_cents : null;
+            // rule 6: the credit follows 30.3's consent on the record now (captured after the quote, it still counts: the treatment is re-decided at settlement)
+            const credit = creditConsent(store, events, c.prior_loan_id, c.application_id) !== null && (c.escrow_balance_cents ?? 0n) > 0n ? c.escrow_balance_cents : null;
             const h = await rt.closeoutPorts.handoff.stageAndBoard(rt, { application_id: c.application_id, prior_loan_id: c.prior_loan_id, escrow_credit_cents: credit }, nowIso);
             if (h.ran) { handoffs += 1; continue; }   // loan.staged / loan.boarded are on the log now: re-read and fold them
           } catch (e) { c = await journalFailure(rt, c, "handoff", e, nowIso); failed += 1; break; }
@@ -164,11 +174,12 @@ export async function closeoutPass(rt: Runtime, nowIso: string, opts: CloseoutPa
       const disposed = f.disposeVariance !== null;
       // the escrow refund after the 5-BD in-flight hold (3.5's clock; the pass issues it once the gate opens — never a write while it waits)
       const refundElected = c.mode === "serviced_same_servicer" && c.escrow_treatment === "refund" && !c.refund_disbursement_id && !!c.payoff_date && !!c.retirement_id;
-      const refundDue = refundElected ? finalDisbursementHold({ payoff_date: c.payoff_date!, today: asOf, in_flight: [] }).refund_may_issue : null;
+      // rule 6: the refund issues once 3.5's 5-BD in-flight hold has elapsed (worked example A: Fri 2027-02-05), or at 3.5's 20-BD deadline — never on the payoff date itself
+  const refundDue = refundElected ? ((h) => h.hold_elapsed || h.reason === "deadline")(finalDisbursementHold({ payoff_date: c.payoff_date!, today: asOf, in_flight: [] })) : null;
       let n: Next = next(c, f, { newLoanLinked: !!c.new_loan_id, goodThroughCovers, disposed, refundDue });
       if (refundDue === true && (n.kind === "wait" || (n.kind === "run" && n.tool !== "closeout.escrow"))) n = { kind: "run", tool: "closeout.escrow", trigger: null, reason: "the 5-BD in-flight hold elapsed: 3.5's refund issues" };
       // the new loan staged but not linked yet (35.6 stages later than the settlement, or before it): the current step's own tool folds the link (linkIfStaged), never a step it has not reached
-      const stagedUnlinked = f.staged && f.staged.loanId && !c.new_loan_id;
+      const stagedUnlinked = f.staged && f.staged.loanId && !c.new_loan_id && !(f.reversed && f.reversed.sequence > f.staged.sequence);   // a reversal cleared the link on purpose: the officer decides
       if (n.kind === "wait" && stagedUnlinked) {
         const linkTool = before(c.step, "settling") ? "closeout.quote" : before(c.step, "retired") ? "closeout.settle" : c.mode === "monitored_partner" ? (c.step === "retired" ? "closeout.notify_partner" : "closeout.confirm_partner") : c.step === "retired" ? "closeout.lien_release" : "closeout.retire";
         n = { kind: "run", tool: linkTool, trigger: f.staged!.id, reason: "loan.staged names the new loan: link it" };

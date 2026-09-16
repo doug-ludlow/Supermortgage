@@ -126,8 +126,10 @@ export function creditConsent(store: EntityStore, events: readonly DomainEvent[]
 /** The CD's initial escrow deposit ((g)(3), 30.3's figure): 25.2's rendered CD on the record, else 26.3's `loan.funded{escrow_deposit_cents}`. */
 export function cdInitialDeposit(store: EntityStore, events: readonly DomainEvent[], applicationId: string): Cents | null {
   const cd = [...store.list("disclosures", (d) => d["application_id"] === applicationId && String(d["kind"] ?? "").startsWith("cd"))].sort((a, b) => Number(b.data["cd_version"] ?? 0) - Number(a.data["cd_version"] ?? 0))[0];
-  const fig = cd ? ((cd.data["figures"] as Row | undefined)?.["escrow"] as Row | undefined) : undefined;
-  if (fig && fig["initial_escrow_payment_cents"] !== undefined) return c(fig["initial_escrow_payment_cents"]);
+  // 25.2's cdFigureSnapshot is flat (figures.initial_escrow_payment_cents); an escrow sub-object is accepted too
+  const figures = cd ? (cd.data["figures"] as Row | undefined) : undefined;
+  const fig = (figures?.["escrow"] as Row | undefined) ?? figures;
+  if (fig && fig["initial_escrow_payment_cents"] !== undefined && fig["initial_escrow_payment_cents"] !== null) return c(fig["initial_escrow_payment_cents"]);
   const funded = [...events].reverse().find((e) => e.type === "loan.funded" && e.applicationId === applicationId);
   return funded && pl(funded)["escrow_deposit_cents"] !== undefined ? c(pl(funded)["escrow_deposit_cents"]) : null;
 }

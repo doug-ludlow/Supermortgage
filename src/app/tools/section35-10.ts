@@ -42,7 +42,7 @@ import type { Queryable } from "../../infra/db/client.ts";
 import { PgOutbox } from "../../infra/integrations/pg-outbox.ts";
 import type { Runtime } from "../../runtime/app.ts";
 import { closeoutPass, closeoutBoardRun, PAYOFF_RELEASE, ET } from "../../runtime/refinance-closeout.ts";
-import { loanCashState } from "../../runtime/servicing.ts";
+import { loanCashState, SERVICER_CONTACT } from "../../runtime/servicing.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { plainDate as D, addDays, type PlainDate } from "../../kernel/calendar/date.ts";
 import type { Actor, DomainEvent } from "../../kernel/events/index.ts";
@@ -97,6 +97,7 @@ async function load(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise
 }
 const recordIo = (cx: Cx): RecordIo => ({ q: cx.q, store: cx.store, events: cx.events, cash: async (loanId, asOf) => { const f = await loanCashState(cx.runtime, loanId, asOf); return { lpi_date: f.state.lpi_date, note_rate_pct: f.state.note_rate_pct, custodial: f.custodial, upb_cents: f.state.upb_cents }; } });
 /** The closeout's own event, persisted through a nested unit of work on the command's transaction (the owners' later commands and the registry's clocks see it in order). */
+// the id grammar (src/runtime/lifecycle.test.ts g): the closeout's own events are the second bridge between the two records — keyed by the prior loan and the application it is retired by (30.2's hand-off events are the first)
 async function emit(cx: Cx, type: string, payload: Row, o: { loanOnly?: boolean; causationId?: string | null; aggregate?: { kind: string; id: string } } = {}): Promise<DomainEvent> {
   const scope = o.loanOnly ? { loanId: cx.c.prior_loan_id } : cx.scope;
   const r = await cx.runtime.uow.run(scope, (u) => u.events.append({ type, loanId: cx.c.prior_loan_id, ...(o.loanOnly ? {} : { applicationId: cx.c.application_id }), aggregate: o.aggregate ?? { kind: "refinance_closeout", id: cx.c.id }, actor: cx.ctx.actor, payload: { closeout_id: cx.c.id, application_id: cx.c.application_id, prior_loan_id: cx.c.prior_loan_id, mode: cx.c.mode, origination: true, ...payload }, ...(o.causationId ? { causationId: o.causationId } : {}) }), { clock: cx.runtime.clock });
@@ -106,7 +107,8 @@ interface OwnerCall { readonly process: string; readonly name: string; readonly 
 type OwnerResult = { ok: true; output: Row; events: readonly DomainEvent[]; decision_id: string | null } | { ok: false; code: string; message: string; refused: boolean };
 /** Run an owning section's tool as its owning agent on the command's transaction; journal the run, the refusal or the failure. */
 async function owner(cx: Cx, o: OwnerCall): Promise<OwnerResult> {
-  const req = { process: o.process, name: o.name, loanId: o.scope === "app" ? "" : cx.c.prior_loan_id, ...(o.scope === "loan" ? {} : { applicationId: cx.c.application_id }), actor: o.actor, input: o.input, run: { runId: `35.10:${cx.c.id}:${cx.c.step}`, modelVersion: "deterministic", promptVersion: PROMPT_VERSION, confidence: 1 } };
+  // the id grammar (lifecycle g): an application command before the hand-off is keyed by the application alone; after 30.2 staged the new loan it carries that loan too
+  const req = { process: o.process, name: o.name, loanId: o.scope === "app" ? cx.c.new_loan_id ?? "" : cx.c.prior_loan_id, ...(o.scope === "loan" ? {} : { applicationId: cx.c.application_id }), actor: o.actor, input: o.input, run: { runId: `35.10:${cx.c.id}:${cx.c.step}`, modelVersion: "deterministic", promptVersion: PROMPT_VERSION, confidence: 1 } };
   const command = { process: o.process, name: o.name, op: typeof o.input["op"] === "string" ? String(o.input["op"]) : null };
   try {
     const r = await cx.runtime.execute(req);
@@ -136,6 +138,7 @@ async function hold(cx: Cx, reason: string, o: { status?: CloseoutRow["status"];
 /** `loan.staged` names the new loan: link it (rule 7, whichever sweep it lands in) — `refinance.new_loan.linked` is what the projector writes `loans.refinanced_by_loan_id` from. */
 async function linkIfStaged(cx: Cx): Promise<void> {
   if (cx.c.new_loan_id || !cx.f.staged?.loanId) return;
+  if (cx.f.reversed && cx.f.reversed.sequence > cx.f.staged.sequence) return;   // 16.2 rule 6: the reversal cleared the link; it is re-made only when the settlement is redone
   const newLoanId = cx.f.staged.loanId;
   const number = String(pl(cx.f.staged)["servicing_loan_number"] ?? "");
   await emit(cx, "refinance.new_loan.linked", { new_loan_id: newLoanId, servicing_loan_number: number || null, staged_event_id: cx.f.staged.id }, { causationId: cx.f.staged.id });
@@ -191,7 +194,7 @@ async function open(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise
     const reason = other ? "prior_loan_in_closeout" : "cancel" in m ? m.cancel : "prior_not_retirable";
     const row = await insertCloseout(q, { application_id: applicationId, prior_loan_id: app.prior_loan_id, partner_party_id: priorPartner, mode: other ? other.mode : "serviced_same_servicer", prior_status_at_open: other ? other.prior_status_at_open : priorStatus || "active", step: "opened", status: "cancelled", hold_reason: reason, now: ctx.now });
     await journal(io, row, "cancelled", { detail: { reason, prior_status: app.status, other_closeout_id: other?.id ?? null } });
-    rt.escalations.open({ kind: "sev3", ownerRole: "ops_analyst", loanId: app.prior_loan_id, applicationId, payload: { reason, application_id: applicationId, prior_loan_id: app.prior_loan_id, prior_status: app.status, other_closeout_id: other?.id ?? null, closeout_id: row.id } }, ctx.actor);
+    rt.escalations.open({ kind: "sev3", severity: "3", ownerRole: "ops_analyst", loanId: app.prior_loan_id, applicationId, payload: { reason, application_id: applicationId, prior_loan_id: app.prior_loan_id, prior_status: app.status, other_closeout_id: other?.id ?? null, closeout_id: row.id } }, ctx.actor);
     await runtime.uow.run({ loanId: app.prior_loan_id, applicationId }, (u) => u.events.append({ type: "refinance.closeout.unwound", loanId: app.prior_loan_id!, applicationId, aggregate: { kind: "refinance_closeout", id: row.id }, actor: ctx.actor, payload: { closeout_id: row.id, application_id: applicationId, prior_loan_id: app.prior_loan_id, reason, terminal: "cancelled", origination: true } }), { clock: runtime.clock });
     return { ...outcome(row, "cancelled", reason), closeout_id: row.id };
   }
@@ -311,6 +314,7 @@ async function settle(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promi
   if (i["op"] === "reversal") return reversal(cx);
   await linkIfStaged(cx);
   if (cx.c.step !== "quoted" && cx.c.step !== "settling") return outcome(cx.c, "noop", `step ${cx.c.step} is not the settlement`);
+  if (cx.f.reversed && !cx.c.funds_id && !cx.c.settlement_id && cx.c.waiting_on === "officer") return outcome(cx.c, "waiting", "payoff.reversed (16.2 rule 6): the returned funds are gone; the officer decides how the settlement resumes (closeout.resume) — never a second transfer on its own");
   const funded = cx.f.funded; const confirmed = cx.f.confirmed;
   if (!funded || !confirmed) return outcome(cx.c, "waiting", "loan.funded and funding.disbursement.confirmed are not both on the log");
   const disbursement = D(String(pl(funded)["disbursement_date"]).slice(0, 10));
@@ -362,8 +366,8 @@ async function settle(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promi
       await owner(cx, { process: "16.1", name: "openShortagePath", actor: PAYOFF_RELEASE, scope: "loan", trigger: funded.id, input: { loan_id: cx.c.prior_loan_id, quote_id: cx.c.quote_id, received_on: disbursement, amount_received_cents: line.amount_cents, state: facts.state } });
       const denied = new RoleDenied(cx.ctx.actor, ["officer"], "16.2 disposeVariance");
       await journal(cx.io, cx.c, "command_refused", { command: { process: "16.2", name: "disposeVariance", op: null }, trigger_event_id: funded.id, refusal_code: "ROLE_DENIED", detail: { reason: denied.message, guardrail: "NO_MONEY_FIELD", variance_cents: S(variance), exact_total_cents: S(exact), amount_cents: S(line.amount_cents) } });
-      cx.rt.escalations.open({ kind: "sev1", ownerRole: "officer", loanId: cx.c.prior_loan_id, applicationId: cx.c.application_id, payload: { reason: "payoff line beyond 16.2's tolerance: disposeVariance is the officer's", closeout_id: cx.c.id, application_id: cx.c.application_id, prior_loan_id: cx.c.prior_loan_id, variance_cents: S(variance), exact_total_cents: S(exact), amount_cents: S(line.amount_cents) } }, cx.ctx.actor);
-      return hold(cx, "money_mismatch", { status: "waiting_human", waiting_on: "officer", detail: { variance_cents: S(variance), exact_total_cents: S(exact), amount_cents: S(line.amount_cents) } });
+      cx.rt.escalations.open({ kind: "sev1", severity: "1", ownerRole: "officer", loanId: cx.c.prior_loan_id, applicationId: cx.c.application_id, payload: { reason: "payoff line beyond 16.2's tolerance: disposeVariance is the officer's", closeout_id: cx.c.id, application_id: cx.c.application_id, prior_loan_id: cx.c.prior_loan_id, variance_cents: S(variance), exact_total_cents: S(exact), amount_cents: S(line.amount_cents) } }, cx.ctx.actor);
+      return hold(cx, "money_mismatch", { status: "held", waiting_on: "officer", detail: { variance_cents: S(variance), exact_total_cents: S(exact), amount_cents: S(line.amount_cents) } });
     }
     return outcome(cx.c, "waiting", "waiting on the officer's disposeVariance");
   }
@@ -379,7 +383,7 @@ async function settle(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promi
     const share = await owner(cx, { process: "16.2", name: "computeFnmaPayoffShare", actor: PAYOFF_RELEASE, scope: "loan", trigger: pif?.id ?? null, input: { loan_id: cx.c.prior_loan_id, settlement_id: settlementId, type: facts.remittance_type, upb_cents: c(quoteRow["upb_cents"]), nib_cents: 0n, note_rate_pct: facts.note_rate_pct, ptr_pct: facts.purchased!.pass_through_rate, lpi_due: facts.lpi_due, payoff_on: disbursement, fnma_advance_repay_cents: 0n } });
     if (share.ok && facts.remittance_type === "AA") {
       const fnmaShare = c(share.output["total_cents"]);
-      await owner(cx, { process: "16.2", name: "buildCrsBatch", actor: PAYOFF_RELEASE, scope: "loan", trigger: pif?.id ?? null, input: { loan_id: cx.c.prior_loan_id, lender_id: facts.partner_servicer_number ?? facts.partner_party_id, instructed_at: cx.ctx.now, settlements: [{ loan_id: cx.c.prior_loan_id, settlement_id: settlementId, fnma_loan_number: facts.fnma_loan_number, remittance_type: "AA", fnma_share_cents: fnmaShare, fnma_advance_repay_cents: 0n, payoff_on: disbursement }] } });
+      await owner(cx, { process: "16.2", name: "buildCrsBatch", actor: PAYOFF_RELEASE, scope: "loan", trigger: pif?.id ?? null, input: { loan_id: cx.c.prior_loan_id, batch_id: randomUUID(), lender_id: facts.partner_servicer_number ?? facts.partner_party_id, instructed_at: cx.ctx.now, settlements: [{ loan_id: cx.c.prior_loan_id, settlement_id: settlementId, fnma_loan_number: facts.fnma_loan_number, remittance_type: "AA", fnma_share_cents: fnmaShare, fnma_advance_repay_cents: 0n, payoff_on: disbursement }] } });
       await owner(cx, { process: "16.2", name: "projectRemovalPayoff", actor: PAYOFF_RELEASE, scope: "loan", trigger: pif?.id ?? null, input: { loan_id: cx.c.prior_loan_id, funds_id: cx.c.funds_id, settlement_id: settlementId, fnma_loan_number: facts.fnma_loan_number, principal_cents: c(quoteRow["upb_cents"]), nib_cents: 0n, interest_cents: c(share.output["interest_cents"]), payoff_date: disbursement, processed_at: cx.ctx.now } });
     }
   } else {
@@ -407,9 +411,17 @@ async function reversal(cx: Cx): Promise<unknown> {
 async function escrow(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
   const cx = await load(i, ctx, rt);
   await linkIfStaged(cx);
-  const treatment = cx.c.escrow_treatment;
+  let treatment = cx.c.escrow_treatment;
   // the disposition recorded once (step escrow_disposed), on the settled closeout; the credit posts after the retirement event (SM_REFI_ESCROW_CREDIT_0 arms on it); the refund after the 5-BD hold
   if (cx.c.step === "settled") {
+    // rule 6: the treatment is 24.4's decision as of the settlement — a consent captured after the quote (30.3, by the settlement date) turns the quote-time refund into the credit
+    const consentNow = creditConsent(cx.store, cx.events, cx.c.prior_loan_id, cx.c.application_id);
+    if (consentNow && consentNow.consent_id !== cx.c.escrow_consent_id && cx.c.payoff_demand_id && (cx.c.escrow_balance_cents ?? 0n) > 0n) {
+      const liability = cx.c.payoff_demand_id.slice(cx.c.application_id.length + 1);
+      const deposit = cdInitialDeposit(cx.store, cx.events, cx.c.application_id);
+      const re = await owner(cx, { process: "24.4", name: "decideEscrowTreatment", actor: TITLE_CLOSING, scope: "app", trigger: cx.f.paidInFull?.id ?? cx.trigger, input: { liability_id: liability, servicing_loan_id: cx.c.prior_loan_id, same_servicer: true, payoff_posted_on: cx.c.payoff_date ?? cx.asOf, escrow_balance_cents: cx.c.escrow_balance_cents, settlement_date: cx.c.payoff_date ?? cx.asOf, consent: { kind: "escrow_credit_to_new_loan", captured_at: consentNow.captured_at }, consent_id: consentNow.consent_id, ...(deposit !== null ? { initial_escrow_deposit_cents: deposit } : {}), net_against_shortfall_flag: false }, note: "the consent captured after the quote: 24.4 re-decides the treatment as of the settlement" });
+      if (re.ok) { treatment = treatmentOf(String(re.output["escrow_treatment"]), cx.c.escrow_balance_cents ?? 0n); cx.c = await updateCloseout(cx.q, cx.c.id, { escrow_treatment: treatment, escrow_consent_id: consentNow.consent_id }, cx.ctx.now); }
+    }
     const detail = { treatment, escrow_balance_cents: S(cx.c.escrow_balance_cents), consent_id: cx.c.escrow_consent_id, netting: "never (NO_NETTING: escrow.payoff.net_against_shortfall is 3.5's flag and off)" };
     await journal(cx.io, cx.c, "command_run", { step: "escrow_disposed", command: { process: PROCESS, name: "closeout.escrow", op: "record" }, detail: { ...detail, guardrail: "NO_NETTING" } });
     const recorded = await emit(cx, "refinance.escrow.disposition.recorded", { treatment, escrow_balance_cents: S(cx.c.escrow_balance_cents), consent_id: cx.c.escrow_consent_id, netting: "NO_NETTING" });
@@ -418,7 +430,7 @@ async function escrow(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promi
   }
   if (treatment === "refund" && !cx.c.refund_disbursement_id && cx.c.retirement_id && cx.c.payoff_date) {
     const holdState = finalDisbursementHold({ payoff_date: cx.c.payoff_date, today: cx.asOf, in_flight: [] });
-    if (!holdState.refund_may_issue) return outcome(cx.c, "waiting", `3.5's 5-BD in-flight hold: the refund issues from ${holdState.gate_opens_on}`);
+    if (!(holdState.hold_elapsed || holdState.reason === "deadline")) return outcome(cx.c, "waiting", `3.5's 5-BD in-flight hold: the refund issues from ${holdState.gate_opens_on}`);
     // rule 6: the refund is the ledger's escrow balance now (a tax or insurance disbursement between the quote and today changes it), never the quote-time copy
     const facts = await priorLoanFacts(recordIo(cx), cx.c.prior_loan_id, cx.asOf);
     const amount = facts.escrow_balance_cents > 0n ? facts.escrow_balance_cents : 0n;
@@ -479,7 +491,7 @@ async function retire(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promi
         const ev = credit.events.find((e) => e.type === "escrow.credit_to_new_loan.posted") ?? null;
         cx.c = await updateCloseout(cx.q, cx.c.id, { escrow_credit_event_id: ev?.id ?? null }, cx.ctx.now);
         await journal(cx.io, cx.c, "completed", { step: "escrow_disposed", command: { process: "30.3", name: "buildEscrowLines", op: "post_credit_transfer" }, decision_id: credit.decision_id, detail: { credit_event_id: ev?.id ?? null, amount_cents: S(cx.c.escrow_balance_cents), guardrail: "NO_NETTING" } });
-      } else { cx.rt.escalations.open({ kind: "sev2", ownerRole: "officer", loanId: cx.c.prior_loan_id, applicationId: cx.c.application_id, payload: { reason: "the elected escrow credit did not post (30.3)", closeout_id: cx.c.id, error: credit.message.slice(0, 300) } }, cx.ctx.actor); }
+      } else { cx.rt.escalations.open({ kind: "sev2", severity: "2", ownerRole: "officer", loanId: cx.c.prior_loan_id, applicationId: cx.c.application_id, payload: { reason: "the elected escrow credit did not post (30.3)", closeout_id: cx.c.id, error: credit.message.slice(0, 300) } }, cx.ctx.actor); }
     }
   }
   return { ...outcome(cx.c, "advanced", `retired ${payoffDate} (${remitted})`), decision: decisionOf(cx.c, "advanced", `retired on ${payoffDate}`, { process: PROCESS, name: "closeout.retire", op: null }, null, { exact_total_cents: S(total) }) };
@@ -515,7 +527,14 @@ async function lienRelease(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): 
     // 16.3's notice, by 16.3's tool (never this process's): the borrower's recorded-release notice
     if (cx.c.release_task_id && !cx.events.some((e) => e.type === "lien_release.borrower_notified" && e.loanId === cx.c.prior_loan_id)) {
       const facts = await priorLoanFacts(recordIo(cx), cx.c.prior_loan_id, payoffOn);
-      await owner(cx, { process: "16.3", name: "notifyBorrower", actor: PAYOFF_RELEASE, scope: "loan", trigger: recorded.id, input: { loan_id: cx.c.prior_loan_id, op: "release_recorded", release_task_id: cx.c.release_task_id, recorded_document_id: String(pl(recorded)["recorded_document_id"] ?? ""), consent_on_file: false, recipients: (facts.borrower_names.length ? facts.borrower_names : ["Borrower of record"]).map((n, k) => ({ partyId: `borrower-${k + 1}`, name: n, mailingAddress: facts.property_address })), payload: {} } });
+      const task = cx.store.get("release_tasks", cx.c.release_task_id)?.data ?? {};
+      const instrumentTitle = String(task["instrument_type"] ?? "release").split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+      const security = securityInstrumentFor(cx.store, cx.c.prior_loan_id, facts.state);
+      // the notice's payload from the record: 16.3's task row (instrument, recording office and reference), the loans / properties rows, the FAKE servicer contact block every servicing notice carries
+      const payload = { ...SERVICER_CONTACT, team_name: "Payoff & Lien Release Team", team_phone: SERVICER_CONTACT.servicer_phone, toll_free: SERVICER_CONTACT.servicer_phone, website: SERVICER_CONTACT.portal_url, account_last4: facts.servicer_loan_number.slice(-4), borrower_name: facts.borrower_names[0] ?? "Borrower of record", property_address: facts.property_address,
+        payoff_date: payoffOn, instrument_title: instrumentTitle, security_instrument_title: security === "deed_of_trust" ? "Deed of Trust" : security === "security_deed" ? "Security Deed" : "Mortgage", original_recording_date: facts.instrument_date, original_recording_reference: String(task["original_recording_reference"] ?? `Instrument recorded ${facts.instrument_date} (${facts.county ?? facts.state})`),
+        recording_office: `${facts.county ?? facts.state} County Recorder`, recorded_date: String(pl(recorded)["recorded_at"] ?? pl(recorded)["recorded_on"] ?? civilDay(cx.ctx.now)), recording_reference: String(pl(recorded)["recording_reference"] ?? task["recording_reference"] ?? ""), min: facts.min ? (/^\d{18}$/.test(facts.min) ? `${facts.min.slice(0, 7)}-${facts.min.slice(7, 17)}-${facts.min.slice(17)}` : facts.min) : "", escrow_refund_cents: 0n, note_return_note: "" };   // the MIN as MERS prints it (7-10-1)
+      await owner(cx, { process: "16.3", name: "notifyBorrower", actor: PAYOFF_RELEASE, scope: "loan", trigger: recorded.id, input: { loan_id: cx.c.prior_loan_id, op: "release_recorded", release_task_id: cx.c.release_task_id, recorded_document_id: String(pl(recorded)["recorded_document_id"] ?? ""), consent_on_file: false, recipients: (facts.borrower_names.length ? facts.borrower_names : ["Borrower of record"]).map((n, k) => ({ partyId: `borrower-${k + 1}`, name: n, mailingAddress: facts.property_address })), payload } });
     }
     await toLinked(cx);
     return outcome(cx.c, cx.c.status === "completed" ? "completed" : "advanced", "lien_release.recorded: the closeout moves on");
@@ -570,7 +589,7 @@ async function confirmPartner(i: ToolInput, ctx: CommandContext, rt: ToolRuntime
   if (activeTape && !notes.some((n) => n.kind === "disputed" && n.confirmation_import_id === String((activeTape.payload as Row)["import_id"] ?? ""))) {
     const importId = String((activeTape.payload as Row)["import_id"] ?? "") || null;
     const tapeStatus = String((activeTape.payload as Row)["tape_status"] ?? "active");
-    const esc = cx.rt.escalations.open({ kind: "sev2", ownerRole: "ops_analyst", loanId: cx.c.prior_loan_id, applicationId: cx.c.application_id, payload: { reason: "the partner's tape still carries the retired loan as active after the notification (rule 8)", closeout_id: cx.c.id, application_id: cx.c.application_id, prior_loan_id: cx.c.prior_loan_id, servicer_loan_number: loan.n, tape_status: tapeStatus, import_id: importId, resolve_through: "33.1 book.resolve{paid_off}" } }, cx.ctx.actor);
+    const esc = cx.rt.escalations.open({ kind: "sev2", severity: "2", ownerRole: "ops_analyst", loanId: cx.c.prior_loan_id, applicationId: cx.c.application_id, payload: { reason: "the partner's tape still carries the retired loan as active after the notification (rule 8)", closeout_id: cx.c.id, application_id: cx.c.application_id, prior_loan_id: cx.c.prior_loan_id, servicer_loan_number: loan.n, tape_status: tapeStatus, import_id: importId, resolve_through: "33.1 book.resolve{paid_off}" } }, cx.ctx.actor);
     const row = await insertNotification(cx.q, { retirement_id: cx.c.retirement_id, prior_loan_id: cx.c.prior_loan_id, partner_party_id: loan.partner, kind: "disputed", integration_message_id: null, channel: null, payload_hash: null, servicer_loan_number: loan.n, notified_on: null, ack_reference: null, confirmation_source: null, confirmation_import_id: importId, tape_status: tapeStatus, escalation_id: esc.id, actor_kind: cx.ctx.actor.kind, actor_id: cx.ctx.actor.id }, cx.ctx.now);
     await emit(cx, "partner_book.retirement.disputed", { tape_status: tapeStatus, import_id: importId, escalation_id: esc.id, notification_id: row.id, servicer_loan_number: loan.n }, { causationId: activeTape.id, aggregate: { kind: "loan", id: cx.c.prior_loan_id } });
     cx.c = await updateCloseout(cx.q, cx.c.id, { partner_notification_id: row.id }, cx.ctx.now);

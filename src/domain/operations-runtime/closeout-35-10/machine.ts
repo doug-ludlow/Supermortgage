@@ -69,6 +69,8 @@ export function next(c: CloseoutRow, f: Folded, opts: { newLoanLinked: boolean; 
       return { kind: "wait", waiting_on: "rescission_window", reason: "35.6 owns the wait to loan.funded" };
     case "settling":
       if (c.mode === "serviced_same_servicer" && c.funds_id && !f.paidInFull && !opts.disposed) return { kind: "wait", waiting_on: "officer", reason: "16.2 found a variance nobody disposed (disposeVariance is the officer's)" };
+      // after an officer's reversal (16.2 rule 6) the returned funds are gone: the settlement waits on the officer (new funds, or closeout.resume), never a second transfer on its own
+      if (f.reversed && !c.funds_id && !c.settlement_id && c.waiting_on === "officer") return { kind: "wait", waiting_on: "officer", reason: "payoff.reversed: the officer decides how the settlement resumes" };
       return { kind: "run", tool: "closeout.settle", trigger: at(f.funded), reason: "settle the prior loan from the settlement statement's payoff line" };
     case "settled": return { kind: "run", tool: "closeout.escrow", trigger: at(f.paidInFull ?? f.confirmed), reason: "dispose the escrow as the borrower elected" };
     case "escrow_disposed": return { kind: "run", tool: "closeout.retire", trigger: at(f.paidInFull ?? f.confirmed), reason: "retire the prior loan on the owner's settlement event" };

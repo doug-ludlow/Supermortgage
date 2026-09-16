@@ -431,7 +431,7 @@ export class Runtime {
           const owner = b.escalateTo[0] ?? "ops_analyst";
           // a §35.10 closeout clock names its closeout: the arming event's application_id, prior_loan_id, step and waiting_on ride on the escalation (T13)
           const arming = b.instance.code.startsWith("SM_REFI_") ? (await q.query<{ payload: Record<string, unknown> }>(`SELECT payload FROM loan_events WHERE id = $1`, [b.instance.armedByEventId]))[0]?.payload ?? null : null;
-          escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), ...(b.instance.applicationId ? { applicationId: b.instance.applicationId } : {}), severity: String(sev), slaTimerId: b.instance.id,
+          escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), severity: String(sev), slaTimerId: b.instance.id,
             payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText, ...breachPayloadOf(arming) } }, { kind: "system", id: "sweep" });
           breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });
         }

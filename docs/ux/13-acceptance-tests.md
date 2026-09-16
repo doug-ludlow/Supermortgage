@@ -27,9 +27,9 @@ Per-screen tests live in their files (03 §7, 04 §7, 05 §9, 06 §8, 07 §7, 08
 - **T-X-05 Cards commit, chat doesn't** — Given a borrower message whose text matches a pending card's affirmative (e.g., "yes proceed", "lock it", "I agree"), then no command executes and the reply contains the deep link.
 - **T-X-06 Party scoping** — Given a co-borrower session, then the Record shows the other party's first name and `progress` booleans only; `applicant_demographics`, income and liabilities of the other party never appear.
 - **T-X-07 Voice never consents** — Given any `ConsentCard`, when a voice session affirms, then the card stays `pending` and the invitation link is sent.
-- **T-X-08 Talk to a person** — Given any screen, then a control emitting `human.request` is visible without scrolling; after `human.transfer.completed`, a `PersonCard{human_agent}` exists.
+- **T-X-08 Talk to a person** — Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists.
 - **T-X-09 Money and rates** — Given any rendered amount, then it is produced from cents via `Intl.NumberFormat` and any rate from a decimal string; no float arithmetic in the client.
-- **T-X-10 Mobile parity** — Given every card kind at 390 px, then it is operable and the status strip shows badge, next event and the needed-from-you count.
+- **T-X-10 Mobile parity** — Given every card kind at 390 px, then it is operable on the record sheet, and the phone shell shows the badge and next event (My Loan) and the needed-from-you count (the Tasks tab badge).
 - **T-X-11 Deep links** — Given an SMS deep link opened without a session, then L1 is required before any loan data renders; the token resolves to the card and expires at 7 days.
 - **T-X-12 Degraded vendor** — Given Truv returns an error, then the `ConnectCard` shows `failed` with the upload fallback and no error code is shown to the borrower.
 - **T-X-13 Reading level** — Given every string in 12 outside notice templates, then its Flesch-Kincaid grade ≤ 8.

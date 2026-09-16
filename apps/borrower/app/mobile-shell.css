@@ -72,18 +72,27 @@
 
 @media (max-width: 767px) {
   .sm-shell[data-mobile-shell="1"] {
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto; /* header · strip slot · body · disclosure footer · tab rail */
   }
   .sm-shell[data-mobile-shell="1"] .sm-body {
     grid-template-columns: minmax(0, 1fr);
   }
-  .sm-shell[data-mobile-shell="1"] .sm-record {
+  .sm-shell[data-mobile-shell="1"] .sm-footer {
+    grid-row: 4;
+    padding-bottom: 8px; /* the tab rail carries the safe-area inset */
+  }
+  /* the record sheet is the rail (32.16 §2.2): mounted behind the tabs, shown only while open */
+  .sm-shell[data-mobile-shell="1"] .sm-record:not([data-open="true"]) {
     display: none;
+  }
+  /* the header's "Your record" opens the sheet on a phone (the drawer opener of 768–1023, kept) */
+  .sm-shell[data-mobile-shell="1"] .sm-drawer-btn {
+    display: inline-flex;
   }
   .sm-tab-nav {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    grid-row: 4;
+    grid-row: 5;
     border-top: 1px solid var(--sm-border);
     background: var(--sm-surface);
     padding: 4px 4px calc(4px + env(safe-area-inset-bottom));

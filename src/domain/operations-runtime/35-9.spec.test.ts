@@ -120,6 +120,15 @@ const sweepAt = async (iso: string) => { clock.set(iso); const r = await runtime
 const actionOfTimer = (timerId: string) => rows<{ id: string; outcome: string; action_kind: string; registry_version: number | null; command_event_id: string | null; escalation_id: string | null; refusal_code: string | null; work_item_id: string | null }>(`SELECT id::text AS id, outcome, action_kind, registry_version, command_event_id::text AS command_event_id, escalation_id::text AS escalation_id, refusal_code, work_item_id::text AS work_item_id FROM breach_actions WHERE timer_id = $1::uuid`, [timerId]);
 const escalationsFor = (loanId: string) => rows<{ id: string; kind: string; owner_role: string; status: string; sla_timer_id: string | null; payload: Record<string, unknown> }>(`SELECT id::text AS id, kind, owner_role, status, sla_timer_id::text AS sla_timer_id, payload FROM escalations WHERE loan_id = $1::uuid ORDER BY opened_at`, [loanId]);
 
+// ───────── bankruptcy fixtures (rule 6): a Chapter 13 case as 14.1 leaves it, PACER's docket as the FAKE returns it ─────────
+async function seedBankruptcyCase(f: Fixture, caseNumber: string): Promise<string> {
+  const c = await rows<{ id: string }>(`INSERT INTO cases (case_type, loan_id, status, owner_role, opened_at) VALUES ('bankruptcy', $1::uuid, 'active', 'bankruptcy-ops', $2::timestamptz) RETURNING id::text AS id`, [f.loanId, clock.now()]);
+  const caseId = c[0]!.id;
+  await runtime.entities.save([rec("bankruptcy_cases", caseId, { case_id: caseId, loan_id: f.loanId, case_number_full: caseNumber, court_id: "flmb", chapter: 13, petition_date: "2027-01-10", status: "active", stay_status: "in_effect", principal_residence: true }, "agent:bankruptcy-ops")], f.loanId);
+  return caseId;
+}
+const pacerDockets = () => (runtime.ports.pacer as unknown as { dockets: Map<string, { seq: number; filedOn: string; kind: string; text: string }[]> }).dockets;
+
 test("35.9-T1: Given a boarded loan whose 13.3 `foreclosure.referral.sent` was committed on 2027-03-02, when the seam's post-commit hook and then `case.progress` run, then exactly one `case_timelines` row exists for that event (`event_id` unique; the second fold writes nothing) with `case_kind = foreclosure`, `status_before = prereferral`, `status_after = referred`, and `case.timeline{loan_id}` returns the loan's rows in `event_sequence` order with the case's current status.", { skip }, async () => {
   const { f, caseId, eventId } = await t1Fixture();
   // the seam's post-commit hook folded 13.3's commit: exactly one row for the event, the case's kind and status before/after
@@ -251,7 +260,80 @@ test("35.9-T7: Given a code with no `breach_action_registry` row (any 3.x clock)
   assert.equal(await count(db, `FROM escalations WHERE owner_role = 'compliance' AND status = 'open' AND payload->>'as_of_date' = '2027-06-01'`), complianceBefore + 1, "one compliance escalation");
 });
 
-test("35.9-T8: Given 13.1's gates open, a completed 13.4 review with outcome `refer`, a retained FAKE firm for the state and no hold, when the daily unit runs, then `case.referral.proposed` is logged, a 35.8 proposal on `foreclosure_case.refer` for `officer` exists and `SM_CASE_REFERRAL_DECISION_2BD` is armed; when an `officer` approves, then `case.referral.decided{decision: approve}` and 13.3's `foreclosure.referral.sent` are in one transaction, `attorney_referrals` has the package manifest, `firm_dispatches{kind: referral_package}` points at the outbox row, the clock is satisfied and `FNMA_E3205_FIRM_ACK_2BD` is armed; when instead a 12.1 application is received before the decision, then approval is refused and `case.referral.decided{decision: cancelled, cause: gate_closed}` is logged.", { todo: true });
+test("35.9-T8: Given 13.1's gates open, a completed 13.4 review with outcome `refer`, a retained FAKE firm for the state and no hold, when the daily unit runs, then `case.referral.proposed` is logged, a 35.8 proposal on `foreclosure_case.refer` for `officer` exists and `SM_CASE_REFERRAL_DECISION_2BD` is armed; when an `officer` approves, then `case.referral.decided{decision: approve}` and 13.3's `foreclosure.referral.sent` are in one transaction, `attorney_referrals` has the package manifest, `firm_dispatches{kind: referral_package}` points at the outbox row, the clock is satisfied and `FNMA_E3205_FIRM_ACK_2BD` is armed; when instead a 12.1 application is received before the decision, then approval is refused and `case.referral.decided{decision: cancelled, cause: gate_closed}` is logged.", { skip }, async () => {
+  // 13.1's gates open on Tue 2027-03-02 (day 152 of delinquency, principal residence, package ready, a fresh DMDC certificate, no hold), a completed 13.4 review `refer`, a retained FAKE firm for FL
+  clock.set("2027-03-02T15:00:00.000Z");
+  const f = await loanFixture("FL"); const firmId = await seedFirm("FL");
+  const pkg = await rows<{ id: string }>(`INSERT INTO documents (loan_id, kind, sha256, byte_size, storage_uri, retention_class) VALUES ($1::uuid, 'referral_package', $2, 12, 'mem://test/package', 'court_record_7y') RETURNING id::text AS id`, [f.loanId, sha("package")]);
+  const caseId = await seedForeclosureCase(f, "FL", "judicial", { referral_package_document_id: pkg[0]!.id });
+  await runtime.entities.save([
+    rec("loans", f.loanId, { loan_id: f.loanId, earliest_unpaid_due: "2026-10-01", principal_residence: true, state: "FL", mortgagee_of_record: "Test Partner Servicing LLC", counters_as_of: "2027-03-02" }, "agent:default-collections"),
+    rec("note_custody", `nc-${f.loanId}`, { loan_id: f.loanId, image_received_at: "2027-02-20", image_document_id: pkg[0]!.id, image_sha256: sha("package") }, "agent:security-records"),
+    rec("scra_verifications", `scra-${f.loanId}`, { id: `scra-${f.loanId}`, loan_id: f.loanId, requested_at: "2027-02-25T12:00:00.000Z", method: "dmdc_single", status_date: "2027-02-25", on_active_duty: "N", certificate_id: "CERT-FAKE-1", purpose: "prereferral" }, "agent:foreclosure-ops"),
+    rec("prereferral_reviews", `prr-${f.loanId}`, { id: `prr-${f.loanId}`, loan_id: f.loanId, case_id: caseId, started_at: "2027-02-20T12:00:00.000Z", completed_at: "2027-02-27T12:00:00.000Z", outcome: "refer", checklist: {}, valid_for_referral: true, reviewer_role: "foreclosure-ops" }, "agent:foreclosure-ops"),
+  ], f.loanId);
+  // the daily unit proposes
+  const r = (await exec("35.9", "case.progress", f.loanId, OPS, { loan_id: f.loanId, as_of_date: "2027-03-02" })).output as { steps: Record<string, { ran: boolean; detail?: Record<string, unknown>; error?: string }> };
+  assert.equal(r.steps["referral"]!.ran, true, JSON.stringify(r.steps["referral"])); assert.equal(r.steps["referral"]!.detail!["proposed"], true, JSON.stringify(r.steps["referral"]!.detail));
+  await settle();
+  const proposed = await events(EV.referralProposed, f.loanId);
+  assert.equal(proposed.length, 1); assert.equal(proposed[0]!.payload["case_id"], caseId);
+  // the firm is one 13.6 retains for FL (several FAKE firms are retained for FL in this database by now; the one seeded here is among them)
+  const proposedFirm = String(proposed[0]!.payload["firm_id"]);
+  const retention = await rows<{ state: string; retained_from: string | null; status: string }>(`SELECT r.data->>'jurisdiction_state' AS state, r.data->>'retained_from' AS retained_from, f.data->>'status' AS status FROM entity_current r JOIN entity_current f ON f.kind = 'attorney_firms' AND f.id = r.data->>'firm_id' WHERE r.kind = 'attorney_retentions' AND r.data->>'firm_id' = $1`, [proposedFirm]);
+  assert.equal(retention.length, 1); assert.equal(retention[0]!.state, "FL"); assert.equal(retention[0]!.status, "retained"); assert.ok(retention[0]!.retained_from);
+  assert.ok([firmId, proposedFirm].includes(proposedFirm)); assert.ok(Array.isArray(proposed[0]!.payload["gates"]) && (proposed[0]!.payload["gates"] as string[]).includes("REGX_1024_41F1_120_DAY_GATE"));
+  const items = await rows<{ screen_code: string; required_role: string; status: string; source_kind: string; source_id: string }>(`SELECT screen_code, required_role, status, source_kind, source_id FROM work_items WHERE loan_id = $1::uuid AND source_kind = 'approval_pending'`, [f.loanId]);
+  assert.equal(items.length, 1, "a 35.8 proposal"); assert.equal(items[0]!.screen_code, "foreclosure_case"); assert.equal(items[0]!.required_role, "officer"); assert.equal(items[0]!.source_id, `${caseId}:refer`); assert.equal(items[0]!.status, "open");
+  const armed = (await timers(TIMERS_35_9.referralDecision, f.loanId)).filter((t) => t.status === "armed");
+  assert.equal(armed.length, 1, "SM_CASE_REFERRAL_DECISION_2BD armed"); assert.equal(armed[0]!.due_date, addBusinessDays(D("2027-03-02"), 2, servicer));
+  // a second daily run proposes nothing more
+  const r2 = (await exec("35.9", "case.progress", f.loanId, OPS, { loan_id: f.loanId, as_of_date: "2027-03-02" })).output as { steps: Record<string, { detail?: Record<string, unknown> }> };
+  assert.equal(r2.steps["referral"]!.detail!["proposal"], "open"); assert.equal((await events(EV.referralProposed, f.loanId)).length, 1);
+  // the officer approves: decided{approve} and 13.3's foreclosure.referral.sent in one transaction
+  clock.set("2027-03-03T15:00:00.000Z");
+  const ok = await exec("35.9", "case.refer", f.loanId, OFFICER, { op: "decide", decision: "approve", case_id: caseId, reason: "eligible; package complete" });
+  const types = ok.events.map((e) => e.type);
+  assert.ok(types.includes(EV.referralDecided) && types.includes("foreclosure.referral.sent"), `one transaction: ${types.join(",")}`);
+  const decided = (await events(EV.referralDecided, f.loanId)).filter((e) => e.payload["decision"] === "approve");
+  assert.equal(decided.length, 1); assert.equal(decided[0]!.actor_kind, "human"); assert.equal(decided[0]!.actor_id, OFFICER.id);
+  const sentEv = (await events("foreclosure.referral.sent", f.loanId))[0]!;
+  assert.equal(decided[0]!.payload["referral_event_id"], sentEv.id);
+  const referral = await rows<{ manifest: unknown; firm_id: string }>(`SELECT data->'package_manifest' AS manifest, data->>'firm_id' AS firm_id FROM entity_current WHERE kind = 'attorney_referrals' AND data->>'case_id' = $1`, [caseId]);
+  assert.equal(referral.length, 1, "attorney_referrals has the package manifest"); assert.ok(referral[0]!.manifest && typeof referral[0]!.manifest === "object"); assert.equal(referral[0]!.firm_id, proposedFirm);
+  assert.equal((await rows<{ status: string }>(`SELECT data->>'status' AS status FROM entity_current WHERE kind = 'foreclosure_cases' AND id = $1`, [caseId]))[0]!.status, "referred");
+  const d = await rows<{ kind: string; integration_message_id: string; adapter: string; status: string; owning_event_id: string }>(`SELECT d.kind, d.integration_message_id::text AS integration_message_id, m.adapter, m.status, d.owning_event_id::text AS owning_event_id FROM firm_dispatches d JOIN integration_messages m ON m.id = d.integration_message_id WHERE d.loan_id = $1::uuid AND d.kind = 'referral_package'`, [f.loanId]);
+  assert.equal(d.length, 1); assert.equal(d[0]!.adapter, "law-firm"); assert.equal(d[0]!.status, "queued"); assert.equal(d[0]!.owning_event_id, sentEv.id);
+  const clockRow = (await rows<{ status: string }>(`SELECT status::text AS status FROM timers WHERE id = $1::uuid`, [armed[0]!.id]))[0]!;
+  assert.ok(clockRow.status === "satisfied" || clockRow.status === "satisfied_late", `the decision clock is satisfied (${clockRow.status})`);
+  assert.equal((await timers("FNMA_E3205_FIRM_ACK_2BD", f.loanId)).filter((t) => t.status === "armed").length, 1, "FNMA_E3205_FIRM_ACK_2BD armed");
+  assert.equal((await rows<{ status: string }>(`SELECT status FROM work_items WHERE loan_id = $1::uuid AND source_kind = 'approval_pending'`, [f.loanId]))[0]!.status, "closed");
+  // instead: a 12.1 application received before the decision closes the pre-filing gate — the approval is refused and the proposal cancelled
+  const g = await loanFixture("FL"); const case2 = await seedForeclosureCase(g, "FL", "judicial", { referral_package_document_id: pkg[0]!.id });
+  clock.set("2027-03-02T15:00:00.000Z");
+  await runtime.entities.save([
+    rec("loans", g.loanId, { loan_id: g.loanId, earliest_unpaid_due: "2026-10-01", principal_residence: true, state: "FL", mortgagee_of_record: "Test Partner Servicing LLC" }, "agent:default-collections"),
+    rec("note_custody", `nc-${g.loanId}`, { loan_id: g.loanId, image_received_at: "2027-02-20", image_document_id: pkg[0]!.id, image_sha256: sha("package") }, "agent:security-records"),
+    rec("scra_verifications", `scra-${g.loanId}`, { id: `scra-${g.loanId}`, loan_id: g.loanId, requested_at: "2027-02-25T12:00:00.000Z", method: "dmdc_single", status_date: "2027-02-25", on_active_duty: "N", certificate_id: "CERT-FAKE-2", purpose: "prereferral" }, "agent:foreclosure-ops"),
+    rec("prereferral_reviews", `prr-${g.loanId}`, { id: `prr-${g.loanId}`, loan_id: g.loanId, case_id: case2, started_at: "2027-02-20T12:00:00.000Z", completed_at: "2027-02-27T12:00:00.000Z", outcome: "refer", checklist: {}, valid_for_referral: true, reviewer_role: "foreclosure-ops" }, "agent:foreclosure-ops"),
+  ], g.loanId);
+  await exec("35.9", "case.progress", g.loanId, OPS, { loan_id: g.loanId, as_of_date: "2027-03-02" });
+  assert.equal((await events(EV.referralProposed, g.loanId)).length, 1);
+  // 12.1's application (facially complete on a principal-residence loan) and 12.2's pre-filing hold row, as their tools leave them
+  await runtime.entities.save([
+    rec("lossmit_applications", `lm-${g.loanId}`, { id: `lm-${g.loanId}`, loan_id: g.loanId, status: "complete", received_on: "2027-03-02", complete_received_on: "2027-03-02", principal_residence: true }, "agent:lossmit-underwriter"),
+    rec("foreclosure_holds", `hold-${g.loanId}-regx_f2`, { id: `hold-${g.loanId}-regx_f2`, loan_id: g.loanId, kind: "regx_f2_prefiling", status: "active", scope: ["refer", "first_notice"], rule_citation: "12 CFR 1024.41(f)(2)", opened_at: clock.now() }, "agent:lossmit-underwriter"),
+  ], g.loanId);
+  clock.set("2027-03-03T15:00:00.000Z");
+  const refused = (await exec("35.9", "case.refer", g.loanId, OFFICER, { op: "decide", decision: "approve", case_id: case2 })).output as { decision: string; cause: string; blocked_by: string[] };
+  assert.equal(refused.decision, "cancelled"); assert.equal(refused.cause, "gate_closed"); assert.ok(refused.blocked_by.some((b) => /REGX_1024_41F2_PRE_FILING_APP_GATE|HOLD:regx_f2_prefiling/.test(b)), refused.blocked_by.join(","));
+  const cancelled = (await events(EV.referralDecided, g.loanId)).filter((e) => e.payload["decision"] === "cancelled");
+  assert.equal(cancelled.length, 1); assert.equal(cancelled[0]!.payload["cause"], "gate_closed");
+  assert.equal((await events("foreclosure.referral.sent", g.loanId)).length, 0, "nothing was sent");
+  assert.ok((await events("foreclosure.gate.refused", g.loanId)).length >= 1, "13.1's refusal is on the log");
+  assert.equal(await count(db, `FROM firm_dispatches WHERE loan_id = $1::uuid`, [g.loanId]), 0);
+});
+
 test("35.9-T9: Given a referral dispatched on Mon 2027-03-01 to the FAKE firm with `first_legal` default 45 days, when the outbox drains and the sweep advances through Tue 2027-03-02, then `firm.inbound{kind: ack}` produced 13.3's `foreclosure.referral.acknowledged`, `firm_dispatches.acknowledged_at` is set with `ack_source = fake`, expectation `referral_ack` is `satisfied`, and expectation `first_legal` exists with `expected_on = 2027-04-15`, `due_on = 2027-04-18`, `basis = firm_forecast`.", { todo: true });
 test("35.9-T10: Given expectation `first_legal` with `due_on = 2027-04-18` and no milestone recorded, when the daily unit runs on 2027-04-19, then its status is `due`, `case.milestone.due` is logged, one 35.8 `work_items` row exists with `source_kind = case_milestone`, `screen_code = foreclosure_case`, `required_role = attorney`, and `SM_CASE_MILESTONE_OVERDUE_5BD` is armed with `due_at` = 2027-04-18 + 5 servicer business days; when 13.3's `foreclosure.milestone.recorded{code: first_legal, source: dra}` is folded, then the expectation is `satisfied`, the item closes, the clock is satisfied and the next expectation is written.", { skip }, async () => {
   const { f, caseId, firmId } = await t1Fixture();
@@ -298,8 +380,72 @@ test("35.9-T10: Given expectation `first_legal` with `due_on = 2027-04-18` and n
   assert.equal(next.length, 1); assert.equal(next[0]!.basis, "jurisdiction_default"); assert.equal(next[0]!.expected_on, addDays(D("2027-04-19"), 60));
 });
 
-test("35.9-T11: Given an open Chapter 13 case and `FakePacer.dockets` holding two new entries (`plan_confirmed` and a free-text objection), when `bk_docket_sync_daily` and then the daily unit run, then two `bankruptcy.docket.event.received{source: pcl}` events exist, `docket_reactions` has one row `{reaction_kind: status_change, needs_human: false}` with 14.1's `bankruptcy.status.changed` as `command_event_id` and `applied_at` set, and one row `{needs_human: true}` with a 35.8 item on `bankruptcy_case.docket` for `attorney`; `SM_DOCKET_REACTION_1BD` was armed and is satisfied by `case.docket.reacted`.", { todo: true });
-test("35.9-T12: Given a docket entry 14.1's classifier scores at 0.62, when `docket.react` runs, then no 14.1 write occurs, the reaction is `needs_human` and the entry's `applied_at` stays null until the `attorney` decides on the screen; given a `trustee_payment_received` entry naming an amount, then the reaction is `needs_human` regardless of confidence and no ledger line exists (the application is 35.8-T14's officer act).", { todo: true });
+test("35.9-T11: Given an open Chapter 13 case and `FakePacer.dockets` holding two new entries (`plan_confirmed` and a free-text objection), when `bk_docket_sync_daily` and then the daily unit run, then two `bankruptcy.docket.event.received{source: pcl}` events exist, `docket_reactions` has one row `{reaction_kind: status_change, needs_human: false}` with 14.1's `bankruptcy.status.changed` as `command_event_id` and `applied_at` set, and one row `{needs_human: true}` with a 35.8 item on `bankruptcy_case.docket` for `attorney`; `SM_DOCKET_REACTION_1BD` was armed and is satisfied by `case.docket.reacted`.", { skip }, async () => {
+  clock.set("2027-04-05T15:00:00.000Z");
+  const f = await loanFixture("FL"); const caseNumber = `3:27-bk-${uniq().slice(-5)}`; const caseId = await seedBankruptcyCase(f, caseNumber);
+  pacerDockets().set(caseNumber, [{ seq: 11, filedOn: "2027-04-01", kind: "plan_confirmed", text: "Order confirming Chapter 13 plan" }, { seq: 12, filedOn: "2027-04-02", kind: "text", text: "Objection to claim 4-1 filed by the debtor" }]);
+  // bk_docket_sync_daily: the sync ingests both entries; 14.1 applies the structured one it allows
+  const sync = (await exec("35.9", "docket.sync", f.loanId, FC_OPS, { loan_id: f.loanId, case_id: caseId })).output as { entries: number; applied: string[]; stored: string[]; synced: boolean };
+  assert.equal(sync.entries, 2); assert.equal(sync.synced, true); assert.deepEqual(sync.applied, [`dk-${f.loanId}-11`]); assert.deepEqual(sync.stored, [`dk-${f.loanId}-12`]);
+  await settle();
+  const received = await events("bankruptcy.docket.event.received", f.loanId);
+  assert.equal(received.length, 2, "two bankruptcy.docket.event.received{source: pcl}"); for (const e of received) assert.equal(e.payload["source"], "pcl");
+  const armed = (await timers(TIMERS_35_9.docketReaction, f.loanId));
+  assert.ok(armed.length >= 1, "SM_DOCKET_REACTION_1BD was armed");
+  // the daily unit reacts to the entry the sync stored
+  const r = (await exec("35.9", "case.progress", f.loanId, OPS, { loan_id: f.loanId, as_of_date: "2027-04-05" })).output as { steps: Record<string, { detail?: Record<string, unknown>; error?: string }> };
+  assert.deepEqual(r.steps["docket"]!.detail!["deferred"], [`dk-${f.loanId}-12`], JSON.stringify(r.steps["docket"]));
+  await settle();
+  const reactions = await rows<{ docket_event_id: string; reaction_kind: string; needs_human: boolean; command_event_id: string | null; classification: string; work_item_id: string | null }>(`SELECT docket_event_id, reaction_kind, needs_human, command_event_id::text AS command_event_id, classification, work_item_id::text AS work_item_id FROM docket_reactions WHERE loan_id = $1::uuid ORDER BY docket_event_id`, [f.loanId]);
+  assert.equal(reactions.length, 2);
+  const det = reactions.find((x) => x.docket_event_id === `dk-${f.loanId}-11`)!; const hum = reactions.find((x) => x.docket_event_id === `dk-${f.loanId}-12`)!;
+  assert.equal(det.reaction_kind, "status_change"); assert.equal(det.needs_human, false);
+  const cmd = (await rows<{ type: string; payload: Record<string, unknown>; actor_id: string }>(`SELECT type, payload, actor_id FROM loan_events WHERE id = $1::uuid`, [det.command_event_id!]))[0]!;
+  assert.equal(cmd.type, "bankruptcy.status.changed"); assert.equal(cmd.payload["to"], "plan_confirmed"); assert.equal(cmd.actor_id, "bankruptcy-ops");
+  const entry = (await rows<{ applied_at: string | null; updated_by: string }>(`SELECT data->>'applied_at' AS applied_at, updated_by FROM entity_current WHERE kind = 'bankruptcy_docket_events' AND id = $1`, [`dk-${f.loanId}-11`]))[0]!;
+  assert.ok(entry.applied_at, "14.1 set applied_at"); assert.equal(entry.updated_by, "agent:bankruptcy-ops");
+  assert.equal(hum.needs_human, true); assert.equal(hum.classification, "objection_to_claim");
+  const item = (await rows<{ screen_code: string; required_role: string; status: string }>(`SELECT screen_code, required_role, status FROM work_items WHERE id = $1::uuid`, [hum.work_item_id!]))[0]!;
+  assert.equal(item.screen_code, "bankruptcy_case"); assert.equal(item.required_role, "attorney"); assert.equal(item.status, "open");
+  const reacted = await events(EV.docketReacted, f.loanId);
+  assert.equal(reacted.length, 2);
+  const clocks = await timers(TIMERS_35_9.docketReaction, f.loanId);
+  assert.ok(clocks.some((t) => t.status === "satisfied" || t.status === "satisfied_late"), `satisfied by case.docket.reacted (${clocks.map((t) => t.status).join(",")})`);
+  assert.equal(clocks.filter((t) => t.status === "armed").length, 0);
+  Object.assign(BK, { f, caseId, caseNumber });
+});
+const BK = { f: null as unknown as Fixture, caseId: "", caseNumber: "" };
+
+test("35.9-T12: Given a docket entry 14.1's classifier scores at 0.62, when `docket.react` runs, then no 14.1 write occurs, the reaction is `needs_human` and the entry's `applied_at` stays null until the `attorney` decides on the screen; given a `trustee_payment_received` entry naming an amount, then the reaction is `needs_human` regardless of confidence and no ledger line exists (the application is 35.8-T14's officer act).", { skip }, async () => {
+  clock.set("2027-04-06T15:00:00.000Z");
+  const f = await loanFixture("FL"); const caseNumber = `3:27-bk-${uniq().slice(-5)}`; const caseId = await seedBankruptcyCase(f, caseNumber);
+  // a free-text entry 14.1's classifier scores at 0.62 (the FAKE classifier over its text), and a trustee payment naming an amount
+  pacerDockets().set(caseNumber, [{ seq: 21, filedOn: "2027-04-03", kind: "text", text: "Objection to confirmation filed by creditor" }, { seq: 22, filedOn: "2027-04-04", kind: "trustee_payment_received", text: "Trustee disbursement $1,234.56 received" }]);
+  await exec("35.9", "docket.sync", f.loanId, FC_OPS, { loan_id: f.loanId, case_id: caseId });
+  const eventsBefore = await count(db, `FROM loan_events WHERE loan_id = $1::uuid AND type LIKE 'bankruptcy.%' AND type <> 'bankruptcy.docket.event.received'`, [f.loanId]);
+  const ledgerBefore = await count(db, `FROM ledger_lines`);
+  const r1 = (await exec("35.9", "docket.react", f.loanId, FC_OPS, { loan_id: f.loanId, docket_event_id: `dk-${f.loanId}-21` })).output as { needs_human: boolean; confidence: number; classification: string; command_event_id: string | null };
+  assert.equal(r1.needs_human, true); assert.equal(r1.confidence, 0.62); assert.equal(r1.classification, "objection_to_claim"); assert.equal(r1.command_event_id, null);
+  await settle();
+  assert.equal(await count(db, `FROM loan_events WHERE loan_id = $1::uuid AND type LIKE 'bankruptcy.%' AND type <> 'bankruptcy.docket.event.received'`, [f.loanId]), eventsBefore, "no 14.1 write");
+  const e21 = (await rows<{ applied_at: string | null; version: number }>(`SELECT data->>'applied_at' AS applied_at, version FROM entity_current WHERE kind = 'bankruptcy_docket_events' AND id = $1`, [`dk-${f.loanId}-21`]))[0]!;
+  assert.equal(e21.applied_at, null, "applied_at stays null until the attorney decides"); assert.equal(e21.version, 1);
+  const item = (await rows<{ required_role: string; status: string }>(`SELECT required_role, status FROM work_items WHERE source_id = $1`, [`docket:dk-${f.loanId}-21`]))[0]!;
+  assert.equal(item.required_role, "attorney"); assert.equal(item.status, "open");
+  // the trustee payment: needs_human regardless of confidence, no ledger line
+  const r2 = (await exec("35.9", "docket.react", f.loanId, FC_OPS, { loan_id: f.loanId, docket_event_id: `dk-${f.loanId}-22` })).output as { needs_human: boolean; reaction_kind: string; command_event_id: string | null };
+  assert.equal(r2.needs_human, true); assert.equal(r2.reaction_kind, "none"); assert.equal(r2.command_event_id, null);
+  await settle();
+  assert.equal(await count(db, `FROM ledger_lines`), ledgerBefore, "no ledger line (the application is 35.8-T14's officer act)");
+  assert.equal((await rows<{ applied_at: string | null }>(`SELECT data->>'applied_at' AS applied_at FROM entity_current WHERE kind = 'bankruptcy_docket_events' AND id = $1`, [`dk-${f.loanId}-22`]))[0]!.applied_at, null);
+  // the attorney decides on the screen: the deterministic class counsel names is applied through 14.1 and applied_at is set by 14.1
+  const ATTY: Actor = { kind: "human", id: randomUUID(), role: "attorney" };
+  const r3 = (await exec("35.9", "docket.react", f.loanId, ATTY, { loan_id: f.loanId, docket_event_id: `dk-${f.loanId}-21`, classification: "plan_confirmed" })).output as { needs_human: boolean; command_event_id: string | null };
+  assert.equal(r3.needs_human, false); assert.ok(r3.command_event_id);
+  const after = (await rows<{ applied_at: string | null; updated_by: string }>(`SELECT data->>'applied_at' AS applied_at, updated_by FROM entity_current WHERE kind = 'bankruptcy_docket_events' AND id = $1`, [`dk-${f.loanId}-21`]))[0]!;
+  assert.ok(after.applied_at); assert.equal(after.updated_by, `human:${ATTY.id}`);
+});
+
 test("35.9-T13: Given the fixture book with three open foreclosure cases, one bankruptcy case, one claim candidate and two open early-intervention windows, when the sweep runs once after 05:30 ET, then 35.3's `cycle_runs` show `bk_docket_sync_daily`, `default_case_daily`, `claims_sweep_daily` and `dra_import_daily` for the day with receipts, one `default_case_daily_runs` row exists with `loans_scanned = 7`, `outcome = completed` and a stored report document, `default_case.daily.run_completed` and `breach_action.recon.run_completed` are logged once, and `SM_DEFAULT_CASE_DAILY` and `SM_BREACH_ACTION_RECON_DAILY` are re-armed for the next day; a second sweep the same day writes no second run (`as_of_date` unique).", { todo: true });
 test("35.9-T14: Given the demo clock advanced 30 days over the fixture, then one `default_case_daily_runs` row per crossed day exists in date order, every expectation whose `due_on` fell in the window was marked `due` on that day (its `case.milestone.due` carries that `as_of_date`), the FAKE firm's milestone reports were folded on their forecast dates, and the same rows are produced by 30 hosted sweeps on consecutive days (the contract test compares the two runs' `case_timelines` and `case_milestone_expectations` by `(case_id, milestone_code, status, expected_on, due_on)`).", { todo: true });
 test("35.9-T15: Given any command of this process, then the ledger and every money column of the sections' rows before and after are identical (contract test over `ledger_lines`, `advances`, `expense_claims`, `mi_claims`, `comp_fee_bills`), an input carrying `amount_cents`, `benefit_cents` or `exposure_cents` is refused `NO_MONEY_FIELD`, an attempt to register a `breach_action_registry` row whose `action_kind` the `cited_text` does not name is refused `ACTION_MATCHES_CITED_TEXT`, and a `compliance` registration without `officer` confirmation is refused.", { skip }, async () => {

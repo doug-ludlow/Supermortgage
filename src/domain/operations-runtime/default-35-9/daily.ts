@@ -14,6 +14,9 @@ import type { ToolInput, ToolRuntime } from "../../../app/tools.ts";
 import { ENGINE_ACTOR } from "../default-35-9.ts";
 import { asOfOf, foldInCommand, markExpectationsDue, need, s } from "./commands.ts";
 import { isGateClosed, refusalCode } from "./delegate.ts";
+import { ingestDueReplies } from "./firm.ts";
+import { referralStep } from "./referral.ts";
+import { reactPending } from "./docket.ts";
 import type { Row } from "./store.ts";
 
 export interface StepOutcome { readonly ran: boolean; readonly detail?: Row; readonly error?: string; readonly refusal?: string }
@@ -32,12 +35,11 @@ export async function step(report: { steps: Record<string, StepOutcome>; errors:
   }
 }
 
-/** The optional step hooks the later commit groups register (referral, exposure, docket, claims); absent → the step is skipped, not failed. */
+/** The step bodies of the later commit groups (exposure, the 11.x/12.x calls, claims) plug in here as they land; a step not yet built is reported `skipped`, never silently absent. */
 export interface ProgressSteps {
   readonly early_intervention?: (i: ToolInput, ctx: CommandContext, rt: ToolRuntime, asOf: string) => Promise<Row | void>;
   readonly lossmit?: (i: ToolInput, ctx: CommandContext, rt: ToolRuntime, asOf: string) => Promise<Row | void>;
-  readonly foreclosure?: (i: ToolInput, ctx: CommandContext, rt: ToolRuntime, asOf: string) => Promise<Row | void>;
-  readonly bankruptcy?: (i: ToolInput, ctx: CommandContext, rt: ToolRuntime, asOf: string) => Promise<Row | void>;
+  readonly exposure?: (i: ToolInput, ctx: CommandContext, rt: ToolRuntime, asOf: string) => Promise<Row | void>;
   readonly claims?: (i: ToolInput, ctx: CommandContext, rt: ToolRuntime, asOf: string) => Promise<Row | void>;
 }
 export const PROGRESS_STEPS: { current: ProgressSteps } = { current: {} };
@@ -54,11 +56,13 @@ export async function caseProgress(i: ToolInput, ctx: CommandContext, rt: ToolRu
   if (hooks.early_intervention) await step(report, "early_intervention", () => hooks.early_intervention!(i, ctx, rt, asOf));
   // (c) 12.x — deemed rejection and the plan's end of term, through the sections' own tools
   if (hooks.lossmit) await step(report, "lossmit", () => hooks.lossmit!(i, ctx, rt, asOf));
-  // (d) 13.x — review, referral proposal, exposure (rule 5), then the expectations due (rule 4)
-  if (hooks.foreclosure) await step(report, "foreclosure", () => hooks.foreclosure!(i, ctx, rt, asOf));
+  // (d) 13.x — what the firm answered (rule 8), the referral proposal (rule 3), the exposure projection (rule 5), then the expectations due (rule 4)
+  await step(report, "firm_inbound", () => ingestDueReplies(i, ctx, rt, asOf));
+  await step(report, "referral", () => referralStep(i, ctx, rt));
+  if (hooks.exposure) await step(report, "exposure", () => hooks.exposure!(i, ctx, rt, asOf));
   await step(report, "expectations_due", async () => { due = await markExpectationsDue(ctx, rt, loanId, asOf); return { due }; });
   // (e) 14.x — react to every docket entry with applied_at null (rule 6)
-  if (hooks.bankruptcy) await step(report, "bankruptcy", () => hooks.bankruptcy!(i, ctx, rt, asOf));
+  await step(report, "docket", () => reactPending(i, ctx, rt));
   // (f) 15.x — the advance position and the claims sweep (rule 9)
   if (hooks.claims) await step(report, "claims", () => hooks.claims!(i, ctx, rt, asOf));
   return { loan_id: loanId, as_of_date: asOf, events_folded: folded, unexpected, milestones_due: due, steps: report.steps, errors: report.errors, refusals: report.refusals };

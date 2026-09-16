@@ -23,6 +23,7 @@ import { caseProgress } from "../../domain/operations-runtime/default-35-9/daily
 import { firmDispatch, firmInbound } from "../../domain/operations-runtime/default-35-9/firm.ts";
 import { breachExecute, breachRecon } from "../../domain/operations-runtime/default-35-9/breach.ts";
 import { docketReact, docketSync } from "../../domain/operations-runtime/default-35-9/docket.ts";
+import { caseRefer } from "../../domain/operations-runtime/default-35-9/referral.ts";
 
 const HUMANS = ["ops_analyst", "officer", "attorney", "compliance", "fnma_portal_operator", "counsel"] as const;
 const LEGAL_ACT = /^(file|filing|instruct_sale|sale_instruction|bid|bid_instruction|foreclose|evict)$/i;
@@ -42,6 +43,11 @@ export const TOOLS_35_9: readonly ToolDef[] = defineTools(PROCESS_35_9, AGENT_35
     decision: (i, output) => { const o = (output ?? {}) as { expectation?: Record<string, unknown> }; return { action: s(i, "op") === "waive" ? "case.milestone.waive" : "case.milestone.expect", subject: { kind: "case", id: s(i, "case_id") }, rationale: s(i, "reason") || `${s(i, "milestone_code")} expected ${s(i, "expected_on")} (${s(i, "basis")}) — expectation ${String(o.expectation?.["id"] ?? "")}` }; } },
   { name: "case.milestone.record", kind: "act", humanRoles: ["attorney", "ops_analyst", "officer"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: COMMON, handler: compute(caseMilestoneRecord),
     decision: (i) => ({ action: "case.milestone.record", subject: { kind: "case", id: s(i, "case_id") }, rationale: `${s(i, "milestone_code")} on ${s(i, "occurred_on")} reported by ${s(i, "source")} — recorded through 13.3, never fabricated` }) },
+  // rule 3: proposed by the engine, decided by a person (an officer; a FAKE officer under 35.7's handover when the plan says so)
+  { name: "case.refer", kind: "act", humanRoles: ["officer", "ops_analyst", "attorney"], ruleSetVersion: RULE_SET_VERSION_35_9,
+    guardrails: [...COMMON, needsRole(REFUSALS.referralDecidedByOfficer, "35.9 rule 3: `case.refer{op: decide}` needs an `officer` (open question 1: proposed and decided by an officer everywhere until 35.7's handover lists officer as FAKE-filled)", (i) => s(i, "op") === "decide", ["officer"], "the referral is a legal act a person decides; the engine only proposes")],
+    handler: compute(caseRefer),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return s(i, "op") === "decide" ? { action: `case.refer:decide:${String(o["decision"] ?? s(i, "decision"))}`, subject: { kind: "case", id: s(i, "case_id") }, rationale: s(i, "reason") || `${String(o["decision"])}${o["cause"] ? ` (${String(o["cause"])}: ${JSON.stringify(o["blocked_by"] ?? [])})` : ""}${o["referral_event_id"] ? ` — 13.3 referral ${String(o["referral_event_id"])}` : ""}` } : null; } },
   // rule 6: the docket sync (PACER through the port; 14.1 applies what it allows) and the reaction (deterministic where the section is, else counsel)
   { name: "docket.sync", kind: "act", humanRoles: ["attorney", "ops_analyst", "officer"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: COMMON, handler: compute(docketSync),
     decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return { action: "docket.sync", subject: { kind: "case", id: String(o["case_id"] ?? s(i, "case_id")) }, rationale: `PACER since ${String(o["since"] ?? "")}: ${String(o["entries"] ?? 0)} entries, ${String((o["applied"] as unknown[] | undefined)?.length ?? 0)} applied by 14.1, ${String((o["stored"] as unknown[] | undefined)?.length ?? 0)} stored for reaction (synced: ${String(o["synced"])})` }; } },

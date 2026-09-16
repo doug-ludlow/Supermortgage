@@ -14,12 +14,17 @@
  *   advanceDemoClock    POST /v1/demo/advance { to?: ISO instant | days?: number, budget_ms?: number }. For every
  *                       America/New_York calendar day the advance crosses the clock steps to that day (noon ET, so the
  *                       UTC, ET and Phoenix civil dates agree) and runs the sweep minute — the passes in the order the
- *                       wall clock runs them (what main.ts `sweep` and POST /v1/sweep run): the borrower flows' `tick`
+ *                       wall clock runs them (what main.ts `sweep` and POST /v1/sweep run): first 35.3's cycles pass
+ *                       (rule 10 — `OffsetClock.refresh` from the row the step just wrote, `cycles.plan{as_of: step.at}`
+ *                       as `demo:<advance_id>`, then the day's queued units drained inline with no executor budget: the
+ *                       advance has its own and stops between steps, never inside one), then the borrower flows' `tick`
  *                       (every flow's scheduled pass — 4-disclosures' originationDailySweep, 8-servicing's
  *                       servicingDailySweep and the December irs_estatement ask, 10-hardship's delinquencyDailySweep,
- *                       the card expiries) and `settle`, then `Runtime.sweep()` — which itself runs the daily refinance run
- *                       (src/runtime/refi-daily.ts, when a rate feed is wired; read back through `refiDailyOutcome`, a
- *                       hook that tolerates the run's absence) and the FAKE reviewers before the breach pass — then
+ *                       the card expiries — 8-servicing's and 10-hardship's daily passes yield to the cycles once the registry
+ *                       projects their rows, 35.3 D13) and `settle`, then `Runtime.sweep(step.at, {cycles: "skip"})` — which
+ *                       itself runs the daily refinance run (src/runtime/refi-daily.ts, when a rate feed is wired; read back
+ *                       through `refiDailyOutcome`, a hook that tolerates the run's absence) and the FAKE reviewers before
+ *                       the paged breach pass (the cycles pass ran inline above, so the sweep skips its own) — then
  *                       `settle` again, so the reactions the breaches queued have run before the step is reported; and
  *                       last steps to the target instant and runs it once more. A caller without flows (a script, a test)
  *                       gets the three runtime-level daily sweeps directly, in the flows' order; the flow-level passes
@@ -48,6 +53,7 @@ import type { Runtime, SweepReport } from "./app.ts";
 import { servicingDailySweep } from "./servicing.ts";
 import { originationDailySweep } from "./origination.ts";
 import { delinquencyDailySweep } from "./delinquency.ts";
+import { cyclesSweepPass } from "../domain/operations-runtime/service.ts";
 import type { Logger } from "./log.ts";
 
 /** The zone whose calendar days an advance crosses (the engine's own: src/kernel/timers/engine.ts). */
@@ -196,6 +202,8 @@ export interface StepReport {
   readonly servicing_sweep: { loans: number; posted: number; late_charge_runs: number; errors: number } | null;
   readonly origination_sweep: { deemed: number; warned: number; expired: number } | null;
   readonly delinquency_sweep: { loans: number; windows_opened: number } | null;
+  /** 35.3 rule 10: the step's cycles pass, run inline before the flows' tick — `cycles.plan{as_of: step.at}` and the day's units drained to completion; null when the pass planned nothing (the planner lock held by another pass, no `databaseUrl` on the runtime, or the plan failed — logged with the reason). */
+  readonly cycles: { runs_opened: number; jobs_planned: number; units_done: number; units_dead: number; receipts: number; line: string } | null;
   readonly sweep: { due: number; breaches: number } | { error: string };
   readonly ms: number;
 }
@@ -238,15 +246,27 @@ export function refiDailyOutcome(sweep: SweepReport): HookOutcome {
 }
 
 /**
- * One sweep minute at `step.at`, in the order the wall clock runs it (main.ts `sweep`, POST /v1/sweep): the flows' tick and
- * settle (or, without flows, the three runtime-level daily sweeps in the flows' order), then Runtime.sweep (the refinance
- * daily run and the FAKE reviewers when wired, then the breach pass), then settle again so the reactions the breaches
- * queued post-commit have run before the step is reported.
+ * One sweep minute at `step.at`, in the order the wall clock runs it (main.ts `sweep`, POST /v1/sweep): 35.3's cycles pass
+ * first (rule 10 — the persisted offset re-read, `cycles.plan{as_of: step.at}` planned by `demo:<advance_id>`, the day's
+ * queued jobs drained to completion inline, no 240 s budget), then the flows' tick and settle (or, without flows, the three
+ * runtime-level daily sweeps in the flows' order — the cashiering and counter passes yield to their cycles, D13), then
+ * Runtime.sweep with its own cycles pass skipped (the refinance daily run and the FAKE reviewers when wired, then the
+ * paged breach pass), then settle again so the reactions the breaches queued post-commit have run before the step is
+ * reported. The cycles pass never fails the step: a refused planner lock or a runtime without `databaseUrl` is reported
+ * `cycles: null` with the reason logged.
  */
-async function runSweepMinute(deps: DemoAdvanceDeps, step: PlannedStep): Promise<StepReport> {
+async function runSweepMinute(deps: DemoAdvanceDeps, step: PlannedStep, meta: { readonly advance_id: string }): Promise<StepReport> {
   const started = Date.now(); const { runtime, logger } = deps;
   let flows: StepReport["flows"] = "absent"; let servicing: StepReport["servicing_sweep"] = null; let origination: StepReport["origination_sweep"] = null; let delinquency: StepReport["delinquency_sweep"] = null;
   const failed = (what: string, e: unknown): "failed" => { logger?.error(`demo clock: flows ${what} failed`, { at: step.at, error: e instanceof Error ? e.message : String(e) }); return "failed"; };
+  // 35.3 rule 10: the planner and the units inline, from the persisted offset — before the flows' tick, so the day's cashiering and counters run once, as the cycle's units
+  let cycles: StepReport["cycles"] = null;
+  try {
+    await deps.clock.refresh(runtime.db);
+    const c = await cyclesSweepPass(runtime, step.at, { drain: "all", planned_by: `demo:${meta.advance_id}` });
+    if (c.skipped) logger?.info("demo clock: cycles pass skipped", { at: step.at, reason: c.reason });
+    else cycles = { runs_opened: c.runs_opened, jobs_planned: c.jobs_planned, units_done: c.units_done, units_dead: c.units_dead, receipts: c.receipts, line: c.line };
+  } catch (e) { logger?.error("demo clock: cycles pass failed", { at: step.at, error: e instanceof Error ? e.message : String(e) }); }
   if (deps.flows) {
     try { await deps.flows.tick(step.at); await deps.flows.settle?.(); flows = "ticked"; } catch (e) { flows = failed("tick", e); }
   } else {
@@ -256,10 +276,10 @@ async function runSweepMinute(deps: DemoAdvanceDeps, step: PlannedStep): Promise
     const d = await delinquencyDailySweep(runtime, step.at); delinquency = { loans: d.loans.length, windows_opened: d.loans.reduce((a, l) => a + l.windows_opened.length, 0) };
   }
   let sweep: StepReport["sweep"]; let refi: HookOutcome = "absent";
-  try { const r: SweepReport = await runtime.sweep(step.at); sweep = { due: r.due, breaches: r.breaches.length }; refi = refiDailyOutcome(r); }
+  try { const r: SweepReport = await runtime.sweep(step.at, { cycles: "skip" }); sweep = { due: r.due, breaches: r.breaches.length }; refi = refiDailyOutcome(r); }
   catch (e) { sweep = { error: e instanceof Error ? e.message : String(e) }; logger?.error("demo clock: sweep failed", { at: step.at, error: sweep.error }); }
   if (deps.flows?.settle && flows !== "failed") { try { await deps.flows.settle(); } catch (e) { flows = failed("settle", e); } }
-  return { at: step.at, date: step.date, kind: step.kind, refi_daily: refi, flows, servicing_sweep: servicing, origination_sweep: origination, delinquency_sweep: delinquency, sweep, ms: Date.now() - started };
+  return { at: step.at, date: step.date, kind: step.kind, refi_daily: refi, flows, servicing_sweep: servicing, origination_sweep: origination, delinquency_sweep: delinquency, cycles, sweep, ms: Date.now() - started };
 }
 
 /** POST /v1/demo/advance — see the header. Throws RangeError on a bad body or an advance past the cap; a target at or before now returns `advanced: false`. */
@@ -284,10 +304,10 @@ export async function advanceDemoClock(deps: DemoAdvanceDeps, input: { readonly 
       // the base clock kept moving while the earlier passes ran: never step backwards
       const at = Date.parse(planned.at) > Date.parse(clock.now()) ? planned.at : clock.now();
       await clock.step(runtime.db, at, { advance_id: advanceId, step: i + 1, steps: plan.length, kind: planned.kind, actor });
-      const report = await runSweepMinute(deps, { ...planned, at });
+      const report = await runSweepMinute(deps, { ...planned, at }, { advance_id: advanceId });
       steps.push(report);
       if ("due" in report.sweep) { due += report.sweep.due; breaches += report.sweep.breaches; }
-      logger?.info("demo clock: step", { advance_id: advanceId, step: i + 1, of: plan.length, at, kind: planned.kind, refi_daily: report.refi_daily, flows: report.flows, sweep: report.sweep, ms: report.ms });
+      logger?.info("demo clock: step", { advance_id: advanceId, step: i + 1, of: plan.length, at, kind: planned.kind, refi_daily: report.refi_daily, cycles: report.cycles?.line ?? null, flows: report.flows, sweep: report.sweep, ms: report.ms });
     }
     const daysCrossed = daysBetween(fromDate, steps[steps.length - 1]!.date);
     return { advanced: true, complete: steps.length === plan.length, advance_id: advanceId, from, requested_to: requested, to: clock.now(), days_crossed: daysCrossed, steps, steps_remaining: plan.length - steps.length, budget_ms: budgetMs, due, breaches, offset_ms: clock.offset };

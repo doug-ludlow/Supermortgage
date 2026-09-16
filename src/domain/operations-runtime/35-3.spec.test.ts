@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import type { Server } from "node:http";
 import { connect, type Db } from "../../infra/db/client.ts";
 import { testDatabase } from "../../infra/db/test-db.ts";
 import { PgLoanRepository } from "../../infra/db/loans.ts";
@@ -22,8 +23,12 @@ import { AdapterUnavailable } from "../../infra/integrations/failures.ts";
 import type { FakeCustodialBank } from "../../infra/integrations/banking.ts";
 import { PgStaffRepository, emailHash, encryptEmail, staffEmailKey } from "../../runtime/staff/repo.ts";
 import { moneyFingerprint } from "../../runtime/controls/common.ts";
-import { CASHIERING_AGENT, loanCashState } from "../../runtime/servicing.ts";
+import { CASHIERING_AGENT, loanCashState, servicingDailySweep } from "../../runtime/servicing.ts";
+import { delinquencyDailySweep } from "../../runtime/delinquency.ts";
 import { advanceDemoClock } from "../../runtime/demo-clock.ts";
+import { createApiServer, listen } from "../../runtime/server.ts";
+import { appendEvent } from "../../runtime/controls/common.ts";
+import { getEscalation } from "../../runtime/controls/escalations.ts";
 import { periodClosedEvent } from "../custodial/ops.ts";
 import { lateChargeAmount } from "../cashiering/latecharges.ts";
 import { divRound } from "../../kernel/money/decimal.ts";
@@ -32,6 +37,8 @@ import { EVT, def as cycleDef, selectors, type CycleDef, type NamedRunner } from
 import { CyclesRefused, OPS_STEWARD, cyclesOf, cyclesSweepPass, installCycles, runClaimed, runExecutor, runUnitByHand, type CyclesHooks } from "./service.ts";
 import { claimJobs, wallClockOf } from "./jobs.ts";
 import { PLANNER_LOCK_KEY } from "./planner-lock.ts";
+import { pagedBreachPass } from "./breach.ts";
+import { enrichBreach_35_3 } from "./timers-35-3.ts";
 
 // ───────── harness: one freshly provisioned database per test (src/infra/db/test-db.ts, suffixed — the executor drains a whole queue, so a test's world is its own), one Runtime per test over its own FixedClock
 const probe = await testDatabase(import.meta.url, { provision: false });
@@ -344,8 +351,135 @@ test("35.3-T6: Given `ledger.period.closed{period_key: 2026-09}` has been append
     assert.equal((await events("custodial.form496.run_completed")).length, 1);
   } finally { await close(); }
 });
-test("35.3-T7: Given 10,000 armed timers due at or before `now`, when the breach pass runs, then it uses 20 transactions of at most 500 timers each, every one of the 10,000 has exactly one `timer.breached` event and one escalation, and a second pass started concurrently breaches none of them twice (the `FOR UPDATE SKIP LOCKED` page).", { todo: true });
-test("35.3-T8: Given the demo clock at 2026-10-01 12:00 ET and the fixture book, when `POST /v1/demo/advance {days: 3}` runs, then `cycles.plan.run_completed` was appended three times with `as_of_date` 2026-10-02, 2026-10-03 and 2026-10-04, `cycle_runs` holds one `cashiering_daily` and one `delinquency_counters` run per day with `period_key` equal to that day and `demo_offset_ms` equal to the step's `demo_clock.offset_ms`, every receipt of day N precedes day N+1's `cycle.run.opened` in `loan_events.sequence`, and every `jobs.lease_until` written during the advance is within 5 minutes of the wall-clock `real_now`, not of `demo_now`.", { todo: true });
+test("35.3-T7: Given 10,000 armed timers due at or before `now`, when the breach pass runs, then it uses 20 transactions of at most 500 timers each, every one of the 10,000 has exactly one `timer.breached` event and one escalation, and a second pass started concurrently breaches none of them twice (the `FOR UPDATE SKIP LOCKED` page).", { skip }, async () => {
+  await open("t7");
+  try {
+    const NOW = "2026-10-02T16:01:00.000Z";
+    const { rt } = runtimeAt(NOW);
+    // one loan_events row: the FK every synthetic timer's armed_by_event_id needs
+    const anchor = await appendEvent(db, { type: "test.fixture.armed", actor: OPS_STEWARD, payload: { fixture: "35.3-T7" } });
+    // n armed SM_CYCLE_RUN_STALLED_1D instances on synthetic cycle_run subjects (no run row behind them), every one due before NOW — one INSERT … SELECT over generate_series
+    const seed = async (n: number): Promise<void> => {
+      await db.query(`INSERT INTO timers (code, subject_kind, subject_id, armed_at, armed_by_event_id, anchor_date, due_at, status)
+        SELECT 'SM_CYCLE_RUN_STALLED_1D', 'cycle_run', gen_random_uuid()::text, '2026-10-01T16:00:00Z'::timestamptz, $1, '2026-10-01', '2026-10-01T16:00:00Z'::timestamptz + (g * interval '1 second'), 'armed' FROM generate_series(1, $2::int) AS g`, [anchor.id, n]);
+    };
+    await seed(10_000);
+    assert.equal(await count(`timers WHERE status = 'armed' AND due_at <= $1::timestamptz`, [NOW]), 10_000);
+    // the breach pass in pages of 500: 20 pages that returned rows (one transaction each), one empty probe after the twentieth full page
+    const r1 = await pagedBreachPass(rt, NOW, { pageSize: 500 });
+    assert.equal(r1.pages, 20); assert.equal(r1.probes, 1); assert.equal(r1.due, 10_000); assert.equal(r1.breaches.length, 10_000); assert.equal(r1.page_size, 500);
+    assert.equal(r1.by_page.length, 20); assert.ok(r1.by_page.every((n) => n <= 500), JSON.stringify(r1.by_page)); assert.equal(Math.max(...r1.by_page), 500);
+    // 20 transactions of at most 500 timers: the timer.breached rows share a transaction id (xmin) per page
+    const tx = (await db.query<{ n: string; mx: string }>(`SELECT count(*)::text AS n, max(c)::text AS mx FROM (SELECT xmin::text AS x, count(*) AS c FROM loan_events WHERE type = 'timer.breached' GROUP BY xmin::text) t`))[0]!;
+    assert.equal(tx.n, "20"); assert.ok(Number(tx.mx) <= 500, `at most 500 breaches per transaction, got ${tx.mx}`);
+    // every one of the 10,000: breached once, one timer.breached, one sev2 ops_analyst escalation (the row's breach column); no cycle_runs row behind a synthetic subject, so the enricher added nothing
+    assert.equal(await count(`timers WHERE status = 'breached'`), 10_000); assert.equal(await count(`timers WHERE status = 'armed'`), 0);
+    assert.equal(await count(`loan_events WHERE type = 'timer.breached'`), 10_000);
+    assert.equal(await count(`(SELECT payload->>'timer_id' AS t FROM loan_events WHERE type = 'timer.breached' GROUP BY 1 HAVING count(*) <> 1) d`), 0);
+    assert.equal(await count(`escalations WHERE kind = 'sev2' AND owner_role = 'ops_analyst' AND payload->>'timer_code' = 'SM_CYCLE_RUN_STALLED_1D' AND completed_at IS NULL AND loan_id IS NULL`), 10_000);
+    assert.equal(await count(`(SELECT sla_timer_id FROM escalations GROUP BY 1 HAVING count(*) <> 1) d`), 0);
+    assert.equal(await count(`escalations WHERE sla_timer_id NOT IN (SELECT id FROM timers WHERE status = 'breached')`), 0);
+    assert.equal(await count(`escalations WHERE payload ? 'cycle_code'`), 0);
+    assert.equal(new Set(r1.breaches.map((b) => b.timer_id)).size, 10_000);
+    assert.deepEqual(await enrichBreach_35_3(db, { subject: { kind: "cycle_run", id: randomUUID() } }), {});
+    // a fresh 10,000 and two passes started concurrently: FOR UPDATE SKIP LOCKED hands each page to one of them — 10,000 breaches between them, none twice
+    await seed(10_000);
+    assert.equal(await count(`timers WHERE status = 'armed'`), 10_000);
+    const [a, b] = await Promise.all([pagedBreachPass(rt, NOW, { pageSize: 500 }), pagedBreachPass(rt, NOW, { pageSize: 500 })]);
+    assert.equal(a.due + b.due, 10_000); assert.equal(a.breaches.length + b.breaches.length, 10_000); assert.equal(a.pages + b.pages, 20);
+    assert.ok(a.pages > 0 && b.pages > 0, `both passes took pages: ${a.pages} / ${b.pages}`);
+    assert.ok([...a.by_page, ...b.by_page].every((n) => n <= 500));
+    assert.equal(new Set([...a.breaches, ...b.breaches].map((x) => x.timer_id)).size, 10_000, "the two passes' pages are disjoint");
+    assert.equal(await count(`timers WHERE status = 'breached'`), 20_000); assert.equal(await count(`timers WHERE status = 'armed'`), 0);
+    assert.equal(await count(`loan_events WHERE type = 'timer.breached'`), 20_000);
+    assert.equal(await count(`(SELECT payload->>'timer_id' AS t FROM loan_events WHERE type = 'timer.breached' GROUP BY 1 HAVING count(*) <> 1) d`), 0);
+    assert.equal(await count(`escalations`), 20_000);
+    assert.equal(await count(`(SELECT sla_timer_id FROM escalations GROUP BY 1 HAVING count(*) <> 1) d`), 0);
+    // the sweep runs the same pass: nothing is left due, no page
+    const sw = await rt.sweep(NOW, { cycles: "skip" });
+    assert.equal(sw.due, 0); assert.equal(sw.breach_pages, 0); assert.equal(sw.breaches.length, 0);
+  } finally { await close(); }
+});
+test("35.3-T8: Given the demo clock at 2026-10-01 12:00 ET and the fixture book, when `POST /v1/demo/advance {days: 3}` runs, then `cycles.plan.run_completed` was appended three times with `as_of_date` 2026-10-02, 2026-10-03 and 2026-10-04, `cycle_runs` holds one `cashiering_daily` and one `delinquency_counters` run per day with `period_key` equal to that day and `demo_offset_ms` equal to the step's `demo_clock.offset_ms`, every receipt of day N precedes day N+1's `cycle.run.opened` in `loan_events.sequence`, and every `jobs.lease_until` written during the advance is within 5 minutes of the wall-clock `real_now`, not of `demo_now`.", { skip }, async () => {
+  await open("t8");
+  let server: Server | null = null;
+  try {
+    // the wall clock stands still at 2026-10-01 12:00 ET (D8: every lease is measured from it); the demo clock is the OffsetClock over it, on an empty demo_clock table
+    const REAL_NOW = "2026-10-01T16:00:00.000Z";
+    const base = new FixedClock(REAL_NOW);
+    const clock = await loadDemoClock(db, { base });
+    assert.equal(clock.now(), REAL_NOW); assert.equal(clock.offset, 0);
+    const rt = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger, rateFeed: null, reviewers: null, analystLlm: null, databaseUrl: DB_URL });
+    installCycles(rt, { defs: CYCLES });   // the production registry: the cycles whose runner has not landed die runner_missing, and that is asserted below
+    const TOKEN = `t-${randomUUID()}`;
+    server = createApiServer({ runtime: rt, apiToken: TOKEN, logger, console: false, borrower: { environment: "test", rpId: "localhost", allowedOrigins: ["http://localhost"], urlSecret: "test-secret" } });
+    const url = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
+    const call = async (method: string, path: string, body?: unknown): Promise<{ status: number; body: Row }> => {
+      const r = await fetch(url + path, { method, headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+      return { status: r.status, body: (await r.json()) as Row };
+    };
+    // the fixture book: the demo transfer batch through the API (src/runtime/transfers.test.ts: 94 of its 100 loans board)
+    const boarded = await call("POST", "/v1/transfers/batches/demo", {});
+    assert.equal(boarded.status, 200, JSON.stringify(boarded.body).slice(0, 400));
+    const ACTIVE = `loans WHERE boarded_at IS NOT NULL AND status NOT IN ('paid_off', 'transferred_out', 'repurchased', 'charged_off', 'monitored')`;
+    const activeLoans = await count(ACTIVE);
+    assert.ok(activeLoans > 0, "the demo book boarded");
+    assert.equal(await count(`cycle_runs`), 0); assert.equal(await count(`jobs`), 0); assert.equal(await count(`demo_clock`), 0);
+    // POST /v1/demo/advance {days: 3}: two `day` steps (noon ET of 2026-10-02 and 2026-10-03) and the target (2026-10-04 12:00 ET), each with its cycles pass inline before the flows' tick
+    const r = await call("POST", "/v1/demo/advance", { days: 3, actor: { kind: "human", id: "u-demo", role: "ops_analyst" } });
+    assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 600));
+    const report = r.body as { advanced: boolean; complete: boolean; advance_id: string; days_crossed: number; offset_ms: number; steps: { at: string; kind: string; flows: string; cycles: Row | null; sweep: Row }[] };
+    assert.equal(report.advanced, true); assert.equal(report.complete, true, "the advance finished inside its budget"); assert.equal(report.days_crossed, 3); assert.equal(report.offset_ms, 3 * 86_400_000);
+    assert.deepEqual(report.steps.map((s) => [s.kind, s.at]), [["day", "2026-10-02T16:00:00.000Z"], ["day", "2026-10-03T16:00:00.000Z"], ["target", "2026-10-04T16:00:00.000Z"]]);
+    for (const s of report.steps) { assert.equal(s.flows, "ticked"); assert.ok(s.cycles, `the step ran its cycles pass: ${JSON.stringify(s)}`); assert.ok(Number(s.cycles!["runs_opened"]) > 0 && Number(s.cycles!["receipts"]) > 0, JSON.stringify(s.cycles)); assert.equal(s.sweep["error"], undefined, JSON.stringify(s.sweep)); }
+    const DAYS = ["2026-10-02", "2026-10-03", "2026-10-04"];
+    const STEP_AT = ["2026-10-02T16:00:00.000Z", "2026-10-03T16:00:00.000Z", "2026-10-04T16:00:00.000Z"];
+    // three cycles.plan.run_completed, one per crossed day — as_of_date the step's ET civil date, planned by the advance, at the step's demo instant
+    const plans = await events(EVT.PLAN_COMPLETED);
+    assert.deepEqual(plans.map((p) => p.payload["as_of_date"]), DAYS);
+    assert.deepEqual(plans.map((p) => p.payload["planned_by"]), DAYS.map(() => `demo:${report.advance_id}`));
+    assert.deepEqual(plans.map((p) => p.occurred_at), STEP_AT);
+    assert.deepEqual(plans.map((p) => String(p.payload["demo_offset_ms"])), ["86400000", "172800000", "259200000"]);
+    assert.equal((await events(EVT.PLAN_SKIPPED)).length, 0);
+    // one cashiering_daily and one delinquency_counters run per day: period_key = as_of_date = the day; demo_offset_ms = the step's demo_clock row (the row whose demo_now is the run's opened_at)
+    const runs = await db.query<Row>(`SELECT r.cycle_code, r.period_key, r.as_of_date::text AS as_of_date, r.status, r.units_total, r.units_done, r.units_dead, r.demo_offset_ms::text AS demo_offset_ms, r.planned_by, r.opened_at,
+        (SELECT d.offset_ms::text FROM demo_clock d WHERE d.demo_now = r.opened_at ORDER BY d.id DESC LIMIT 1) AS step_offset
+      FROM cycle_runs r WHERE r.cycle_code IN ('cashiering_daily', 'delinquency_counters') ORDER BY r.period_key, r.cycle_code`);
+    assert.deepEqual(runs.map((x) => [x["cycle_code"], x["period_key"]]), DAYS.flatMap((d) => [["cashiering_daily", d], ["delinquency_counters", d]]));
+    for (const x of runs) {
+      assert.equal(x["as_of_date"], x["period_key"]); assert.equal(x["status"], "completed", JSON.stringify(x)); assert.equal(x["units_dead"], 0); assert.equal(x["planned_by"], `demo:${report.advance_id}`);
+      assert.equal(x["demo_offset_ms"], x["step_offset"], `the run records the step's persisted offset: ${JSON.stringify(x)}`);
+      assert.equal(x["opened_at"], STEP_AT[DAYS.indexOf(String(x["period_key"]))]);
+    }
+    assert.deepEqual(runs.filter((x) => x["cycle_code"] === "cashiering_daily").map((x) => x["demo_offset_ms"]), ["86400000", "172800000", "259200000"]);
+    assert.deepEqual(runs.filter((x) => x["cycle_code"] === "cashiering_daily").map((x) => [x["units_total"], x["units_done"]]), DAYS.map(() => [activeLoans, activeLoans]), "every active loan's cashiering day ran as one unit of the day's run");
+    assert.equal(await count(`cycle_receipts WHERE cycle_code IN ('cashiering_daily', 'delinquency_counters')`), 6);
+    assert.equal(await count(`demo_clock`), 3);
+    // every receipt of day N precedes day N+1's cycle.run.opened in loan_events.sequence: a step drains its day's units and elects their receipts before the next step plans
+    for (let i = 0; i + 1 < DAYS.length; i++) {
+      const lastReceipt = (await db.query<{ s: string | null }>(`SELECT max(sequence)::text AS s FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = $2`, [EVT.RUN_COMPLETED, DAYS[i]]))[0]!.s;
+      const firstOpened = (await db.query<{ s: string | null }>(`SELECT min(sequence)::text AS s FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = $2`, [EVT.RUN_OPENED, DAYS[i + 1]]))[0]!.s;
+      assert.ok(lastReceipt && firstOpened && BigInt(lastReceipt) < BigInt(firstOpened), `day ${DAYS[i]}'s receipts (≤ ${lastReceipt}) precede day ${DAYS[i + 1]}'s openings (≥ ${firstOpened})`);
+    }
+    // every lease written during the advance is within 5 minutes of the wall clock's real_now — never of demo_now (D8): the claim rows and the claim events; every claimed unit finished, so nothing is still leased
+    assert.ok((await count(`job_events WHERE kind = 'claimed'`)) > 0);
+    assert.equal(await count(`job_events WHERE kind = 'claimed' AND NOT ((detail->>'lease_until')::timestamptz >= $1::timestamptz AND (detail->>'lease_until')::timestamptz <= $1::timestamptz + interval '5 minutes' AND at = $1::timestamptz)`, [REAL_NOW]), 0);
+    assert.equal(await count(`loan_events WHERE type = $1 AND NOT ((payload->>'lease_until')::timestamptz >= $2::timestamptz AND (payload->>'lease_until')::timestamptz <= $2::timestamptz + interval '5 minutes')`, [EVT.CLAIMED, REAL_NOW]), 0);
+    assert.equal(await count(`loan_events WHERE type = $1 AND (payload->>'lease_until')::timestamptz >= $2::timestamptz`, [EVT.CLAIMED, STEP_AT[0]]), 0, "no lease is measured from the demo clock");
+    assert.equal(await count(`demo_clock WHERE real_now <> $1::timestamptz`, [REAL_NOW]), 0);
+    assert.equal(await count(`jobs WHERE lease_until IS NOT NULL OR status = 'running'`), 0);
+    assert.equal(await count(`jobs WHERE finished_at IS NOT NULL AND finished_at <> $1::timestamptz`, [REAL_NOW]), 0);
+    // D13: the flows' cashiering and counter passes yield to the cycles once the registry projects their rows — the day's cashiering ran once, as the units above
+    const s8 = await servicingDailySweep(rt, clock.now()); assert.equal(s8.deferred_to_cycle, "cashiering_daily"); assert.equal(s8.loans, 0);
+    const s10 = await delinquencyDailySweep(rt, clock.now()); assert.equal(s10.deferred_to_cycle, "delinquency_counters"); assert.equal(s10.loans.length, 0);
+    // the production registry's cycles whose runner has not landed die runner_missing on their first attempt (edge case 3); their 2 h clocks breached on a later day's sweep to the registry row's role, naming the unit (the breach pass's 35.3 role mapping and enrichment)
+    assert.ok((await count(`jobs WHERE status = 'dead' AND last_error_class = 'runner_missing' AND attempts = 1`)) > 0);
+    assert.ok((await count(`escalations e JOIN timers t ON t.id = e.sla_timer_id WHERE t.code = 'SM_JOB_DEAD_2H'`)) > 0, "day 1's dead units' 2 h clocks breached on a later day");
+    assert.equal(await count(`escalations e JOIN timers t ON t.id = e.sla_timer_id JOIN jobs j ON j.id::text = t.subject_id JOIN cycle_registry g ON g.cycle_code = j.cycle_code
+      WHERE t.code = 'SM_JOB_DEAD_2H' AND (e.owner_role <> g.escalation_role OR e.kind <> 'sev3' OR e.payload->>'cycle_code' <> j.cycle_code OR e.payload->>'unit_id' <> j.unit_id OR e.payload->>'error_class' <> 'runner_missing' OR e.payload->>'job_id' <> j.id::text)`), 0);
+    assert.equal(clock.now(), STEP_AT[2]); assert.equal(clock.offset, 3 * 86_400_000);
+  } finally { if (server) await new Promise<void>((resolve) => server!.close(() => resolve())); await close(); }
+});
 test("35.3-T9: Given loan L with UPB $248,310.55, note rate 6.500%, P&I $1,612.34, escrow payment $432.78, an installment due 2026-10-01 unpaid past the 15-day grace and a late charge assessed at 5% of P&I, when the `statements` unit for `(L, 2026-10-01)` runs through `cycles.run_unit` on 2026-10-17, then the statement's late charge is $80.62, its interest portion $1,345.02, its principal portion $267.32 and its amount due $2,125.74, `statement.sent` and `job.unit.done` share one transaction (one `loan_events` batch), the decision names `disclosures`, exactly one `notices` row exists for `(L, 2026-10-01)` after a second plan and a second `cycles.run_unit` of the same job (refused `JOB_NOT_CLAIMABLE`), and the receipt reads `units_total 1, units_done 1`.", { skip }, async () => {
   await open("t9");
   try {
@@ -528,7 +662,69 @@ test("35.3-T11: Given a def registered with `expected_by_rule: same_day 23:59 ET
     assert.equal(await count(`escalations WHERE payload->>'cycle_code' = 'test_never_arrives' OR opened_by = 'agent:ops-steward'`), 0);
   } finally { await close(); }
 });
-test("35.3-T12: Given a run opened at 2026-10-01 12:00 ET with one unit `blocked` on an event that never arrives, when the sweep runs at 2026-10-02 12:01 ET, then `SM_CYCLE_RUN_STALLED_1D` breaches with one `ops_analyst` escalation whose payload names `cycle_code`, `period_key`, `units_done 0` and `units_total 1`; when the event arrives and the unit completes, then `cycle.run.completed` satisfies the clock as `satisfied_late` and the escalation is completable through 34.4 with the disposition `completed_late`.", { todo: true });
+test("35.3-T12: Given a run opened at 2026-10-01 12:00 ET with one unit `blocked` on an event that never arrives, when the sweep runs at 2026-10-02 12:01 ET, then `SM_CYCLE_RUN_STALLED_1D` breaches with one `ops_analyst` escalation whose payload names `cycle_code`, `period_key`, `units_done 0` and `units_total 1`; when the event arrives and the unit completes, then `cycle.run.completed` satisfies the clock as `satisfied_late` and the escalation is completable through 34.4 with the disposition `completed_late`.", { skip }, async () => {
+  await open("t12");
+  try {
+    // a def whose one global unit is blocked on an event that never arrives (the matcher reads the event's payload.period_key)
+    const blocked = cycleDef({ cycle_code: "test_blocked_unit", owner_process: "35.3", owner_agent: "ops-steward", unit_scope: "global", schedule: "daily", period_grammar: "day", selector: selectors.global, runner: noop, receipt_event: "test_blocked_unit.run_completed", depends_on: [{ event: "test.never_arrives" }], expected_by_rule: "same_day 23:59 ET" });
+    const { rt, clock } = runtimeAt("2026-10-01T16:00:00.000Z", [blocked]);   // 2026-10-01 12:00 ET
+    const svc = cyclesOf(rt);
+    const p1 = await svc.plan();
+    assert.equal(p1.runs_opened, 1); assert.equal(p1.jobs_planned, 1);
+    const job = await jobOf(`idempotency_key = 'test_blocked_unit:2026-10-01:global'`);
+    assert.equal(job["status"], "blocked");
+    const run = (await db.query<Row>(`SELECT id::text AS id, status, opened_at, units_total, units_done FROM cycle_runs WHERE id = $1`, [job["run_id"]]))[0]!;
+    assert.equal(run["opened_at"], "2026-10-01T16:00:00.000Z"); assert.equal(run["units_total"], 1); assert.equal(run["units_done"], 0);
+    // the stall clock: armed on the cycle_run aggregate by cycle.run.opened, due 24 hours after opened_at (the cited override) — 2026-10-02 12:00 ET
+    const stall = (await db.query<Row>(`SELECT id::text AS id, status, due_at, subject_kind, subject_id, loan_id FROM timers WHERE code = 'SM_CYCLE_RUN_STALLED_1D' AND subject_id = $1`, [run["id"]]))[0]!;
+    assert.equal(stall["status"], "armed"); assert.equal(stall["due_at"], "2026-10-02T16:00:00.000Z"); assert.equal(stall["subject_kind"], "cycle_run"); assert.equal(stall["loan_id"], null);
+    // the sweep at 2026-10-02 12:01 ET: the paged breach pass breaches it — one sev2 ops_analyst escalation whose payload names the run
+    clock.set("2026-10-02T16:01:00.000Z");
+    const sw = await rt.sweep();
+    assert.deepEqual(sw.breaches.map((b) => [b.code, b.timer_id]), [["SM_CYCLE_RUN_STALLED_1D", stall["id"]]]);
+    assert.equal(sw.breach_pages, 1); assert.equal(sw.due, 1);
+    assert.equal(await count(`timers WHERE id = $1 AND status = 'breached'`, [stall["id"]]), 1);
+    assert.equal((await events("timer.breached", `AND payload->>'timer_id' = $2`, [stall["id"]])).length, 1);
+    const esc = await db.query<Row>(`SELECT id::text AS id, kind, owner_role, severity, loan_id, payload, completed_at FROM escalations WHERE sla_timer_id = $1`, [stall["id"]]);
+    assert.equal(esc.length, 1); const e = esc[0]!;
+    assert.equal(e["kind"], "sev2"); assert.equal(e["owner_role"], "ops_analyst"); assert.equal(e["severity"], "2"); assert.equal(e["loan_id"], null); assert.equal(e["completed_at"], null);
+    const payload = e["payload"] as Row;
+    assert.equal(payload["timer_code"], "SM_CYCLE_RUN_STALLED_1D"); assert.equal(payload["cycle_code"], "test_blocked_unit"); assert.equal(payload["period_key"], "2026-10-01"); assert.equal(payload["units_done"], 0); assert.equal(payload["units_total"], 1); assert.equal(payload["run_id"], run["id"]);
+    assert.equal(await count(`escalations WHERE payload->>'cycle_code' = 'test_blocked_unit'`), 1);
+    // 34.4 reads it as a row completion whose dispositions include completed_late (src/runtime/controls/escalations.ts rowDispositions)
+    const row = await getEscalation(rt, String(e["id"]));
+    assert.equal(row?.completion, "row"); assert.deepEqual(row?.dispositions, ["resolved", "dismissed", "referred", "completed_late"]); assert.equal(row?.status, "open");
+    // the event arrives (a global unit of work), the planner unblocks the unit, the executor runs it: the receipt's cycle.run.completed satisfies the breached clock — satisfied_late
+    await rt.uow.run({}, (ctx) => ctx.events.append({ type: "test.never_arrives", actor: OPS_STEWARD, payload: { period_key: "2026-10-01" } }), { clock: rt.clock });
+    const p2 = await svc.plan();
+    assert.equal(p2.unblocked, 1);
+    assert.equal((await jobOf(`id = $1`, [job["id"]]))["status"], "queued");
+    assert.equal(await count(`job_events WHERE job_id = $1 AND kind = 'unblocked'`, [job["id"]]), 1);
+    const ex = await runExecutor(rt, { holder: "h1", drain: "all" });
+    assert.equal(ex.claimed, 1); assert.equal(ex.done, 1); assert.equal(ex.receipts, 1);
+    assert.equal((await jobOf(`id = $1`, [job["id"]]))["status"], "done");
+    const completed = await events(EVT.RUN_COMPLETED, `AND aggregate_id = $2`, [run["id"]]);
+    assert.equal(completed.length, 1);
+    const late = (await db.query<Row>(`SELECT status, satisfied_by_event_id::text AS by, satisfied_at FROM timers WHERE id = $1`, [stall["id"]]))[0]!;
+    assert.equal(late["status"], "satisfied_late"); assert.equal(late["by"], completed[0]!.id); assert.equal(late["satisfied_at"], completed[0]!.occurred_at);
+    const satisfied = await events("timer.satisfied", `AND payload->>'timer_id' = $2`, [stall["id"]]);
+    assert.equal(satisfied.length, 1); assert.equal(satisfied[0]!.payload["late"], true);
+    assert.equal(await count(`cycle_runs WHERE id = $1 AND status = 'completed' AND units_done = 1`, [run["id"]]), 1);
+    assert.equal(await count(`cycle_receipts WHERE run_id = $1 AND units_total = 1 AND units_done = 1`, [run["id"]]), 1);
+    // the escalation is completable through 34.4 with the disposition completed_late: the row path (no owning command), an ops_analyst with a reason
+    const ops = await staff(clock, `ops-t12-${uniq()}@example.test`, "ops_analyst");
+    const reason = "the dependency arrived and the run completed after its stall clock breached";
+    const done = await rt.execute({ process: "34.4", name: "controls.escalation.complete", loanId: "", actor: ops, input: { escalation_id: e["id"], disposition: "completed_late", reason } });
+    const out = done.output as Row;
+    assert.equal(out["disposition"], "completed_late"); assert.equal(out["via"], "row"); assert.equal(out["completed_by"], ops.id);
+    const receipt = await events("escalation.completed", `AND payload->>'escalation_id' = $2`, [e["id"]]);
+    assert.equal(receipt.length, 1); assert.equal(receipt[0]!.payload["disposition"], "completed_late"); assert.equal(receipt[0]!.payload["reason"], reason); assert.equal(receipt[0]!.payload["completed_by_role"], "ops_analyst"); assert.equal(receipt[0]!.payload["via"], "controls.escalation.complete"); assert.equal(receipt[0]!.actor_id, ops.id);
+    assert.equal(await count(`escalations WHERE id = $1 AND completed_at IS NOT NULL AND status = 'completed'`, [e["id"]]), 1);
+    const after = await getEscalation(rt, String(e["id"]));
+    assert.equal(after?.status, "completed"); assert.equal(after?.disposition, "completed_late"); assert.equal(after?.completed_by, ops.id);
+    assert.equal(await count(`agent_decisions WHERE action = 'controls.escalation.complete' AND subject_id = $1 AND approved_by = $2 AND approved_role = 'ops_analyst'`, [e["id"], ops.id]), 1);
+  } finally { await close(); }
+});
 test("35.3-T13: Given `cycles.run_unit` is called with an `input` carrying `state`, `custodial`, any `*_cents` key or `changes`, then it is refused `NO_CLIENT_STATE` before any row or event is written; given `jobs.requeue{op: requeue}` on a dead job by an actor `{kind: \"agent\"}`, then `ROLE_REQUIRED{ops_analyst}` and the job stays `dead`; given an `ops_analyst` requeues it with a reason, then `job.unit.resolved` is appended, the decision names the person and the reason, and the ledger and every money column are byte-identical before and after every 35.3 tool call in a contract test over all nine tools.", { skip }, async () => {
   await open("t13");
   try {

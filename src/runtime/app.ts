@@ -18,7 +18,7 @@
  *     once per day at/after 07:15 ET over every candidate and every open refinance application from a monitored loan — one readiness_checks row each,
  *     `partner_book.readiness.run_completed` satisfying SM_PARTNER_BOOK_READINESS_DAILY), the FAKE reviewers when they are on (src/infra/integrations/reviewers.ts, DELTA-30: every
  *     pending human item older than the delay approved through its owning tool), then
- *     breach every armed timer whose due instant has passed (timer.breached
+ *     breach every armed timer whose due instant has passed, in pages of 500 (35.3 rule 9 — timer.breached
  *     events, an escalation per breach to the registry's escalation role) and
  *     report the integration outbox backlog. Cloud Scheduler runs it every
  *     minute as the `sweep` job; the API also exposes it on POST /v1/sweep.
@@ -50,7 +50,7 @@ import { publishSection02 } from "../notices/authored/section02.ts";
 import { registerPreapprovalLetter } from "../notices/authored/section20-3.ts";
 import type { NoticeRegistry } from "../notices/registry.ts";
 import type { TimerRegistry } from "../kernel/timers/registry.ts";
-import { TimerEngine, type TimerInstance } from "../kernel/timers/engine.ts";
+import type { TimerInstance } from "../kernel/timers/engine.ts";
 import type { Actor, Clock, DomainEvent } from "../kernel/events/index.ts";
 import { MemoryEventStore, systemClock } from "../kernel/events/index.ts";
 import { FakeLockbox, FakeCustodialBank, FakeOdfi } from "../infra/integrations/banking.ts";
@@ -73,6 +73,7 @@ import { notifyPartnerBookTapeLate, sendPartnerBookReminders } from "./partner-b
 import { sweepDailyReports, type SweepDailyReportsResult } from "./book-ops/routes.ts";
 import { escalateLongTrips, expireKillSwitchRequests } from "./controls/ai.ts";
 import { cyclesSweepPass, type CyclesSweepReport } from "../domain/operations-runtime/service.ts";
+import { pagedBreachPass, type BreachSummary } from "../domain/operations-runtime/breach.ts";
 import type { Logger } from "./log.ts";
 
 export interface RuntimeDeps {
@@ -106,7 +107,9 @@ export interface ExecuteResponse {
 export interface SweepReport {
   readonly at: string;
   readonly due: number;
-  readonly breaches: readonly { loan_id: string | null; code: string; severity: number | null; escalate_to: readonly string[]; timer_id: string }[];
+  readonly breaches: readonly BreachSummary[];
+  /** 35.3 rule 9: the breach pass's pages of 500 (one transaction each — src/domain/operations-runtime/breach.ts pagedBreachPass). */
+  readonly breach_pages: number;
   readonly outbox: readonly { adapter: string; status: string; count: number }[];
   /** The daily refinance check's report (null when no rate feed is wired). */
   readonly refi: RefiDailyReport | null;
@@ -137,16 +140,8 @@ export function fakePorts(): Ports {
     connect: new FakeFnmaConnect(), pacer: new FakePacer(), dmdc: new FakeDmdc(), erecording: new FakeErecording(), mers: new FakeMers(), lpi: new FakeLpiTracking(), flood: new FakeFlood(), taxService: new FakeTaxService(), mi: new FakeMi(), oidc: new FakeGoogleOidc() };
 }
 
-/**
- * The breach escalation's owner role from the registry row's breach column: its first backticked token, unless that token is
- * the placeholder `escalation_role` (35.3's SM_JOB_DEAD_2H: "sev 3 → the registry row's `escalation_role`" — the role lives on the
- * `cycle_registry` row, not in the column; src/kernel/timers/registry.ts parseSeverity collects every backticked token, so the
- * generic fallback would otherwise open the escalation to a literal `escalation_role`). Undefined → the caller's default.
- */
-export function resolveBreachRole(b: { readonly escalateTo: readonly string[] }): string | undefined {
-  const first = b.escalateTo[0];
-  return first === undefined || first === "escalation_role" ? undefined : first;
-}
+/** The breach escalation's owner role from the registry row's breach column (src/domain/operations-runtime/breach.ts, where the paged pass reads it; kept here for its callers). */
+export { resolveBreachRole } from "../domain/operations-runtime/breach.ts";
 
 /** The unit of work's store with the scope's loan stamped on every appended event that carries neither a loan nor an application key. */
 function withDefaultLoan(inner: MemoryEventStore, loanId: string): MemoryEventStore {
@@ -266,8 +261,8 @@ export class Runtime {
   /**
    * The scheduled pass: the daily refinance check (when a rate feed is wired) and the FAKE reviewers (when on) first — both
    * commit through the command bus, so what they satisfy is never breached below — then breach every armed timer past due
-   * at `nowIso`; one escalation per breach to the registry's first escalation role. One transaction for the breach pass.
-   * Neither daily pass can fail the sweep: a failure is logged and reported, the breach pass still runs.
+   * at `nowIso`; one escalation per breach to the registry's first escalation role. One transaction per page of 500 for the
+   * breach pass (35.3 rule 9). Neither daily pass can fail the sweep: a failure is logged and reported, the breach pass still runs.
    */
   async sweep(nowIso: string = this.clock.now(), opts: { readonly cycles?: "run" | "skip" } = {}): Promise<SweepReport> {
     // 35.3 (Inputs and triggers): the cycles pass first — `cycles.plan` under its planner lock (35.1's lease and outbox lines go above it at merge), then the executor claims and runs every claimable unit until the queue is empty or rule 6's 240 s budget is spent; a refused lock or a missing databaseUrl skips it and every other pass still runs.
@@ -295,28 +290,9 @@ export class Runtime {
     catch (e) { this.logger?.error("controls sweep failed", { at: nowIso, error: e }); }
     let reviewers: FakeReviewerReport | null = null;
     if (this.reviewers) { try { reviewers = await this.reviewers.tick(this, nowIso); } catch (e) { this.logger?.error("fake reviewers failed", { at: nowIso, error: e }); } }
-    const due = await this.uow.timers.due(nowIso);
-    const breaches: SweepReport["breaches"][number][] = [];
-    if (due.length) {
-      // the due instances (any loan, or global) restored into a fresh engine: evaluate breaches them and appends timer.breached under each timer's own loan
-      await this.db.tx(async (q) => {
-        const events = new MemoryEventStore(this.clock);
-        const engine = new TimerEngine(this.registry, events);
-        engine.restore(due);
-        const escalations = new EscalationService(events, this.clock);
-        for (const b of engine.evaluate(nowIso)) {
-          const sev = b.severity ?? 4;
-          const owner = resolveBreachRole(b) ?? "ops_analyst";
-          escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), severity: String(sev), slaTimerId: b.instance.id,
-            payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText } }, { kind: "system", id: "sweep" });
-          breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });
-        }
-        const persisted = await this.uow.events.append(events.since(0), q);
-        await this.uow.timers.save(engine.all().filter((t) => t.status === "breached"), q);
-        for (const e of escalations.list()) await this.escalationRepo.save(e, q);
-        return persisted;
-      }).then((persisted) => this.uow.notifyCommitted(persisted));
-    }
+    // 35.3 rule 9: the breach pass in pages of 500 — `FOR UPDATE SKIP LOCKED LIMIT 500`, one transaction per page until a page comes back short (src/domain/operations-runtime/breach.ts pagedBreachPass); one escalation per breach to the registry's escalation role, a 35.3 clock's from its registry row with the run's or the unit's identity in the payload
+    const breach = await pagedBreachPass(this, nowIso);
+    const due = breach.due; const breaches = breach.breaches;
     // 33.1 T10: the breach action of SM_PARTNER_BOOK_INVITATION_REMINDER_14 — one reminder on the same channel while the party has no session, then nothing more; never fails the sweep
     let partnerBookReminders = 0;
     try { partnerBookReminders = (await sendPartnerBookReminders(this, nowIso)).sent; } catch (e) { this.logger?.error("partner book reminders failed", { at: nowIso, error: e }); }
@@ -324,7 +300,7 @@ export class Runtime {
     let partnerBookTapeLate = 0;
     try { partnerBookTapeLate = (await notifyPartnerBookTapeLate(this, nowIso)).late; } catch (e) { this.logger?.error("partner book tape-late notice failed", { at: nowIso, error: e }); }
     const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
-    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls, cycles };
+    return { at: nowIso, due, breaches, breach_pages: breach.pages, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls, cycles };
   }
 
   async ready(): Promise<boolean> { try { await this.db.query("SELECT 1"); return true; } catch { return false; } }

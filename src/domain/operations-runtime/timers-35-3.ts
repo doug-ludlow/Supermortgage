@@ -17,9 +17,50 @@
  *
  * SM_JOB_DEAD_2H's breach column names "the registry row's `escalation_role`": the token parses as the literal
  * `escalation_role`, so the breach pass resolves the role from `jobs → cycle_registry.escalation_role` rather than from the
- * column; the row itself (`+2 hours`, `job.unit.dead` → `job.unit.resolved`) arms and satisfies as written and takes no override.
+ * column (`breachRoleFor_35_3` below — the Timers paragraph: "the override file maps the breach role from the registry row's
+ * `escalation_role` (the registry's breach column names the default; the evaluator reads the row)"); the row itself
+ * (`+2 hours`, `job.unit.dead` → `job.unit.resolved`) arms and satisfies as written and takes no override. `enrichBreach_35_3`
+ * gives a 35.3 clock's breach escalation the identity of what stalled (the run's `cycle_code, period_key, units_done/units_total`
+ * — row 1's breach column, T12; the dead unit's `cycle_code, period_key, unit_id, error_class`). Both are read by the paged
+ * breach pass (src/domain/operations-runtime/breach.ts) inside the page's transaction.
  */
+import type { Queryable } from "../../infra/db/client.ts";
+import type { TimerInstance } from "../../kernel/timers/engine.ts";
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
+
+const isUuid = (v: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+/** The 35.3 clocks whose breach escalation the cycle engine enriches and whose escalation closes with `completed_late` (src/runtime/controls/escalations.ts rowDispositions). */
+export const CYCLE_BREACH_CODES: ReadonlySet<string> = new Set(["SM_CYCLE_RUN_STALLED_1D", "SM_JOB_DEAD_2H"]);
+
+/**
+ * The breach escalation's owner role for a 35.3 clock: a `job` subject's (SM_JOB_DEAD_2H) is the dead unit's registry row's
+ * `escalation_role` (`ops_analyst` by default; `officer` for remittance / form_496_monthly / metro2_monthly; `fnma_portal_operator`
+ * for lar_daily — the AI agent design paragraph); any other subject, or a job with no row, keeps `fallback` (the breach column's
+ * own first token, else `ops_analyst` — SM_CYCLE_RUN_STALLED_1D's column names `ops_analyst` itself).
+ */
+export async function breachRoleFor_35_3(q: Queryable, inst: Pick<TimerInstance, "code" | "subject">, fallback: string): Promise<string> {
+  if (inst.subject.kind !== "job" || !isUuid(inst.subject.id)) return fallback;
+  const row = (await q.query<{ escalation_role: string | null }>(`SELECT r.escalation_role FROM jobs j JOIN cycle_registry r ON r.cycle_code = j.cycle_code WHERE j.id = $1::uuid`, [inst.subject.id]))[0];
+  return row?.escalation_role || fallback;
+}
+/**
+ * The breach payload beyond the clock's own fields: a `cycle_run` subject's `{run_id, cycle_code, period_key, units_done, units_total,
+ * units_dead, units_skipped, run_status}` (SM_CYCLE_RUN_STALLED_1D — "the escalation payload names `cycle_code`, `period_key`,
+ * `units_done`/`units_total`"), a `job` subject's `{job_id, run_id, cycle_code, period_key, unit_id, error_class, attempts}`
+ * (SM_JOB_DEAD_2H); `{}` for any other subject or one with no row (a clock armed on a run this database never planned).
+ */
+export async function enrichBreach_35_3(q: Queryable, inst: Pick<TimerInstance, "subject">): Promise<Record<string, unknown>> {
+  if (!isUuid(inst.subject.id)) return {};
+  if (inst.subject.kind === "cycle_run") {
+    const r = (await q.query<{ cycle_code: string; period_key: string; units_done: number; units_total: number; units_dead: number; units_skipped: number; status: string }>(`SELECT cycle_code, period_key, units_done, units_total, units_dead, units_skipped, status FROM cycle_runs WHERE id = $1::uuid`, [inst.subject.id]))[0];
+    return r ? { run_id: inst.subject.id, cycle_code: r.cycle_code, period_key: r.period_key, units_done: Number(r.units_done), units_total: Number(r.units_total), units_dead: Number(r.units_dead), units_skipped: Number(r.units_skipped), run_status: r.status } : {};
+  }
+  if (inst.subject.kind === "job") {
+    const r = (await q.query<{ run_id: string; cycle_code: string; period_key: string; unit_id: string; last_error_class: string | null; attempts: number; status: string }>(`SELECT run_id::text AS run_id, cycle_code, period_key, unit_id, last_error_class, attempts, status FROM jobs WHERE id = $1::uuid`, [inst.subject.id]))[0];
+    return r ? { job_id: inst.subject.id, run_id: r.run_id, cycle_code: r.cycle_code, period_key: r.period_key, unit_id: r.unit_id, error_class: r.last_error_class, attempts: Number(r.attempts), job_status: r.status } : {};
+  }
+  return {};
+}
 
 /** The stall clock is cancelled, never satisfied, when its run is cancelled (`cancelRun` → `engine.cancel(inst.id, CANCEL_STALL_ON.why)`; the early-intervention/timers.ts and pmi/ops-10-4.ts precedents). */
 export const CANCEL_STALL_ON = { code: "SM_CYCLE_RUN_STALLED_1D", on: "cycle.run.cancelled", why: "state machine: a cancelled run has nothing left to complete" } as const;

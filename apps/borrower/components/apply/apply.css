@@ -295,6 +295,10 @@
 .sm-tasks-purpose { margin: 0 0 8px; }
 .sm-card-host { display: block; }
 .sm-card-host[data-expanded="true"] { border-color: var(--accent); }
+/* 32.16 §2.2 / 32.16-T14: an issue the platform raised (a frozen bureau's lift instructions) is a caution row on its step — the card inside, never a toast or a modal */
+.sm-caution { border-color: var(--accent); background: var(--accent-soft); }
+.sm-caution > h3 { margin: 0 0 8px; font-size: 15px; color: #842128; }
+.sm-caution article { background: var(--surface); border-radius: 16px; padding: 12px 14px; }
 .sm-needed { margin: 0 0 12px; padding-left: 18px; font-size: 15px; color: var(--muted); }
 .sm-badge { display: inline-block; border-radius: 100px; padding: 4px 10px; background: var(--accent-soft); color: #842128; font-size: 13px; font-weight: 600; }
 .sm-proto .sm-signin {

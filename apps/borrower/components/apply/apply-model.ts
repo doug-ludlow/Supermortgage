@@ -27,6 +27,18 @@ export type RefiGoal = "lower" | "faster" | "cash";
 export type Occupancy = "primary" | "second_home" | "investment";
 export type EstateType = "" | "fee_simple" | "leasehold";
 export type YesNo = "" | "yes" | "no";
+/** The residence basis as the identity and prior-residence cards' option ids name it (RESIDENCY_BASIS_OPTIONS: own · rent · living_rent_free). */
+export type Basis = "own" | "rent" | "living_rent_free";
+export const BASES: readonly Basis[] = ["own", "rent", "living_rent_free"];
+export type Citizenship = "" | "us_citizen" | "permanent_resident" | "non_permanent_resident";
+export type Marital = "" | "unmarried" | "married" | "separated";
+export type Military = "" | "none" | "active_duty" | "retired_or_separated" | "reserve_or_guard" | "surviving_spouse";
+export type Language = "" | "english" | "spanish" | "chinese" | "korean" | "tagalog" | "vietnamese" | "other" | "not_answered";
+/** The profile card's option ids in the order the copy library's `apply.details.*` options list them (3-entry.ts profileCard). */
+export const CITIZENSHIPS: readonly Exclude<Citizenship, "">[] = ["us_citizen", "permanent_resident", "non_permanent_resident"];
+export const MARITALS: readonly Exclude<Marital, "">[] = ["unmarried", "married", "separated"];
+export const MILITARIES: readonly Exclude<Military, "">[] = ["none", "active_duty", "retired_or_separated", "reserve_or_guard", "surviving_spouse"];
+export const LANGUAGES: readonly Exclude<Language, "">[] = ["english", "spanish", "chinese", "korean", "tagalog", "vietnamese", "other", "not_answered"];
 
 export type Draft = {
   intent: Intent;
@@ -48,22 +60,23 @@ export type Draft = {
   legalName: string;
   dob: string;
   ssn: string;
-  housing: "own" | "rent" | "free";
+  housing: Basis;
   rent: string;
   months: string;
   priorAddressLine: string;
   priorCity: string;
   priorState: string;
   priorZip: string;
-  priorBasis: "own" | "rent" | "free";
+  priorBasis: Basis;
+  priorRent: string;
   priorMonths: string;
   income: string;
   employer: string;
-  citizenship: "us_citizen" | "permanent_resident" | "non_permanent_resident";
-  marital: "unmarried" | "married" | "separated";
+  citizenship: Citizenship;
+  marital: Marital;
   dependents: string;
-  military: string;
-  language: string;
+  military: Military;
+  language: Language;
   noneApply: boolean;
   declinedDemo: boolean;
 };
@@ -96,12 +109,13 @@ export const EMPTY: Draft = {
   priorState: "",
   priorZip: "",
   priorBasis: "rent",
+  priorRent: "",
   priorMonths: "",
   income: "",
   employer: "",
-  citizenship: "us_citizen",
-  marital: "unmarried",
-  dependents: "0",
+  citizenship: "",   // no visual default counts as an answer (01 §3.18): the four required profile facts are empty until chosen
+  marital: "",
+  dependents: "",
   military: "",
   language: "",
   noneApply: true,
@@ -121,6 +135,7 @@ export const STEP_OF_COPY_KEY: Readonly<Record<string, Step>> = {
   "identity.confirm.title": "you",
   "identity.ssn.title": "you",
   "identity.prior_residence.title": "you",
+  "credit.freeze.lift": "you",   // 32.16-T14: a frozen bureau's lift instructions are the You step's caution row
   "income.connect.purpose": "connect",
   "income.confirm.title": "connect",
   "assets.connect.purpose": "connect",

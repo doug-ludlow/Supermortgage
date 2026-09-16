@@ -5,15 +5,20 @@
  * Every rendered string is a copy key (the `apply.*` family, `refi.home.estate` / `refi.home.clean_energy_lien` for the
  * two home questions); the consents statement above Property's Continue is the goal card's own `props.statement`
  * (32.17 rule 20 — the tap writes the three rows; no checkbox). Session 1 wires goal and property for the three
- * branches; the You / Connect / Details / Questions / Demographics / Review / Result screens hold their values in the
- * draft and post nothing until Sessions 2–3 (docs/ux/18 §5).
+ * branches; Session 2 the You (the identity, SSN and prior cards behind one Continue; a frozen bureau's lift card as the
+ * caution row — 32.16-T14), Connect (the two FAKE connections and the income card) and Details (the profile card)
+ * screens; the Questions / Demographics / Review / Result screens hold their values in the draft and post nothing until
+ * Session 3 (docs/ux/18 §5).
  */
 import { useId, type ReactNode } from "react";
+import { Card } from "@/components/cards";
+import { isIssueCard } from "@/components/record/Rail";
 import { copy, copyExtra, copyOptions } from "@/lib/copy";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
-import type { AnyCardInstance } from "@/lib/types/cards";
+import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
 import type { BorrowerRecord } from "@/lib/types/record";
-import { pending, resolved, type Draft, type EstateType, type Occupancy, type RefiGoal, type Step, type YesNo } from "./apply-model";
+import { BASES, CITIZENSHIPS, LANGUAGES, MARITALS, MILITARIES, pending, resolved, stepOfCopyKey, type Basis, type Citizenship, type Draft, type EstateType, type Language, type Marital, type Military, type Occupancy, type RefiGoal, type Step, type YesNo } from "./apply-model";
+import { underTwoYears } from "./wire";
 
 export type StepProps = {
   step: Step;
@@ -24,6 +29,8 @@ export type StepProps = {
   patch: (p: Partial<Draft>) => void;
   onContinue: () => void;
   setStep: (s: Step) => void;
+  /** A card hosted inside a step (a caution row's lift card, later Tasks' orphans) resolves through the same API call as the steps' own taps. */
+  onResolveCard: (cardInstanceId: string, req: ResolveRequest) => Promise<void>;
 };
 
 function Continue({ busy, onContinue, disabled = false, labelKey = "apply.continue" }: { busy: boolean; onContinue: () => void; disabled?: boolean; labelKey?: string }) {
@@ -172,31 +179,50 @@ export function PropertyStep({ draft, cards, busy, patch, onContinue }: StepProp
   );
 }
 
-const HOUSING = ["own", "rent", "free"] as const;
+/** The step's hosted cards (docs/ux/18 §2.2): the platform's issue cards the step owns (`STEP_OF_COPY_KEY`) render as caution rows, the card component inside (never a toast, never a modal — 32.16 §2.2); an issue card with no step stays a Tasks row. */
+function CautionRows({ step, cards, record, onResolveCard }: Pick<StepProps, "step" | "cards" | "record" | "onResolveCard">) {
+  const rows = cards.filter((c) => c.status === "pending" && isIssueCard(c) && stepOfCopyKey(c.copy_key) === step);
+  if (!rows.length) return null;
+  return (
+    <>
+      {rows.map((c) => (
+        <div key={c.card_instance_id} className="sm-card sm-caution sm-card-host" data-testid="apply-caution" data-tone="caution" data-rail-card={c.card_instance_id}>
+          <h3 data-copy-key="apply.you.caution">{copy("apply.you.caution")}</h3>
+          <Card card={c} timezone={record?.timezone ?? "America/Phoenix"} onResolve={(req) => onResolveCard(c.card_instance_id, req)} />
+        </div>
+      ))}
+    </>
+  );
+}
 
-export function YouStep({ draft, busy, patch, onContinue }: StepProps) {
-  const months = draft.months.replace(/\D/g, "");
-  const under24 = months !== "" && BigInt(months) < 24n;
+export function YouStep({ step, draft, cards, record, busy, patch, onContinue, onResolveCard }: StepProps) {
+  const under24 = underTwoYears(draft.months) || Boolean(pending(cards, "identity.prior_residence.title"));   // SQ-06: the typed months, or the card itself still pending (a return with an empty draft)
+  const basisLabels = copyOptions("apply.you.basis");
   return (
     <Bubble titleKey="apply.you.title">
       <p className="sm-lead" data-copy-key="apply.you.credit_note">{copy("apply.you.credit_note")}</p>
+      <CautionRows step={step} cards={cards} record={record} onResolveCard={onResolveCard} />
       <Field copyKey="apply.you.legal_name" value={draft.legalName} onChange={(legalName) => patch({ legalName })} />
-      <Field copyKey="apply.you.dob" value={draft.dob} onChange={(dob) => patch({ dob })} />
-      <Field copyKey="apply.you.ssn" value={draft.ssn} inputMode="numeric" onChange={(ssn) => patch({ ssn })} />
-      <p className="sm-label" data-copy-key="apply.you.basis">{copy("apply.you.basis")}</p>
-      <div className="sm-switch">
-        {HOUSING.map((id, i) => (
-          <button key={id} type="button" className={draft.housing === id ? "active" : ""} aria-pressed={draft.housing === id} onClick={() => patch({ housing: id })}>{copyOptions("apply.you.basis")[i] ?? id}</button>
+      <Field copyKey="apply.you.dob" value={draft.dob} inputMode="numeric" onChange={(dob) => patch({ dob })} />
+      <Field copyKey="apply.you.ssn" value={draft.ssn} inputMode="numeric" type="password" onChange={(ssn) => patch({ ssn })} />
+      <p className="sm-label" id="apply-you-basis" data-copy-key="apply.you.basis">{copy("apply.you.basis")}</p>
+      <div className="sm-switch" role="group" aria-labelledby="apply-you-basis">
+        {BASES.map((id, i) => (
+          <button key={id} type="button" className={draft.housing === id ? "active" : ""} aria-pressed={draft.housing === id} onClick={() => patch({ housing: id })}>{basisLabels[i] ?? id}</button>
         ))}
       </div>
       {draft.housing === "rent" ? <Field copyKey="apply.you.rent" value={draft.rent} inputMode="decimal" onChange={(rent) => patch({ rent })} /> : null}
-      <Field copyKey="apply.you.months" value={draft.months} inputMode="numeric" onChange={(m) => patch({ months: m })} />
+      <Field copyKey="apply.you.months" value={draft.months} inputMode="numeric" onChange={(months) => patch({ months })} />
       {under24 ? (
         <div className="sm-card" data-testid="apply-prior-address">
           <h3 data-copy-key="apply.you.prior">{copy("apply.you.prior")}</h3>
-          <Field copyKey="apply.property.address" value={draft.priorAddressLine} onChange={(priorAddressLine) => patch({ priorAddressLine })} />
-          <Field copyKey="apply.property.state" value={draft.priorState} onChange={(priorState) => patch({ priorState: priorState.toUpperCase().slice(0, 2) })} />
-          <Field copyKey="apply.you.months" value={draft.priorMonths} inputMode="numeric" onChange={(priorMonths) => patch({ priorMonths })} />
+          <Field copyKey="apply.you.prior_street" value={draft.priorAddressLine} onChange={(priorAddressLine) => patch({ priorAddressLine })} />
+          <Field copyKey="apply.you.prior_city" value={draft.priorCity} onChange={(priorCity) => patch({ priorCity })} />
+          <Field copyKey="apply.you.prior_state" value={draft.priorState} onChange={(priorState) => patch({ priorState: priorState.toUpperCase().slice(0, 2) })} />
+          <Field copyKey="apply.you.prior_zip" value={draft.priorZip} inputMode="numeric" onChange={(priorZip) => patch({ priorZip })} />
+          <Select copyKey="apply.you.prior_basis" value={draft.priorBasis} ids={BASES} onChange={(v) => patch({ priorBasis: (v || "rent") as Basis })} />
+          {draft.priorBasis === "rent" ? <Field copyKey="apply.you.prior_rent" value={draft.priorRent} inputMode="decimal" onChange={(priorRent) => patch({ priorRent })} /> : null}
+          <Field copyKey="apply.you.prior_months" value={draft.priorMonths} inputMode="numeric" onChange={(priorMonths) => patch({ priorMonths })} />
         </div>
       ) : null}
       <Continue busy={busy} onContinue={onContinue} />
@@ -215,16 +241,44 @@ export function ConnectStep({ draft, busy, patch, onContinue }: StepProps) {
   );
 }
 
-const CITIZENSHIPS = ["us_citizen", "permanent_resident", "non_permanent_resident"] as const;
-const MARITALS = ["unmarried", "married", "separated"] as const;
+/** The profile card's option ids for a path when the card is pending (the server's list), else the model's (the same ids, 3-entry.ts profileCard). */
+function profileOptions(cards: readonly AnyCardInstance[], path: string, fallback: readonly string[]): readonly string[] {
+  const card = pending(cards, "profile.title");
+  const field = card && card.kind === "ProfileCard" ? card.props.fields.find((f) => f.path === path) : undefined;
+  const ids = field?.options?.map((o) => o.id);
+  return ids && ids.length ? ids : fallback;
+}
+/** The option labels from the copy key, in the model's id order; an id the card lists that the model does not is shown by its id. */
+function labelsFor(copyKey: string, modelIds: readonly string[], ids: readonly string[]): readonly string[] {
+  const labels = copyOptions(copyKey);
+  return ids.map((id) => { const i = modelIds.indexOf(id); return i >= 0 ? labels[i] ?? id : id; });
+}
+function ProfileSelect({ copyKey, value, ids, labels, onChange }: { copyKey: string; value: string; ids: readonly string[]; labels: readonly string[]; onChange: (v: string) => void }) {
+  const id = useId();
+  return (
+    <>
+      <label className="sm-label" htmlFor={id} data-copy-key={copyKey}>{copy(copyKey)}</label>
+      <div className="sm-field">
+        <select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">{copy(copyKey)}</option>
+          {ids.map((optionId, i) => <option key={optionId} value={optionId}>{labels[i] ?? optionId}</option>)}
+        </select>
+      </div>
+    </>
+  );
+}
 
-export function DetailsStep({ draft, busy, patch, onContinue }: StepProps) {
+export function DetailsStep({ draft, cards, busy, patch, onContinue }: StepProps) {
+  const citizenships = profileOptions(cards, "citizenship_status", CITIZENSHIPS); const maritals = profileOptions(cards, "marital_status", MARITALS);
+  const militaries = profileOptions(cards, "military_service", MILITARIES); const languages = profileOptions(cards, "language_preference", LANGUAGES);
   return (
     <Bubble titleKey="apply.details.title">
-      <Select copyKey="apply.details.citizenship" value={draft.citizenship} ids={CITIZENSHIPS} onChange={(v) => patch({ citizenship: (v || "us_citizen") as Draft["citizenship"] })} />
-      <Select copyKey="apply.details.marital" value={draft.marital} ids={MARITALS} onChange={(v) => patch({ marital: (v || "unmarried") as Draft["marital"] })} />
+      <ProfileSelect copyKey="apply.details.citizenship" value={draft.citizenship} ids={citizenships} labels={labelsFor("apply.details.citizenship", CITIZENSHIPS, citizenships)} onChange={(v) => patch({ citizenship: v as Citizenship })} />
+      <ProfileSelect copyKey="apply.details.marital" value={draft.marital} ids={maritals} labels={labelsFor("apply.details.marital", MARITALS, maritals)} onChange={(v) => patch({ marital: v as Marital })} />
+      {draft.marital === "married" ? <p className="sm-note" data-testid="apply-spouse-later" data-copy-key="apply.details.spouse_later">{copy("apply.details.spouse_later")}</p> : null}
       <Field copyKey="apply.details.dependents" value={draft.dependents} inputMode="numeric" onChange={(dependents) => patch({ dependents })} />
-      {draft.marital === "married" ? <p className="sm-note" data-copy-key="apply.details.spouse_later">{copy("apply.details.spouse_later")}</p> : null}
+      <ProfileSelect copyKey="apply.details.military" value={draft.military} ids={militaries} labels={labelsFor("apply.details.military", MILITARIES, militaries)} onChange={(v) => patch({ military: v as Military })} />
+      <ProfileSelect copyKey="apply.details.language" value={draft.language} ids={languages} labels={labelsFor("apply.details.language", LANGUAGES, languages)} onChange={(v) => patch({ language: v as Language })} />
       <Continue busy={busy} onContinue={onContinue} />
     </Bubble>
   );

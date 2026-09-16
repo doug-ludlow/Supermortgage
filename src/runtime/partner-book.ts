@@ -308,8 +308,8 @@ async function writeBaselineRows(q: Queryable, plan: BookPlan, partnerPartyId: s
         VALUES ($1, $2, 'partner_tape', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0, $13, $14, $15, $16, $17)`,
         [l.loan_id, asOf, t.amortization, t.note_rate_bps, t.pi_cents, t.escrow_payment_cents, t.escrowed, t.interest_method, t.remittance_type, t.maturity_date, t.remaining_term_months, t.deferred_principal_cents, t.arm_index, t.arm_margin_bps, t.arm_lifetime_cap_bps, t.arm_floor_bps, t.arm_change_frequency_months]);
     }
-    // edge cases: the partner marks a loan paid or transferred on a later tape → paid_off / transferred_out with the tape's status in the event
-    if (l.existing && d.status_transition) await q.query(`UPDATE loans SET status = $2 WHERE id = $1 AND status = 'monitored'`, [l.loan_id, d.status_transition]);
+    // edge cases: the partner marks a loan paid or transferred on a later tape → paid_off / transferred_out with the tape's status in the event:
+    // the 35.1 projector (src/infra/db/loans.ts projectStatus) moves the row on `partner_book.loan.loaded{status}` — no direct write here (35.10 NO_DIRECT_STATUS_WRITE)
   }
 }
 

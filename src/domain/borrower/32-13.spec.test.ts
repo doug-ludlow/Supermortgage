@@ -162,7 +162,7 @@ export function fleschKincaid(text: string): { grade: number; words: number; sen
 
 // ---------------------------------------------------------------- the shell: the built Next.js app on this test's API, driven with Playwright (src/domain/borrower/harness.ts, shared with 32.16's rail suite and 32.19)
 const H = createHarness({ apiBase: () => base });
-const { pageFor, inViewport, stopShell, appLog } = H;
+const { pageFor, openApply, inViewport, stopShell, appLog } = H;
 /** 32.16 §2.2: a card's home is its rail row; expanding it (client state) renders the existing component. The current ask is open by default; the other
  * pending cards wait behind "n more after this" and the reference sections start collapsed (32.16-T11), so the row is revealed first: the line, then its section. */
 async function expandRail(page: Page, cardId: string): Promise<void> {
@@ -743,7 +743,7 @@ test("32.13-T16: Read-only after terminal — Given `denied | withdrawn | closed
   assert.equal((await record(Rz.A, Rz.j.appId))["read_only"], true);
   // paid in full → closed: the main journey's loan is purchased, paid, then paid off (2.x → 16.x)
   await J.j.deliverAndPurchase(); await J.j.firstPayment(); await settle(); await snapshot("paying", J.j.loanId);
-  await J.j.payoff(); await settle();
+  await J.j.payoffDirect(); await settle();
   assert.ok((await loanEvents(J.j.loanId, "loan.paid_in_full")).length >= 1);
   assert.equal((await db.query<{ status: string }>(`SELECT status::text AS status FROM loans WHERE id = $1`, [J.j.loanId]))[0]!.status, "paid_off");
   assert.equal((await cardsOf(J.partyA, `AND status = 'pending'`)).length + (await cardsOf(J.partyB, `AND status = 'pending'`)).length, 0, "nothing pending once the loan is paid in full (32.13 flow)");
@@ -755,7 +755,7 @@ test("32.13-T16: Read-only after terminal — Given `denied | withdrawn | closed
   const gone = await record(J.A, J.j.loanId); assert.ok(["Closed", "Paid off"].includes(String((gone["status"] as Json)["badge"])), JSON.stringify(gone["status"]));
 });
 
-test("32.13-T15: Nothing-needed — Given zero `owner=you` items, then Tasks renders the nothing-needed state and no reminder is sent.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
+test("32.13-T15: Nothing-needed — Given zero `owner=you` items, then Tasks renders the nothing-needed state and no reminder is sent.", { skip }, async () => {
   // the withdrawn application of T16: read-only, so nothing is owed by the borrower — zero owner=you items; the paid-off loan's Record is measured the same way
   assert.ok(W, "T16 opened the withdrawn application");
   const s = await signIn(W.A); const rec = await record(W.A, W.j.appId, s.token);
@@ -767,21 +767,14 @@ test("32.13-T15: Nothing-needed — Given zero `owner=you` items, then Tasks ren
   clock.set(now);   // back to the session's own day (a session idles out across the two passes)
   assert.equal((await messagesOf(W.partyA)).length, msgs, "no reminder line"); assert.equal((await cardsOf(W.partyA)).length, cards, "no reminder card");
   assert.deepEqual((await record(W.A, W.j.appId, s.token))["needed_from_you"], []);
-  // the shell renders the nothing-needed state from the copy library, and the phone counts zero
+  // Tasks (the Apply product, 32.19 §2.3) renders the nothing-needed state from the copy library: needs.none, no needed count, no hosted ask — at 1280 and on the phone
   const needsNone = copyEntries().find((e) => e.key === "needs.none"); assert.ok(needsNone?.text, "needs.none is authored");
-  const { page, ctx } = await openShell(s.token, 1280);
-  const none = page.getByTestId("needs-none"); await none.waitFor({ timeout: 30_000 });
-  assert.equal((await none.innerText()).trim(), needsNone.text.trim());
-  assert.equal(await page.locator('[data-testid="waiting-on-you"]').count(), 0, "no waiting-on-you line (32.16 §2.1)"); assert.equal(await page.locator('[data-testid="record"] [data-record-section="needed"] [data-rail-card]').count(), 0, "no row under Needed from you");
-  await ctx.close();
-  // the phone (01 §1.2): nothing counted on the Tasks tab, and the tab renders the same copy-library state; the record sheet shows the rail's nothing-needed row and no row under Needed from you
-  const m = await openShell(s.token, 390);
-  assert.equal(await m.page.locator('[data-testid="tab-tasks"] .sm-tab-badge').count(), 0, "no needed-from-you count on the Tasks tab");
-  await m.page.getByTestId("tab-tasks").click(); await m.page.waitForSelector('[data-testid="shell"][data-tab="tasks"]', { timeout: 15_000 });
-  assert.equal((await m.page.getByTestId("tasks-empty").innerText()).trim(), needsNone.text.trim(), "the Tasks tab renders needs.none");
-  assert.equal(await m.page.locator('[data-testid="waiting-on-you"]').count(), 0, "no waiting-on-you line on the phone");
-  await m.page.getByRole("button", { name: "Your record" }).click(); await m.page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000 });
-  assert.equal(await m.page.locator('[data-testid="record"] [data-record-section="needed"] [data-rail-card]').count(), 0, "no row under Needed from you on the sheet");
-  assert.equal((await m.page.locator('[data-testid="record"] [data-testid="needs-none"]').innerText()).trim(), needsNone.text.trim());
-  await m.ctx.close();
+  for (const width of [1280, 390]) {
+    const { page, ctx } = await openApply(s.token, width);
+    await page.getByTestId("apply-tab-tasks").click(); const none = page.getByTestId("tasks-empty"); await none.waitFor({ timeout: 30_000 });
+    assert.equal((await none.innerText()).trim(), needsNone.text.trim(), `Tasks renders needs.none at ${width}`);
+    assert.equal(await page.getByTestId("apply-needed-count").count(), 0, `no needed-from-you count at ${width} (32.16 §2.1)`); assert.equal(await page.locator('[data-testid="apply-tasks-hosted"]').count(), 0, `no hosted ask at ${width}`);
+    assert.equal(await page.locator('[data-testid="waiting-on-you"]').count(), 0, "no waiting-on-you line");
+    await ctx.close();
+  }
 });

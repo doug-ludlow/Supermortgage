@@ -45,6 +45,7 @@ import type { CommandContext } from "../app/commands.ts";
 import type { Notice } from "../notices/service.ts";
 import type { Clock, EventStore } from "../kernel/events/index.ts";
 import { NoticeService } from "../notices/service.ts";
+import { noticeServiceFor } from "./documents/notice-sink.ts";
 import type { Actor } from "../kernel/events/index.ts";
 import { plainDate as D, addMonths, type PlainDate } from "../kernel/calendar/date.ts";
 import { divRound } from "../kernel/money/decimal.ts";
@@ -113,7 +114,10 @@ function statementPayload(f: LoanFacts, borrowerName: string, statementDate: Pla
   const unpaidPast = st.installments.filter((x) => x.status === "due" && x.due_date < statementDate).sort((a, b) => (a.due_date < b.due_date ? -1 : 1))[0];
   const regxDays = unpaidPast ? Math.max(0, Math.round((Date.parse(statementDate) - Date.parse(unpaidPast.due_date)) / 86_400_000)) : 0;
   const disclosure = lateFeeDisclosure(st, due);
-  return { statement_date: statementDate, due_date: due, amount_due_cents: amountDue, computed_amount_due_cents: amountDue, late_fee_after_date: disclosure.late_fee_date, late_fee_cents: disclosure.late_fee_amount_if_unpaid, principal_cents: principal, interest_cents: interest, escrow_cents: escrow, fees_since_last_cents: lateFeeDebits.reduce((a, x) => a + x.amount_cents, 0n), past_due_cents: pastDue, late_charges_due_cents: lc,
+  // 35.2 T2 (NTC_REGZ_41_STMT_STD 1.2.0): the amount-due box composes the regular monthly payment from P&I and escrow with the count of past-due installments — the same facts, never recomputed
+  const pastDueCount = st.installments.filter((x) => x.status === "due" && x.due_date < due).length;
+  return { statement_date: statementDate, due_date: due, amount_due_cents: amountDue, computed_amount_due_cents: amountDue, late_fee_after_date: disclosure.late_fee_date, late_fee_cents: disclosure.late_fee_amount_if_unpaid, principal_cents: principal, interest_cents: interest, escrow_cents: escrow,
+    pi_cents: inst.pi_cents, monthly_payment_cents: inst.pi_cents + inst.escrow_cents, past_due_count: pastDueCount, fees_since_last_cents: lateFeeDebits.reduce((a, x) => a + x.amount_cents, 0n), past_due_cents: pastDue, late_charges_due_cents: lc,
     payments_since_last: { total_cents: total(lastPay), principal_cents: sum(lastPay, "principal_cents"), interest_cents: sum(lastPay, "interest_cents"), escrow_cents: sum(lastPay, "escrow_cents"), fees_cents: sum(lastPay, "late_charge_cents"), suspense_cents: 0n },
     ytd: { total_cents: total(ytd), principal_cents: sum(ytd, "principal_cents"), interest_cents: sum(ytd, "interest_cents"), escrow_cents: sum(ytd, "escrow_cents"), fees_cents: sum(ytd, "late_charge_cents"), suspense_held_cents: suspense }, ytd_ledger_total_cents: total(ytd),
     ...(suspense > 0n ? { suspense_instructions: `We received ${usd(suspense)}, which is being held. We need ${usd(c(heldItem?.balance_needed_cents))} more to apply a full payment.` } : {}),
@@ -149,7 +153,10 @@ export async function statementUnitIn(rt: Runtime, io: UnitIo, loanId: string, i
   const facts = await loanCashState(rt, loanId, statementDate); const parties = await servicingParties(rt, loanId);
   const block = await servicerBlockFor(rt.db, loanId, statementDate);   // 35.5 rule 9: the servicer identity as of the statement date (CONFIG_REQUIRED when none is in force)
   const suspect: { party_id: string; consent_id: string | null }[] = [];
-  const notices = new NoticeService({ registry: rt.noticeRegistry, events: io.events, clock: io.clock, printMail: rt.ports.printMail, edelivery: rt.ports.edelivery, notices: rt.noticeMemory });   // the runtime's notice memory (32.12): the rendered statement / 1098 is readable after the run like any command's notice
+  // 35.2: the Notice Registry with the artifact layer — the statement and the availability e-mail become stored PDFs (PgArtifactSink over `rt.blobs`); the document rows and the notice rows ride `io.defer` in push order (the unit of work's commit, or `cycles.run_unit`'s deferWrite — one transaction either way).
+  // Both services carry the runtime's notice memory (32.12): the rendered statement / 1098 is readable after the run like any command's notice
+  const wired = noticeServiceFor(rt, io, STATEMENT_AGENT, io.defer);
+  const notices = wired.notices ?? new NoticeService({ registry: rt.noticeRegistry, events: io.events, clock: io.clock, printMail: rt.ports.printMail, edelivery: rt.ports.edelivery, notices: rt.noticeMemory });
   const cycles = new StatementCycleService({ events: io.events, clock: io.clock, notices });
   const recipients = recipientsOf(parties);
   // comment 41(c)-3: the availability e-mail goes to every party whose active consent covers periodic statements; a hard bounce flips that party's consent to suspect (7.4 rule 8) before the statement's own channel decision
@@ -181,6 +188,8 @@ export async function statementUnitIn(rt: Runtime, io: UnitIo, loanId: string, i
   const statement = out.notice; const availabilityNotice = availability;
   io.defer(async (q) => {
     for (const x of suspect) await q.query(`UPDATE consents SET status = 'suspect' WHERE party_id = $1 AND kind = 'esign' AND status = 'active'`, [x.party_id]);
+    // 35.2: with the artifact layer the sink persisted the notice rows (notices.document_id → the stored PDF) on its own deferred write; without it the rows are written here
+    if (wired.sink) return;
     if (availabilityNotice) await persistNotice(rt, availabilityNotice, statementDate, q);
     await persistNotice(rt, statement, statementDate, q);
   });
@@ -213,14 +222,16 @@ export async function form1098UnitIn(rt: Runtime, io: UnitIo, loanId: string, in
   const interest = (await rt.db.query<{ s: string }>(`SELECT coalesce(-sum(l.amount_cents), 0)::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id WHERE l.scope = 'loan' AND l.loan_id = $1 AND l.account = 'interest_due' AND l.amount_cents < 0 AND e.effective_date >= $2::date AND e.effective_date < $3::date`, [loanId, `${y}-01-01`, `${y + 1}-01-01`]))[0]!.s;
   const upbJan1 = (await rt.db.query<{ s: string }>(`SELECT coalesce(sum(l.amount_cents), 0)::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id WHERE l.scope = 'loan' AND l.loan_id = $1 AND l.account = 'principal' AND e.effective_date < $2::date`, [loanId, `${y}-01-01`]))[0]!.s;
   const prop = (await rt.db.query<Row>(`SELECT pr.address_line1, pr.city, pr.state, pr.postal_code FROM loans l JOIN properties pr ON pr.id = l.property_id WHERE l.id = $1`, [loanId]))[0];
-  const notices = new NoticeService({ registry: rt.noticeRegistry, events: io.events, clock: io.clock, printMail: rt.ports.printMail, edelivery: rt.ports.edelivery, notices: rt.noticeMemory });
+  // 35.2 rule 11: the Copy B becomes a stored PDF through the artifact layer (the notice's `document_id`); its rows ride `io.defer` with the notice's (both services carry `rt.noticeMemory`, 32.12)
+  const wired = noticeServiceFor(rt, io, STATEMENT_AGENT, io.defer);
+  const notices = wired.notices ?? new NoticeService({ registry: rt.noticeRegistry, events: io.events, clock: io.clock, printMail: rt.ports.printMail, edelivery: rt.ports.edelivery, notices: rt.noticeMemory });
   const cycles = new StatementCycleService({ events: io.events, clock: io.clock, notices });
   const gate = requestForm1098Furnish({ events: io.events }, { loan_id: loanId, tax_year: y, party_id: payer.party_id, channel: "electronic", consents: parties.flatMap((p) => (p.irs_estatement ? [p.irs_estatement] : [])) });
   const out = await cycles.furnish1098(loanId, { tax_year: y, interest_received_cents: c(interest), upb_jan1_cents: c(upbJan1), furnished_on: on, recipients: recipientsOf(parties, "irs_estatement"),
     payload: { servicer_name: block.servicer_name, servicer_tin: block.servicer_tin, payer_name: payer.legal_name, account_number: facts.loan.servicer_loan_number, property_address: prop ? `${String(prop.address_line1)}, ${String(prop.city)}, ${String(prop.state)} ${String(prop.postal_code)}` : payer.mailing_address ?? "", box3_origination_date: facts.loan.instrument_date, box4_cents: 0n, box5_cents: 0n, box6_cents: 0n, box10_cents: 0n, box11_acquisition_date: null, servicer_phone: block.servicer_phone, servicer_address: block.servicer_address, exclusive_address: block.exclusive_address } });
   if (out.channel === "paper") runProduction(rt, nowIso);
   const notice = out.notice;
-  io.defer(async (q) => { await persistNotice(rt, notice, on, q); });
+  if (!wired.sink) io.defer(async (q) => { await persistNotice(rt, notice, on, q); });   // 35.2: with the artifact layer the sink persisted the notice rows on its own deferred write
   return { notice_id: out.notice.id, channel: out.channel, gate_open: gate.gate_open, box1_cents: s(out.box1_cents), box2_cents: s(out.box2_cents), furnished_on: on };
 }
 export async function furnishForm1098(rt: Runtime, loanId: string, input: { tax_year: number; furnished_on?: PlainDate; now?: string }): Promise<Form1098Result> {

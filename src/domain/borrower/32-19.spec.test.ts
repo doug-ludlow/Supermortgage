@@ -25,8 +25,12 @@ import { createApiServer, listen } from "../../runtime/server.ts";
 import { createLogger } from "../../runtime/log.ts";
 import { createBorrowerRouter, type BorrowerRouter } from "../../runtime/borrower/routes.ts";
 import { seedEntryDemo } from "../../runtime/entry-seed.ts";
-import { CONSENTS_VERSION } from "../../runtime/borrower/flows/3-entry.ts";
-import { createHarness, type Context, type Page } from "./harness.ts";
+import { CONSENTS_VERSION, reactDuGaps } from "../../runtime/borrower/flows/3-entry.ts";
+import type { FlowDeps, CardTrigger } from "../../runtime/borrower/flows/index.ts";
+import { DU_DECLARATION_ANSWERS } from "../underwriting/du/writer.ts";
+import { DEMO_AS_OF, demoBook } from "../partner-book/fixtures/partner-book-demo.ts";
+import { duVerdict, waitForDuMoment, type OpsRecord } from "../../../apps/borrower/tests/walk/du-journey.mts";
+import { createHarness, type Context, type Locator, type Page } from "./harness.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
@@ -79,6 +83,14 @@ const cardsOf = async (partyId: string): Promise<CardRow[]> => { await settle();
 const card = (cards: CardRow[], key: string): CardRow | undefined => cards.filter((c) => c.copy_key === key).at(-1);
 interface EventRow { sequence: string; type: string; payload: Json }
 const events = async (appId: string): Promise<EventRow[]> => { await settle(); return db.query<EventRow & Record<string, unknown>>(`SELECT sequence::text AS sequence, type, payload FROM loan_events WHERE application_id = $1 ORDER BY sequence`, [appId]); };
+/** 32.2's `declarations` entity (`<app>:B1`): the thirteen-item list and `none_apply`. */
+const intakeDeclarations = async (appId: string): Promise<Json | null> => { const rows = await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'declarations' AND id = $1`, [`${appId}:B1`]); return rows[0] ? (decodeEntityData(rows[0].data) as Json) : null; };
+/** A card through 32.1's `send_card` as the intake agent (the flows' own seam, 32.13's helper): a 33.x card with no step of its own for Tasks to host. */
+async function sendCard(appId: string, partyId: string, kind: string, copy_key: string, props: Json, command_ref: string | null): Promise<string> {
+  const r = await runtime.execute({ process: "32.1", name: "send_card", loanId: "", applicationId: appId, actor: { kind: "agent", id: "intake" }, run: { runId: "test:32.19", modelVersion: "harness", promptVersion: "32.19" },
+    input: { party_id: partyId, kind, copy_key, props: { ...props, flow_key: `t19:${kind}:${randomUUID().slice(0, 8)}`, flow: "32.19-harness" }, command_ref, subject: { application_id: appId }, created_by: "agent:intake", rationale: `32.19 harness ${kind}` } });
+  await settle(); return (r.output as { card_instance_id: string }).card_instance_id;
+}
 const intake = async (appId: string): Promise<Json | null> => { const rows = await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'applications' AND id = $1`, [appId]); return rows[0] ? (decodeEntityData(rows[0].data) as Json) : null; };
 interface PropertyRow { address_line1: string | null; city: string | null; state: string | null; postal_code: string | null; property_type: string | null; units: number | null; estate_type: string | null; existing_clean_energy_lien: boolean | null; is_subject: boolean; estimated_value_cents: string | null }
 const propertiesOf = (appId: string) => db.query<PropertyRow & Record<string, unknown>>(`SELECT address_line1, city, state, postal_code, property_type, units, estate_type, existing_clean_energy_lien, is_subject, estimated_value_cents::text AS estimated_value_cents FROM application_properties WHERE application_id = $1 ORDER BY created_at`, [appId]);
@@ -113,6 +125,129 @@ async function consentsStatement(page: Page): Promise<{ text: string; version: s
 }
 const seqOf = (evs: EventRow[], type: string, where: (p: Json) => boolean = () => true): number | null => { const e = evs.find((x) => x.type === type && where(x.payload)); return e ? Number(e.sequence) : null; };
 const closeAll = async (...pages: { ctx: Context }[]): Promise<void> => { for (const p of pages) await p.ctx.close(); };
+/** The API requests the page posted through its proxy (harness `page.requests`: `METHOD path body`), those matching `re`. */
+const posted = (page: Page, re: RegExp): string[] => (page.requests ?? []).filter((r) => r.startsWith("POST ") && re.test(r));
+const bodyOf = (line: string): Json => { const i = line.indexOf(" {"); return i >= 0 ? (JSON.parse(line.slice(i + 1)) as Json) : {}; };
+interface BorrowerRow { id: string; legal_name: string | null; date_of_birth: string | null; tin_last4: string | null; citizenship_status: string | null; marital_status: string | null; language_preference: string | null; prefill: Json }
+const borrowerOf = async (appId: string, partyId: string): Promise<BorrowerRow> => { const r = (await db.query<BorrowerRow & Record<string, unknown>>(`SELECT id, legal_name, date_of_birth::text AS date_of_birth, tin_last4, citizenship_status, marital_status, language_preference, prefill FROM application_borrowers WHERE application_id = $1 AND party_id = $2`, [appId, partyId]))[0]; assert.ok(r, "the application_borrowers row"); return r; };
+interface ResidenceRow { residency_type: string; residency_basis: string; monthly_rent_cents: string | null; address_line_text: string | null; city_name: string | null; state_code: string | null; postal_code: string | null; duration_months: number }
+const residencesOf = (abId: string) => db.query<ResidenceRow & Record<string, unknown>>(`SELECT residency_type, residency_basis, monthly_rent_cents::text AS monthly_rent_cents, address_line_text, city_name, state_code, postal_code, duration_months FROM du_residences WHERE application_borrower_id = $1 ORDER BY residency_type`, [abId]);
+const fieldOf = (c: CardRow | undefined, path: string): Json | undefined => ((c?.evidence?.["fields"] as Json[] | undefined) ?? []).find((f) => f["path"] === path);
+/** The addressed purchase's goal and property (T3's inputs) up to the You screen. */
+async function buyToYou(page: Page): Promise<void> {
+  await goal(page, "buy", "My primary home");
+  await fill(page, "Property address", "24 Juniper Lane, Austin, TX 78701"); await fill(page, "State", "TX"); await fill(page, "Price", "650000"); await fill(page, "Down payment", "130000");
+  await pick(page, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(page, "Is there a PACE or clean-energy loan on the home?", "No");
+  await consentsStatement(page);
+  await continueTo(page, "you", "property");
+}
+/** The You screen: the name, the birth date, the SSN, "I live here as", the months (the prior panel when under 24), Continue → connect. */
+async function you(page: Page, o: { name: string; dob: string; ssn: string; basis?: "Own" | "Rent" | "Rent-free"; rent?: string; months: string; prior?: { street: string; city: string; state: string; zip: string; basis: "Own" | "Rent" | "Rent-free"; rent?: string; months: string } }): Promise<void> {
+  await page.waitForSelector('[data-testid="apply"][data-step="you"]', { timeout: 30_000 });
+  await fill(page, "Legal name", o.name); await fill(page, "Date of birth", o.dob); await fill(page, "Social Security number", o.ssn);
+  await page.getByRole("button", { name: new RegExp(`^${o.basis ?? "Own"}$`) }).first().click();
+  if (o.rent !== undefined) await fill(page, "Monthly rent", o.rent);
+  await fill(page, "Months at this address", o.months);
+  if (o.prior) {
+    await page.getByTestId("apply-prior-address").first().waitFor({ timeout: 10_000 });
+    await fill(page, "Prior street address", o.prior.street); await fill(page, "Prior city", o.prior.city); await fill(page, "Prior state", o.prior.state); await fill(page, "Prior ZIP code", o.prior.zip);
+    await pick(page, "How you lived there", o.prior.basis); if (o.prior.rent !== undefined) await fill(page, "Monthly rent there", o.prior.rent);
+    await fill(page, "Months you lived there", o.prior.months);
+  }
+  await continueTo(page, "connect", "you");
+}
+/** The Connect screen: the monthly income and the employer, "Connect and continue" → details. */
+async function connectStep(page: Page, income: string, employer: string): Promise<void> {
+  await page.waitForSelector('[data-testid="apply"][data-step="connect"]', { timeout: 30_000 });
+  await fill(page, "Monthly income", income); await fill(page, "Employer", employer);
+  assert.equal((await page.getByTestId("apply-continue").first().innerText()).trim(), "Connect and continue", "the CTA is apply.connect.cta");
+  await continueTo(page, "details", "connect");
+}
+/** The Details screen with the five facts (the required four and the language), Continue → questions. */
+async function detailsStep(page: Page): Promise<void> {
+  await page.waitForSelector('[data-testid="apply"][data-step="details"]', { timeout: 30_000 });
+  await pick(page, "Citizenship", "U.S. citizen"); await pick(page, "Marital status", "Unmarried"); await fill(page, "Dependents", "0"); await pick(page, "Military service", "No"); await pick(page, "Language preference", "English");
+  await continueTo(page, "questions", "details");
+}
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** A card hosted in the chrome (docs/ux/18 §2.2: `.sm-card-host[data-copy-key]` wrapping the `components/cards` component); `notId` skips the card just tapped (the thirteen items share a copy key). */
+async function hostedCard(page: Page, copyKey: string, notId?: string): Promise<{ host: Locator; id: string }> {
+  const sel = `[data-testid="apply"] .sm-card-host[data-copy-key="${copyKey}"]${notId ? `:not([data-testid="apply-card-${notId}"])` : ""}`;
+  try { await page.waitForSelector(sel, { timeout: 60_000 }); }
+  catch (e) { throw new Error(`no hosted ${copyKey} card: error=${JSON.stringify(await page.getByTestId("apply-error").allInnerTexts().catch(() => []))}; hosted=${JSON.stringify(await page.locator('[data-testid="apply"] .sm-card-host').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((el) => el.getAttribute("data-copy-key"))).catch(() => []))}; ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`); }
+  const host = page.locator(sel).first(); const id = (await host.getAttribute("data-testid"))!.replace(/^apply-card-/, "");
+  return { host, id };
+}
+/** Tap an option of a hosted ChoiceCard (the card's own button); the card's id. */
+async function tapCard(page: Page, copyKey: string, option: string, notId?: string): Promise<string> {
+  const { host, id } = await hostedCard(page, copyKey, notId);
+  await host.getByRole("button", { name: new RegExp(`^${escapeRe(option)}$`) }).first().click();
+  return id;
+}
+/** The declarations "None" path on Questions: 5a.A, 5a.E, the list — one card at a time — then the step moves on to Demographics. */
+async function declarationsNone(page: Page): Promise<string[]> {
+  await page.waitForSelector('[data-testid="apply"][data-step="questions"]', { timeout: 30_000 });
+  const ids = [await tapCard(page, "declarations.occupancy", "Yes, and I haven't owned another home in the past three years")];
+  ids.push(await tapCard(page, "declarations.clean_energy_lien", "No"));
+  ids.push(await tapCard(page, "declarations.title", "None of these apply to me"));
+  await page.waitForSelector('[data-testid="apply"][data-step="demographics"]', { timeout: 60_000 }); await noError(page, "questions");
+  return ids;
+}
+/** The demographics card in the chrome: decline every group, or answer by the card's own labels; Save → Review. */
+async function demographicsStep(page: Page, o: { decline: true } | { ethnicity: string; race: string; sex: string }): Promise<string> {
+  await page.waitForSelector('[data-testid="apply"][data-step="demographics"]', { timeout: 30_000 });
+  const { host, id } = await hostedCard(page, "demographics.title");
+  const group = (legend: string) => host.locator(`fieldset:has(legend:text-is("${legend}"))`);
+  if ("decline" in o) { for (const g of ["Ethnicity", "Race", "Sex"]) await group(g).locator('label:text-is("I do not wish to provide") input').first().check(); }
+  else { await group("Ethnicity").locator(`label:text-is("${o.ethnicity}") input`).first().check(); await group("Race").locator(`label:text-is("${o.race}") input`).first().check(); await group("Sex").locator(`label:text-is("${o.sex}") input`).first().check(); }
+  await host.getByRole("button", { name: /^Save$/ }).first().click();
+  await page.waitForSelector('[data-testid="apply"][data-step="review"]', { timeout: 60_000 }); await noError(page, "demographics");
+  return id;
+}
+/** Review's one CTA: "Confirm these numbers" → Result. */
+async function confirmNumbers(page: Page): Promise<void> {
+  await page.waitForSelector('[data-testid="apply"][data-step="review"]', { timeout: 30_000 });
+  await page.waitForSelector('[data-testid="apply-continue"][data-copy-key="apply.review.confirm"]', { timeout: 60_000 });
+  assert.equal((await page.getByTestId("apply-continue").first().innerText()).trim(), "Confirm these numbers", "the CTA is apply.review.confirm");
+  await continueTo(page, "result", "review");
+}
+/** Buy with an address, driven from the goal to Review (Details, the None declarations, a declined demographics). */
+async function buyToReview(page: Page, who: { name: string; dob: string; ssn: string; employer: string }): Promise<void> {
+  await buyToYou(page);
+  await you(page, { name: who.name, dob: who.dob, ssn: who.ssn, basis: "Own", months: "60" });
+  await connectStep(page, "8500", who.employer); await detailsStep(page); await declarationsNone(page); await demographicsStep(page, { decline: true });
+}
+/** A refinance (Lower payment) driven from the goal to Review: the current home's fields, You (the home card rides the SSN card), Connect, Details, the None declarations, a declined demographics. */
+async function refiToReview(page: Page, address: string, who: { name: string; dob: string; ssn: string; employer: string }): Promise<void> {
+  await goal(page, "refi", "My primary home", "Lower payment");
+  await fill(page, "Property address", address); await fill(page, "State", "AZ"); await fill(page, "About what is it worth?", "500000"); await fill(page, "Current balance", "300000");
+  await pick(page, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(page, "Is there a PACE or clean-energy loan on the home?", "No");
+  await consentsStatement(page); await continueTo(page, "you", "property");
+  await you(page, { name: who.name, dob: who.dob, ssn: who.ssn, basis: "Own", months: "72" });
+  await connectStep(page, "9000", who.employer); await detailsStep(page); await declarationsNone(page); await demographicsStep(page, { decline: true });
+}
+/** Poll a test id's text until it matches (the Result and Tasks screens re-read the file on an interval). */
+async function waitForText(page: Page, testId: string, re: RegExp, ms = 120_000): Promise<string> {
+  const deadline = Date.now() + ms; let last = "";
+  while (Date.now() < deadline) { const n = await page.getByTestId(testId).count(); if (n) { last = (await page.getByTestId(testId).first().innerText()).trim(); if (re.test(last)) return last; } await page.waitForTimeout(500); }
+  throw new Error(`${testId} never matched ${re} (last: ${JSON.stringify(last)}; error=${JSON.stringify(await page.getByTestId("apply-error").allInnerTexts().catch(() => []))})`);
+}
+/** The ops record (GET /v1/applications/{id} with the ops token) in du-journey.mts's shape — the DU verdict is read from here, never from the page. */
+const ops = async (appId: string): Promise<OpsRecord> => { const r = await api("GET", `/v1/applications/${appId}`, undefined, TOKEN); assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300)); return r.body as OpsRecord; };
+/** 32.18 rule 7 through 23.7's own event: a preflight refusal at a section 5 point, delivered to the flows' reaction as 23.7 would append it (32.18-T8's seam) → the declarations sequence re-sent under `…:gap:<emission>`. */
+async function refuseAtDeclaration(appId: string): Promise<string> {
+  const flows = router.flows as unknown as { deps: FlowDeps; within<T>(t: CardTrigger, fn: () => Promise<T>): Promise<T> };
+  const documentId = randomUUID();
+  const refusal = { id: randomUUID(), type: "du.preflight.refused", occurredAt: clock.now(), applicationId: appId, aggregate: { kind: "application", id: appId }, actor: { kind: "agent" as const, id: "underwriter" }, sequence: 0, payload: { application_id: appId, du_document_id: documentId, document_id: randomUUID(), passed: false, code: "DU_PREFLIGHT_ORPHAN", xpath: "/MESSAGE/DEAL_SETS/DEAL_SET/DEALS/DEAL/PARTIES/PARTY/ROLES/ROLE/BORROWER/DECLARATION/DECLARATION_DETAIL/BankruptcyIndicator", rule: "23.7 rule 1", detail: "" } };
+  await flows.within({ source: "event", flow: "32.18", triggers: ["du.preflight.refused"] }, () => reactDuGaps(flows.deps, [refusal])); await settle();
+  return documentId.replace(/-/g, "").slice(0, 8);
+}
+const DU_WORDS = /\bDU\b|Desktop Underwriter|Fannie|\bApprove|\bEligible\b|\bIneligible\b|\bRefer\b/;
+const TASKS = ["property", "you", "connect", "details", "questions", "demographics", "review"] as const;
+const usd = (c: bigint): string => { const whole = (c / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","); return `$${whole}.${(c % 100n).toString().padStart(2, "0")}`; };
+/** Accounts later tests reuse (a fresh context, the token): T4's still-looking purchase (every task done, nothing pending — the nothing-needed state), T12's refinance at the DU moment (the report's cards for Tasks). */
+let tbdAccount: { token: string; party_id: string; application_id: string } | null = null;
+let refiAccount: { token: string; party_id: string; application_id: string } | null = null;
 
 test("32.19-T1: The door — Given a new browser with no cookies, when `/app` renders, then `[data-testid=\"apply\"][data-door=\"welcome\"]` renders on `.sm-proto` paper with the mark and a 430 px column at 1280 (full width at 390), no `thread`, `record` or `action-bar` test id exists, `footer.disclosure` is on the screen, Continue renders `data-door=\"intro\"`, \"Create an account\" renders `Account` in `sign_up`, and \"Already have an account?\" renders it in `sign_in`.", { skip }, async () => {
   const wide = await openApply(null, 1280); const { page } = wide;
@@ -299,6 +434,21 @@ test("32.19-T4: Buy, still looking — Given Buy a home with Still looking, a st
   const again = await cardsOf(a.party_id);
   assert.equal(again.filter((c) => c.copy_key === "entry.goal.question").length, 1, "no second goal card"); assert.equal(again.filter((c) => c.copy_key === "preapproval.where").length, 1, "preapproval.where resolved once");
   assert.equal((await events(a.application_id)).filter((e) => e.type === "prequal.requested").length, 1, "one preapproval request");
+  // after the demographics: preapproval.target instead of the three number cards; Review reads the badge with apply.review.tbd; the file stays received
+  await you(page, { name: "Casey Nguyen", dob: "1991-02-14", ssn: "555-12-3456", basis: "Rent", rent: "1700", months: "40" });
+  await connectStep(page, "6400", "Desert Sky Foods"); await detailsStep(page); await declarationsNone(page); await demographicsStep(page, { decline: true });
+  const afterDemo = await cardsOf(a.party_id); const target0 = card(afterDemo, "preapproval.target"); assert.ok(target0, "preapproval.target sent after the demographics (a TBD purchase)"); assert.equal(target0.status, "pending"); assert.equal(target0.command_ref, "application.confirmField");
+  assert.equal(card(afterDemo, "refi.value.confirm"), undefined, "no number cards on a TBD purchase"); assert.equal(card(afterDemo, "refi.product.choice"), undefined);
+  const tbdLine = page.getByTestId("apply-review-tbd").first(); await tbdLine.waitFor({ timeout: 30_000 }); assert.equal((await tbdLine.innerText()).trim(), "When you have an address, add it here and we'll finish.", "apply.review.tbd — derived from the goal tap's property_tbd (record.property is null without a subject row)");
+  const rec4 = await api("GET", `/v1/borrower/record?subject=${a.application_id}`, undefined, a.token); assert.equal(rec4.status, 200);
+  assert.equal((rec4.body["status"] as Json)["badge"], "Application received"); assert.equal((await page.getByTestId("apply-badge").first().innerText()).trim(), "Application received", "Review reads record.status.badge");
+  await confirmNumbers(page);
+  const target = card(await cardsOf(a.party_id), "preapproval.target")!; assert.equal(target.status, "resolved"); const tv = (p: string): unknown => fieldOf(target, p)?.["value_confirmed"];
+  assert.equal(tv("target_price_cents"), "50000000", "the target price ← the price high"); assert.equal(tv("down_payment_cents"), "10000000"); assert.equal(tv("loan_amount_sought"), "40000000", "high − down"); assert.equal(tv("product_code"), "FRM30");
+  const evs4 = await events(a.application_id); assert.equal(seqOf(evs4, "application.trid_received"), null, "the file stays received: no address, no six items"); assert.equal(seqOf(evs4, "credit.report.ordered"), null, "no credit pull"); assert.equal(seqOf(evs4, "du.submitted"), null);
+  assert.equal((await intake(a.application_id))!["status"], "received");
+  assert.equal(await attr(page, "data-step"), "result"); assert.equal((await page.getByTestId("apply-badge").first().innerText()).trim(), "Application received", "Result reads the badge too");
+  tbdAccount = { token: a.token, party_id: a.party_id, application_id: a.application_id };
   await ctx.close();
 });
 test("32.19-T5: Refinance — Given Refinance my home with Lower payment, Pay off sooner or Take cash out, then the goal resolves with `lower_rate`, `lower_rate` or `cash_out` (`transaction_type = limited_cash_out | limited_cash_out | cash_out`), Property shows no shopping switch, the address, estate type and lien answer are held until `refi.home.confirm` is sent — with the SSN card, on `application.field.captured{current_address}` — and then resolve it (`edited = true`, the six-item address and the subject row), and Pay off sooner resolves `refi.product.choice` with `FRM15`.", { skip }, async () => {
@@ -341,20 +491,496 @@ test("32.19-T5: Refinance — Given Refinance my home with Lower payment, Pay of
     assert.equal(await page.getByLabel("Do you own the land, or is it a leasehold?", { exact: true }).first().inputValue(), "leasehold");
     assert.equal(await page.getByLabel("Is there a PACE or clean-energy loan on the home?", { exact: true }).first().inputValue(), "yes");
     assert.equal(await page.getByLabel("Current balance", { exact: true }).first().inputValue(), "300000");
+    // the You screen's Continue: the identity card's resolve captures current_address, and refi.home.confirm is sent with the SSN card on that event; the step then resolves it with the held address, estate type and lien
+    await page.getByTestId("apply-continue").first().click(); await page.waitForSelector('[data-testid="apply"][data-step="you"]', { timeout: 60_000 }); await noError(page, "property → you");
+    await you(page, { name: `Riley Ortega ${i}`, dob: "1979-03-02", ssn: "212-55-100" + i, basis: "Own", months: "60" });
+    const after = await cardsOf(a.party_id); const home = card(after, "refi.home.confirm"); assert.ok(home, `${purpose}: refi.home.confirm sent`); assert.equal(home.kind, "ConfirmCard"); assert.equal(home.status, "resolved", `${purpose}: refi.home.confirm resolved by the You step`);
+    assert.equal(home.evidence?.["edited"], true, "edited = true: the address, estate and lien were the page's edits over the card's values");
+    assert.equal(fieldOf(home, "property_address")?.["value_confirmed"], address); assert.equal(fieldOf(home, "estate_type")?.["value_confirmed"], "leasehold"); assert.equal(fieldOf(home, "existing_clean_energy_lien")?.["value_confirmed"], "yes");
+    const evs2 = await events(a.application_id);
+    const captured = seqOf(evs2, "application.field.captured", (p) => p["field"] === "current_address"); const six = seqOf(evs2, "application.six_item.captured", (p) => p["item"] === "property_address");
+    assert.ok(captured !== null, "application.field.captured{current_address} (the identity card's resolve)"); assert.ok(six !== null, `${purpose}: the six-item address on refi.home.confirm's resolve`); assert.ok(captured! < six!, "the home card came with the SSN card, on the current_address capture, and was resolved after it");
+    assert.ok(Number(home.seq) > Number(card(after, "identity.confirm.title")!.seq), "refi.home.confirm was sent after the identity card"); assert.ok(card(after, "identity.ssn.title"), "with the SSN card");
+    const rows = await propertiesOf(a.application_id); assert.equal(rows.length, 1, `${purpose}: one subject row`); const row = rows[0]!;
+    assert.equal(row.address_line1, `${10 + i} Elm Street`); assert.equal(row.city, "Phoenix"); assert.equal(row.state, "AZ"); assert.equal(row.postal_code, "85001"); assert.equal(row.estate_type, "leasehold"); assert.equal(row.existing_clean_energy_lien, true); assert.equal(row.is_subject, true);
+    await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-property"][data-done="true"]', { timeout: 30_000 });
+    if (purpose === "Pay off sooner") {
+      // Pay off sooner resolves refi.product.choice with FRM15 on Review's tap (the value ← "worth", the loan amount ← the balance)
+      await page.getByTestId("apply-tab-apply").first().click();
+      await connectStep(page, "9100", "Mesa Verde Labs"); await detailsStep(page); await declarationsNone(page); await demographicsStep(page, { decline: true });
+      assert.equal((await page.getByTestId("apply-review-product").first().innerText()).trim(), "15-year fixed", "Review names the product the tap will choose");
+      await confirmNumbers(page);
+      const after5 = await cardsOf(a.party_id); const product = card(after5, "refi.product.choice"); assert.ok(product, "refi.product.choice"); assert.equal(product.status, "resolved"); assert.equal(product.evidence?.["option_id"], "FRM15", "Pay off sooner → FRM15");
+      assert.equal(fieldOf(card(after5, "refi.value.confirm"), "property_value_estimate")?.["value_confirmed"], "50000000", "the value ← worth"); assert.equal(fieldOf(card(after5, "refi.loan_amount.confirm"), "loan_amount_sought")?.["value_confirmed"], "30000000", "the loan amount ← the balance");
+      assert.ok(seqOf(await events(a.application_id), "application.trid_received") !== null, "the six items are complete on the tap");
+    }
     await ctx.close();
   }
-  // resolving refi.home.confirm (edited = true, the six-item address and the subject row) and Pay off sooner's FRM15 on refi.product.choice are the You and Review screens' taps — Sessions 2–3 (32.19 §5)
 });
-test("32.19-T6: You — Given the You screen with a legal name, a date of birth, an SSN, \"I live here as\" and the months, when Continue, then `POST /v1/borrower/identity/stripe/session {fake_complete: true}` ran on the pending `identity.stripe.purpose` card, `identity.confirm.title` was resolved with the typed values as edits (`source = borrower`) and the residence basis (one Current `du_residences` row), `identity.ssn.title` was resolved (`tin_last4` set, the SSN never echoed), a prior-address panel renders only when the months are under 24 and resolves `identity.prior_residence.title`, and the page posted no `credit.authorize` and needed no L2.", { todo: true });
-test("32.19-T7: Connect — Given the Connect screen with a monthly income and an employer, when Connect and continue, then `POST /v1/borrower/connect/truv_income/session {card_instance_id, fake_complete: true}` ran on the pending payroll card, `income.confirm.title` was resolved with the typed income and employer as edits (`application_income` with `employer_id` and `employment_income = true`; six-item `income`), `POST /v1/borrower/connect/plaid_assets/session` ran on the assets card (`verification.received{kind = assets}`, the card `connected`), and the page never posted `verification.connect`.", { todo: true });
-test("32.19-T8: Details — Given Details, when Continue with citizenship, marital status, dependents, military service and language, then `profile.title` resolves with the five fields (`application_borrowers.citizenship_status`, `marital_status`, `language_preference`); when Continue without citizenship, then the step stays with `.sm-error` and nothing is posted; given married, then `apply.details.spouse_later` renders and no `application.inviteParty` is posted.", { todo: true });
-test("32.19-T9: Declarations — Given \"Do any apply?\", when None, then `declarations.occupancy`, `declarations.clean_energy_lien` and `declarations.title{none}` are resolved one at a time and the borrower's `du_declarations` row carries the fourteen typed answers (32.3-T14 unchanged); when Something applies, then each `declarations.item` card renders one question at a time and every Yes with its follow-up persists.", { todo: true });
-test("32.19-T10: Demographics — Given Demographics, when \"I do not wish to provide this information\", then `demographics.title` resolves with `[\"do_not_wish\"]` for ethnicity and race and `\"do_not_wish\"` for sex and `applicant_demographics.* = declined` with `collection_method = internet`; when answered, then only the card's own option ids are sent and the answers are never kept on the card.", { todo: true });
-test("32.19-T11: Review is a readiness view — Given Review, then it reads `record.status.badge` and the pending cards from `/v1/borrower/thread`, renders no control that names a submission, lists every pending card as a task, and its one CTA resolves the number cards (`refi.value.confirm`, `refi.loan_amount.confirm`, `refi.product.choice`, or `preapproval.target`); the screen's text contains none of \"DU\", \"Desktop Underwriter\", \"Fannie\", \"Approve\", \"Eligible\", \"Ineligible\", \"Refer\".", { todo: true });
-test("32.19-T12: The DU moment from the screens — Given Buy with an address or a refinance driven end to end through the Apply screens at 390 px with the FAKE vendors finishing on the tap, when the number cards are confirmed, then `application.trid_received`, `credit.report.received`, `du.document.emitted{required_missing = 0}`, `du.preflight.passed`, `du.submitted` and `du.findings.received` follow without any command posted by the page, the badge reads Verifying, Result renders the copy library's `du.running` line and the ChecklistCard when it comes, and a re-sent gap card (32.18 rule 7) renders as a task in the copy library's words.", { todo: true });
+test("32.19-T6: You — Given the You screen with a legal name, a date of birth, an SSN, \"I live here as\" and the months, when Continue, then `POST /v1/borrower/identity/stripe/session {fake_complete: true}` ran on the pending `identity.stripe.purpose` card, `identity.confirm.title` was resolved with the typed values as edits (`source = borrower`) and the residence basis (one Current `du_residences` row), `identity.ssn.title` was resolved (`tin_last4` set, the SSN never echoed), a prior-address panel renders only when the months are under 24 and resolves `identity.prior_residence.title`, and the page posted no `credit.authorize` and needed no L2.", { skip }, async () => {
+  const a = await account("t6"); const SSN = "123-45-6789"; const DIGITS = "123456789";
+  const { page, ctx } = await openApply(a.token, 390);
+  await buyToYou(page);
+  const before = await cardsOf(a.party_id); const connector = card(before, "identity.stripe.purpose"); assert.ok(connector); assert.equal(connector.status, "pending", "the identity connector is pending before Continue");
+  assert.equal(card(before, "identity.confirm.title"), undefined, "no identity card before the scan"); assert.equal(card(before, "identity.ssn.title"), undefined);
+  const authzBefore = (await events(a.application_id)).filter((e) => e.type === "credit.authorization.captured").length; assert.ok(authzBefore >= 1, "the goal tap wrote the authorization (32.17 rule 20)");
+  assert.equal(await page.locator('[data-testid="apply"] input[type="checkbox"]').count(), 0, "no credit checkbox on You");
+  // the prior-address panel renders only when the months are under 24
+  await fill(page, "Months at this address", "36"); assert.equal(await page.getByTestId("apply-prior-address").count(), 0, "no prior panel at 36 months");
+  await fill(page, "Months at this address", "24"); assert.equal(await page.getByTestId("apply-prior-address").count(), 0, "no prior panel at 24 months");
+  await fill(page, "Months at this address", "18"); assert.equal(await page.getByTestId("apply-prior-address").count(), 1, "the prior panel at 18 months");
+  await you(page, { name: "Taylor Reyes", dob: "1988-04-12", ssn: SSN, basis: "Rent", rent: "1850", months: "18", prior: { street: "9 Oak Avenue", city: "Dallas", state: "TX", zip: "75201", basis: "Own", months: "40" } });
+  // POST /v1/borrower/identity/stripe/session {application_id, fake_complete: true} ran on the pending identity.stripe.purpose card — the FAKE finished on the tap
+  const sessions = posted(page, /\/v1\/borrower\/identity\/stripe\/session/); assert.equal(sessions.length, 1, `one identity session: ${JSON.stringify(page.requests)}`);
+  assert.equal(bodyOf(sessions[0]!)["fake_complete"], true); assert.equal(bodyOf(sessions[0]!)["application_id"], a.application_id);
+  const cards = await cardsOf(a.party_id); const scan = card(cards, "identity.stripe.purpose"); assert.ok(scan); assert.equal(scan.card_instance_id, connector.card_instance_id, "the flow's own connector card, never a second one"); assert.equal(scan.status, "resolved"); assert.equal(scan.evidence?.["outcome"], "connected");
+  const started = await db.query<{ payload: Json }>(`SELECT payload FROM ui_events WHERE card_instance_id = $1 AND kind = 'connector_started'`, [scan.card_instance_id]); assert.equal(started[0]?.payload["vendor"], "stripe_identity");
+  const evs = await events(a.application_id); assert.ok(seqOf(evs, "identity.verified") !== null, "identity.verified (22.6)");
+  // identity.confirm.title resolved with the typed values as edits (source = borrower) and the residence basis: one Current du_residences row
+  const identity = card(cards, "identity.confirm.title"); assert.ok(identity, "the identity card"); assert.equal(identity.status, "resolved"); assert.equal(identity.command_ref, "application.confirmField"); assert.equal(identity.evidence?.["edited"], true);
+  assert.equal(fieldOf(identity, "legal_name")?.["value_confirmed"], "Taylor Reyes"); assert.equal(fieldOf(identity, "legal_name")?.["source"], "borrower"); assert.equal(fieldOf(identity, "date_of_birth")?.["value_confirmed"], "1988-04-12");
+  assert.equal(fieldOf(identity, "residency_basis")?.["value_confirmed"], "rent"); assert.equal(fieldOf(identity, "monthly_rent_cents")?.["value_confirmed"], "185000"); assert.equal(fieldOf(identity, "months_at_address")?.["value_confirmed"], "18");
+  assert.equal(fieldOf(identity, "current_address")?.["value_confirmed"], (identity.props["fields"] as Json[]).find((f) => f["path"] === "current_address")?.["value"], "the current address is the card's own (the ID's reading)");
+  const b = await borrowerOf(a.application_id, a.party_id);
+  assert.equal(b.legal_name, "Taylor Reyes"); assert.equal(b.date_of_birth, "1988-04-12"); assert.equal((b.prefill["legal_name"] as Json)["source"], "borrower", "the edited name is the borrower's"); assert.ok((b.prefill["legal_name"] as Json)["confirmed_at"]);
+  assert.ok(seqOf(evs, "application.six_item.captured", (p) => p["item"] === "name") !== null, "the six-item name"); assert.ok(seqOf(evs, "application.field.captured", (p) => p["field"] === "current_address") !== null);
+  const residences = await residencesOf(b.id); const current = residences.filter((r) => r.residency_type === "Current"); assert.equal(current.length, 1, "one Current du_residences row");
+  assert.equal(current[0]!.residency_basis, "Rent"); assert.equal(current[0]!.monthly_rent_cents, "185000"); assert.equal(current[0]!.duration_months, 18);
+  // identity.ssn.title resolved: tin_last4 set, the SSN never echoed — masked in the stored evidence, absent from every card, the thread and the page
+  const ssn = card(cards, "identity.ssn.title"); assert.ok(ssn, "the SSN card"); assert.equal(ssn.status, "resolved"); assert.equal(ssn.evidence?.["edited"], true);
+  assert.equal(fieldOf(ssn, "ssn")?.["value_confirmed"], "••••6789"); assert.equal(fieldOf(ssn, "ssn")?.["masked"], true);
+  assert.equal(b.tin_last4, "6789"); assert.ok(seqOf(evs, "application.six_item.captured", (p) => p["item"] === "ssn") !== null, "the six-item ssn");
+  const stored = JSON.stringify(cards.map((c) => [c.props, c.evidence])); assert.ok(!stored.includes(DIGITS) && !stored.includes(SSN), "no card carries the nine digits");
+  const thread = await api("GET", "/v1/borrower/thread?limit=500", undefined, a.token); assert.equal(thread.status, 200); const wire = JSON.stringify(thread.body); assert.ok(!wire.includes(DIGITS) && !wire.includes(SSN), "the thread never echoes the SSN");
+  const html = await page.content(); assert.ok(!html.includes(DIGITS) && !html.includes(SSN), "the page holds the digits only until the card is written");
+  assert.ok(!JSON.stringify(evs).includes(DIGITS), "no event payload carries the SSN");
+  const carried = (page.requests ?? []).filter((r) => r.includes(DIGITS) || r.includes(SSN)); assert.equal(carried.length, 1, `the digits crossed the wire once: ${JSON.stringify(carried.map((r) => r.split(" ").slice(0, 2).join(" ")))}`);
+  assert.ok(carried[0]!.startsWith(`POST /v1/borrower/cards/${ssn.card_instance_id}/resolve `), "…in the SSN card's resolve, never in another request");
+  // the prior-address panel's card: identity.prior_residence.title resolved — the Prior du_residences row with its own address
+  const prior = card(cards, "identity.prior_residence.title"); assert.ok(prior, "identity.prior_residence.title sent (18 < 24 months)"); assert.equal(prior.status, "resolved");
+  assert.equal(fieldOf(prior, "prior_address_line")?.["value_confirmed"], "9 Oak Avenue"); assert.equal(fieldOf(prior, "prior_residency_basis")?.["value_confirmed"], "own"); assert.equal(fieldOf(prior, "prior_months_at_address")?.["value_confirmed"], "40");
+  const priorRow = residences.find((r) => r.residency_type === "Prior"); assert.ok(priorRow, "the Prior du_residences row"); assert.equal(priorRow.address_line_text, "9 Oak Avenue"); assert.equal(priorRow.city_name, "Dallas"); assert.equal(priorRow.state_code, "TX"); assert.equal(priorRow.postal_code, "75201"); assert.equal(priorRow.residency_basis, "Own"); assert.equal(priorRow.duration_months, 40);
+  assert.ok(Number(prior.seq) > Number(ssn.seq), "the prior card rode with the SSN card, after it");
+  // the page posted no credit.authorize and needed no L2: no such request, no new authorization row, the session never stepped up to L2 (the FAKE scan raised L3)
+  assert.equal(posted(page, /commands\/credit\.authorize/).length, 0, "no credit.authorize from the page"); assert.equal(posted(page, /\/auth\/l2/).length, 0, "no L2 challenge");
+  assert.equal((await events(a.application_id)).filter((e) => e.type === "credit.authorization.captured").length, authzBefore, "no second authorization");
+  const levels = (await sessionsOf(a.party_id)).map((s) => s.level); assert.ok(!levels.includes("L2"), `no L2 session: ${levels.join(",")}`); assert.deepEqual([...new Set(levels)].sort(), ["L3"], "the one session, raised to L3 by the verified scan");
+  assert.equal(posted(page, /\/commands\//).length, 1, `the page's only command is the six-field confirmField of Property: ${JSON.stringify(posted(page, /\/commands\//))}`);
+  assert.equal(seqOf(evs, "credit.report.ordered"), null, "the pull waits for the six items (trid_received)");
+  // Tasks marks the credit-check task done from the SSN card's status
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-you"][data-done="true"]', { timeout: 30_000 });
+  assert.equal(await page.getByTestId("apply-task-connect").first().getAttribute("data-done"), "false");
+  await ctx.close();
+});
+test("32.19-T7: Connect — Given the Connect screen with a monthly income and an employer, when Connect and continue, then `POST /v1/borrower/connect/truv_income/session {card_instance_id, fake_complete: true}` ran on the pending payroll card, `income.confirm.title` was resolved with the typed income and employer as edits (`application_income` with `employer_id` and `employment_income = true`; six-item `income`), `POST /v1/borrower/connect/plaid_assets/session` ran on the assets card (`verification.received{kind = assets}`, the card `connected`), and the page never posted `verification.connect`.", { skip }, async () => {
+  const a = await account("t7");
+  const { page, ctx } = await openApply(a.token, 390);
+  await buyToYou(page);
+  await you(page, { name: "Morgan Vale", dob: "1990-11-30", ssn: "321-54-9876", basis: "Own", months: "48" });
+  const before = await cardsOf(a.party_id); const payroll = card(before, "income.connect.purpose"); const assets = card(before, "assets.connect.purpose");
+  assert.ok(payroll && assets); assert.equal(payroll.status, "pending"); assert.equal(assets.status, "pending"); assert.equal(card(before, "income.confirm.title"), undefined, "no income card before the connection");
+  assert.equal(await page.getByRole("button", { name: /skip/i }).count(), 0, "no Skip in v1 (32.19 §2.5)");
+  const commandsBefore = posted(page, /\/commands\//).length;
+  await connectStep(page, "8500", "Acme Robotics");
+  // POST connect/truv_income/session {card_instance_id, fake_complete: true} on the pending payroll card; the route resolved the connector and 22.3 received the FAKE report
+  const truv = posted(page, /\/v1\/borrower\/connect\/truv_income\/session/); assert.equal(truv.length, 1, `one payroll session: ${JSON.stringify(page.requests)}`);
+  assert.deepEqual(bodyOf(truv[0]!), { card_instance_id: payroll.card_instance_id, fake_complete: true });
+  const cards = await cardsOf(a.party_id); const payrollAfter = card(cards, "income.connect.purpose"); assert.equal(payrollAfter?.status, "resolved"); assert.equal(payrollAfter?.evidence?.["vendor"], "truv_income"); assert.ok(payrollAfter?.evidence?.["report_reference_id"], "the FAKE report on the card");
+  const evs = await events(a.application_id);
+  assert.ok(seqOf(evs, "verification.received", (p) => p["kind"] === "income") !== null, "verification.received{income}");
+  // income.confirm.title resolved with the typed income and employer as edits over the report's figures
+  const income = card(cards, "income.confirm.title"); assert.ok(income, "the income card"); assert.equal(income.status, "resolved"); assert.equal(income.command_ref, "application.confirmField"); assert.equal(income.evidence?.["edited"], true);
+  assert.equal(fieldOf(income, "employer")?.["value_confirmed"], "Acme Robotics"); assert.equal(fieldOf(income, "monthly_base_cents")?.["value_confirmed"], "850000");
+  const shownEmployer = (income.props["fields"] as Json[]).find((f) => f["path"] === "employer")?.["value"]; assert.notEqual(shownEmployer, "Acme Robotics", "the typed employer differs from the FAKE report's (an edit)");
+  assert.equal((income.evidence?.["command_output"] as Json)["amount_cents"], "850000"); assert.equal((income.evidence?.["command_output"] as Json)["source"], "borrower", "an edited figure is the borrower's own statement"); assert.equal((income.evidence?.["command_output"] as Json)["employment_income"], true);
+  const b = await borrowerOf(a.application_id, a.party_id);
+  interface IncomeRow { monthly_amount_cents: string; employer: Json; employer_id: string | null; employment_income: boolean; calculation: Json; source_kind: string }
+  const rows = await db.query<IncomeRow & Record<string, unknown>>(`SELECT monthly_amount_cents::text AS monthly_amount_cents, employer, employer_id, employment_income, calculation, source_kind FROM application_income WHERE application_id = $1 AND application_borrower_id = $2`, [a.application_id, b.id]);
+  assert.equal(rows.length, 1, "one application_income row"); const row = rows[0]!;
+  assert.equal(row.monthly_amount_cents, "850000"); assert.equal(row.source_kind, "base"); assert.equal(row.employer["name"], "Acme Robotics"); assert.ok(row.employer_id, "employer_id set"); assert.equal(row.employment_income, true); assert.equal(row.calculation["source"], "borrower");
+  const employers = await db.query<{ id: string; display_name: string }>(`SELECT id, display_name FROM employers WHERE application_id = $1`, [a.application_id]); assert.equal(employers.length, 1); assert.equal(employers[0]!.id, row.employer_id); assert.equal(employers[0]!.display_name, "Acme Robotics");
+  assert.ok(seqOf(evs, "application.six_item.captured", (p) => p["item"] === "income") !== null, "the six-item income");
+  // POST connect/plaid_assets/session on the assets card: verification.received{assets}, the accounts as assets, the card connected
+  const plaid = posted(page, /\/v1\/borrower\/connect\/plaid_assets\/session/); assert.equal(plaid.length, 1, "one assets session"); assert.deepEqual(bodyOf(plaid[0]!), { card_instance_id: assets.card_instance_id, fake_complete: true });
+  const assetsAfter = card(cards, "assets.connect.purpose"); assert.equal(assetsAfter?.status, "resolved"); assert.equal(assetsAfter?.props["state"], "connected"); assert.equal(assetsAfter?.evidence?.["outcome"], "connected"); assert.ok(assetsAfter?.evidence?.["verification_id"]);
+  assert.ok(seqOf(evs, "verification.received", (p) => p["kind"] === "assets") !== null, "verification.received{kind = assets}");
+  assert.ok((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM application_assets WHERE application_id = $1`, [a.application_id]))[0]!.n !== "0", "the report's accounts as application_assets rows");
+  for (const id of [payroll.card_instance_id, assets.card_instance_id]) { const done = await db.query<{ payload: Json }>(`SELECT payload FROM ui_events WHERE card_instance_id = $1 AND kind = 'connector_completed'`, [id]); assert.equal(done[0]?.payload["outcome"], "connected", `connector_completed on ${id}`); }
+  // the page never posted verification.connect (the connectors finish on their session routes); its only command stays Property's confirmField
+  assert.equal(posted(page, /commands\/verification\.connect/).length, 0, `no verification.connect: ${JSON.stringify(posted(page, /\/commands\//))}`);
+  assert.equal(posted(page, /\/commands\//).length, commandsBefore, "no command posted by Connect");
+  // six-item income → the profile card is the next ask (Details)
+  assert.equal(card(cards, "profile.title")?.status, "pending", "profile.title sent on the six-item income");
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-connect"][data-done="true"]', { timeout: 30_000 });
+  await ctx.close();
+});
+test("32.19-T8: Details — Given Details, when Continue with citizenship, marital status, dependents, military service and language, then `profile.title` resolves with the five fields (`application_borrowers.citizenship_status`, `marital_status`, `language_preference`); when Continue without citizenship, then the step stays with `.sm-error` and nothing is posted; given married, then `apply.details.spouse_later` renders and no `application.inviteParty` is posted.", { skip }, async () => {
+  const a = await account("t8");
+  const { page, ctx } = await openApply(a.token, 1280);
+  await buyToYou(page);
+  await you(page, { name: "Jordan Blake", dob: "1985-07-19", ssn: "456-78-1234", basis: "Rent-free", months: "30" });
+  await connectStep(page, "7200", "Northwind Traders");
+  const before = await cardsOf(a.party_id); const profile0 = card(before, "profile.title"); assert.ok(profile0, "profile.title pending on Details"); assert.equal(profile0.status, "pending"); assert.equal(profile0.kind, "ProfileCard");
+  const options = (path: string): string[] => ((profile0.props["fields"] as Json[]).find((f) => f["path"] === path)?.["options"] as Json[] | undefined ?? []).map((o) => String(o["id"]));
+  // Continue without citizenship: the step stays with .sm-error (copy, never a code) and nothing is posted
+  const postsBefore = (page.requests ?? []).filter((r) => r.startsWith("POST ")).length;
+  assert.equal(await page.getByLabel("Citizenship", { exact: true }).first().inputValue(), "", "no visual default counts as an answer");
+  await pick(page, "Marital status", "Married"); await fill(page, "Dependents", "2"); await pick(page, "Military service", "No"); await pick(page, "Language preference", "English");
+  await page.getByTestId("apply-continue").first().click();
+  await page.getByTestId("apply-error").first().waitFor({ timeout: 15_000 });
+  assert.equal(await attr(page, "data-step"), "details", "the step stays");
+  const err = (await page.getByTestId("apply-error").first().innerText()).trim(); assert.equal(err, "Answer the first four questions to continue.", "apply.details.required's copy"); assert.doesNotMatch(err, /^[A-Z_]{6,}$/);
+  assert.equal(await page.locator(".sm-error").count(), 1);
+  assert.equal((page.requests ?? []).filter((r) => r.startsWith("POST ")).length, postsBefore, "nothing was posted");
+  assert.equal(card(await cardsOf(a.party_id), "profile.title")?.status, "pending"); assert.equal((await borrowerOf(a.application_id, a.party_id)).citizenship_status, null);
+  // married: apply.details.spouse_later renders; no application.inviteParty is posted (the Invite control stays disabled)
+  const spouse = page.getByTestId("apply-spouse-later").first(); assert.ok(await spouse.isVisible()); assert.equal((await spouse.innerText()).trim(), "Your spouse's part comes later. Nothing to add now.");
+  assert.equal(await page.locator('[data-testid="apply"] .sm-invite[disabled]').count(), 1, "Invite is disabled in v1");
+  // Continue with the five: profile.title resolves with option_id submit and the card's own option ids
+  await pick(page, "Citizenship", "U.S. citizen");
+  await continueTo(page, "questions", "details");
+  const cards = await cardsOf(a.party_id); const profile = card(cards, "profile.title"); assert.ok(profile); assert.equal(profile.status, "resolved"); assert.equal(profile.command_ref, "application.confirmField");
+  const answers = Object.fromEntries(((profile.evidence?.["fields"] as Json[]) ?? []).map((f) => [String(f["path"]), String(f["value"])]));
+  assert.deepEqual(answers, { citizenship_status: "us_citizen", marital_status: "married", dependents: "2", military_service: "none", language_preference: "english" }, "the five fields");
+  for (const f of (profile.evidence?.["fields"] as Json[]) ?? []) assert.ok(f["answered_at"], `${String(f["path"])} answered_at`);
+  for (const [path, value] of Object.entries(answers)) if (options(path).length) assert.ok(options(path).includes(value), `${path}: ${value} is one of the card's option ids ${options(path).join("/")}`);
+  const resolves = posted(page, new RegExp(`/cards/${profile.card_instance_id}/resolve`)); assert.equal(resolves.length, 1); assert.equal(bodyOf(resolves[0]!)["option_id"], "submit");
+  const b = await borrowerOf(a.application_id, a.party_id); assert.equal(b.citizenship_status, "us_citizen"); assert.equal(b.marital_status, "married"); assert.equal(b.language_preference, "english");
+  // the five plain fields each went through 21.1 captureField (ULAD-validated; a plain field is an event, not an intake-record value): application.field.captured{field} ×5
+  const evs = await events(a.application_id);
+  for (const field of ["citizenship_status", "marital_status", "dependents", "military_service", "language_preference"]) assert.ok(seqOf(evs, "application.field.captured", (p) => p["field"] === field) !== null, `application.field.captured{${field}}`);
+  assert.equal(posted(page, /commands\/application\.inviteParty/).length, 0, "no inviteParty"); assert.equal(seqOf(evs, "application.party.invited"), null); assert.equal(cards.filter((c) => c.kind === "InviteCard").length, 0);
+  assert.ok(card(cards, "declarations.occupancy"), "the declarations sequence starts on the citizenship capture");
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-details"][data-done="true"]', { timeout: 30_000 });
+  await ctx.close();
+});
+test("32.19-T9: Declarations — Given \"Do any apply?\", when None, then `declarations.occupancy`, `declarations.clean_energy_lien` and `declarations.title{none}` are resolved one at a time and the borrower's `du_declarations` row carries the fourteen typed answers (32.3-T14 unchanged); when Something applies, then each `declarations.item` card renders one question at a time and every Yes with its follow-up persists.", { skip }, async () => {
+  // ── None: 5a.A, 5a.E and the list, one card at a time (no command until the last tap)
+  const a = await account("t9a"); const { page, ctx } = await openApply(a.token, 390);
+  await buyToYou(page); await you(page, { name: "Avery Stone", dob: "1987-09-09", ssn: "612-34-5678", basis: "Own", months: "50" }); await connectStep(page, "7800", "Stone Masonry"); await detailsStep(page);
+  const oneAtATime = async (partyId: string, key: string, what: string): Promise<CardRow> => {
+    await hostedCard(page, key);   // the page shows the next question once the flows sent it (the tap's resolve settles first)
+    const open = (await cardsOf(partyId)).filter((c) => c.status === "pending" && c.copy_key.startsWith("declarations."));
+    assert.equal(open.length, 1, `${what}: one declarations card pending (${open.map((c) => c.copy_key).join(",")})`); assert.equal(open[0]!.copy_key, key, what);
+    assert.equal(await page.locator('[data-testid="apply"] .sm-card-host[data-copy-key^="declarations."]').count(), 1, `${what}: one question rendered`);
+    return open[0]!;
+  };
+  const occ = await oneAtATime(a.party_id, "declarations.occupancy", "5a.A"); assert.equal(occ.kind, "ChoiceCard"); assert.equal(occ.command_ref, null, "5a.A runs no command");
+  assert.match(await page.locator('[data-testid="apply"] .sm-card-host').first().innerText(), /Will you live in this home as your main home\?/, "the card's own question from the copy library");
+  const occId = await tapCard(page, "declarations.occupancy", "Yes, and I haven't owned another home in the past three years"); assert.equal(occId, occ.card_instance_id);
+  const lienRow = await oneAtATime(a.party_id, "declarations.clean_energy_lien", "5a.E");
+  // the tap's body is the ChoiceCard's own: {evidence: {option_id, tapped_at}, option_id}
+  const occPost = posted(page, new RegExp(`/cards/${occId}/resolve`)); assert.equal(occPost.length, 1); const ob = bodyOf(occPost[0]!); assert.equal(ob["option_id"], "yes_no_prior"); assert.equal((ob["evidence"] as Json)["option_id"], "yes_no_prior"); assert.ok((ob["evidence"] as Json)["tapped_at"], "tapped_at");
+  const occAfter = card(await cardsOf(a.party_id), "declarations.occupancy")!; assert.equal(occAfter.status, "resolved"); assert.equal(occAfter.evidence?.["option_id"], "yes_no_prior");
+  assert.equal(await tapCard(page, "declarations.clean_energy_lien", "No"), lienRow.card_instance_id);
+  const list = await oneAtATime(a.party_id, "declarations.title", "the list"); assert.equal((list.props["list"] as string[]).length, 13); assert.equal(list.command_ref, "application.answerDeclarations");
+  const b = await borrowerOf(a.application_id, a.party_id); assert.equal((await db.query(`SELECT 1 FROM du_declarations WHERE application_borrower_id = $1`, [b.id])).length, 0, "nothing asserted before the last tap");
+  assert.equal(await tapCard(page, "declarations.title", "None of these apply to me"), list.card_instance_id);
+  await page.waitForSelector('[data-testid="apply"][data-step="demographics"]', { timeout: 60_000 }); await noError(page, "questions → demographics");
+  const evs = await events(a.application_id); assert.equal(evs.filter((e) => e.type === "application.declarations.answered").length, 1, "one application.declarations.answered");
+  const cards9 = await cardsOf(a.party_id); const listAfter = card(cards9, "declarations.title")!; assert.equal(listAfter.status, "resolved"); assert.equal(listAfter.evidence?.["option_id"], "none"); assert.ok(listAfter.evidence?.["list_version_hash"], "evidence.list_version_hash (32.3-T14)");
+  assert.equal(cards9.filter((c) => c.copy_key === "declarations.item").length, 0, "None asks no item");
+  // the borrower's du_declarations row: the fourteen typed answers — the thirteen listed items No, 5a.A as tapped — asserted by the borrower's own session (32.3-T14 unchanged)
+  const du = (await db.query<Record<string, unknown>>(`SELECT * FROM du_declarations WHERE application_borrower_id = $1`, [b.id]))[0]; assert.ok(du, "the du_declarations row");
+  for (const k of DU_DECLARATION_ANSWERS) assert.equal(du[k], k === "intent_to_occupy" ? "Yes" : "No", k);
+  assert.equal(du["homeowner_past_three_years"], "No"); assert.equal(du["undisclosed_borrowed_funds_cents"], null); assert.equal(du["bankruptcy_explanation"], null); assert.deepEqual(du["asserted_by_actor"], { kind: "human", id: a.party_id, role: "borrower" });
+  const decl = await intakeDeclarations(a.application_id); assert.ok(decl); assert.deepEqual(decl["declarations"], Array(13).fill(false)); assert.equal(decl["none_apply"], true); assert.equal(decl["asserted_in_du_graph"], true);
+  assert.equal(posted(page, /\/commands\//).length, 1, "the page posted no command for the declarations: the last card's tap carried the fourteen answers");
+  assert.equal(card(cards9, "demographics.title")?.status, "pending", "the demographics card follows");
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-questions"][data-done="true"]', { timeout: 30_000 });
+  await ctx.close();
+  // ── Something applies: each declarations.item card one at a time; every Yes with its follow-up persists (the bankruptcy's chapter and explanation, the borrowed funds' amount)
+  const s = await account("t9b"); const P = await openApply(s.token, 390);
+  await buyToYou(P.page); await you(P.page, { name: "Rowan Diaz", dob: "1984-05-21", ssn: "698-12-3456", basis: "Own", months: "90" }); await connectStep(P.page, "8100", "Diaz Logistics"); await detailsStep(P.page);
+  await tapCard(P.page, "declarations.occupancy", "No, I won't live here"); await tapCard(P.page, "declarations.clean_energy_lien", "Yes");
+  let prev = await tapCard(P.page, "declarations.title", "Something here applies");
+  const EXPLANATION = "Filed after a medical leave in 2021; discharged the next year.";
+  for (let n = 0; n < 13; n++) {
+    const { host, id } = await hostedCard(P.page, "declarations.item", prev);
+    const open = (await cardsOf(s.party_id)).filter((c) => c.status === "pending" && c.copy_key.startsWith("declarations."));
+    assert.equal(open.length, 1, `item ${n}: one card pending (${open.map((c) => c.copy_key).join(",")})`); assert.equal(open[0]!.card_instance_id, id); assert.equal(open[0]!.props["item_index"], n, `item ${n} in order`);
+    assert.equal(await P.page.locator('[data-testid="apply"] .sm-card-host[data-copy-key^="declarations."]').count(), 1, `item ${n}: one question rendered`);
+    assert.match(await host.innerText(), new RegExp(`Question ${n + 1} of 13`), "the copy library's helper with the card's tokens");
+    if (n === 6) {   // a bankruptcy in the past 7 years → the chapter, no other, the explanation (kept verbatim)
+      await host.getByRole("button", { name: /^Yes$/ }).first().click();
+      await tapCard(P.page, "declarations.bankruptcy.chapter", "Chapter 7"); await tapCard(P.page, "declarations.bankruptcy.another", "No, that was the only one");
+      const explain = await hostedCard(P.page, "declarations.bankruptcy.explain"); assert.equal(await explain.host.locator('article[data-card-kind="ExplanationCard"]').count(), 1, "the ExplanationCard through components/cards");
+      await explain.host.getByLabel("Your explanation (optional)", { exact: true }).first().fill(EXPLANATION); await explain.host.getByRole("button", { name: /^Send explanation$/ }).first().click();
+      prev = explain.id;
+    } else if (n === 7) {   // borrowing for the down payment → the amount
+      await host.getByRole("button", { name: /^Yes$/ }).first().click();
+      const amount = await hostedCard(P.page, "declarations.borrowed_funds.amount"); assert.equal(await amount.host.locator('article[data-card-kind="ConfirmCard"]').count(), 1, "the ConfirmCard through components/cards");
+      await amount.host.getByLabel("Amount you are borrowing", { exact: true }).first().fill("5000"); await amount.host.getByRole("button", { name: /^Confirm$/ }).first().click();
+      prev = amount.id;
+    } else { await host.getByRole("button", { name: /^No$/ }).first().click(); prev = id; }
+  }
+  await P.page.waitForSelector('[data-testid="apply"][data-step="demographics"]', { timeout: 60_000 }); await noError(P.page, "something applies → demographics");
+  const sb = await borrowerOf(s.application_id, s.party_id);
+  const du2 = (await db.query<Record<string, unknown>>(`SELECT *, undisclosed_borrowed_funds_cents::text AS borrowed FROM du_declarations WHERE application_borrower_id = $1`, [sb.id]))[0]; assert.ok(du2, "the du_declarations row");
+  for (const k of DU_DECLARATION_ANSWERS) assert.equal(du2[k], k === "bankruptcy" || k === "undisclosed_borrowed_funds" || k === "property_proposed_clean_energy_lien" ? "Yes" : "No", k);
+  assert.equal(du2["borrowed"], "500000", "the amount typed on the ConfirmCard"); assert.equal(du2["bankruptcy_explanation"], EXPLANATION, "the explanation kept as written"); assert.equal(du2["homeowner_past_three_years"], null, "not asked after No");
+  const filings = await db.query<{ chapter: string }>(`SELECT chapter FROM du_bankruptcy_filings WHERE declaration_id = $1`, [du2["id"] as string]); assert.deepEqual(filings.map((f) => f.chapter), ["ChapterSeven"]);
+  const decl2 = await intakeDeclarations(s.application_id); assert.ok(decl2); assert.deepEqual(decl2["declarations"], Array.from({ length: 13 }, (_, k) => k === 6 || k === 7)); assert.equal(decl2["none_apply"], false);
+  const chapterCard = card(await cardsOf(s.party_id), "declarations.bankruptcy.chapter")!; assert.equal(chapterCard.evidence?.["option_id"], "ChapterSeven");
+  const explainCard = card(await cardsOf(s.party_id), "declarations.bankruptcy.explain")!; assert.equal(explainCard.status, "resolved"); assert.equal(explainCard.evidence?.["option_id"] ?? (explainCard.evidence?.["skipped"] ? "skip" : "submit"), "submit");
+  assert.equal((await events(s.application_id)).filter((e) => e.type === "application.declarations.answered").length, 1, "one command, on the last tap");
+  assert.equal(posted(P.page, /\/commands\//).length, 1, "no command posted by the page for the sequence");
+  await P.ctx.close();
+});
+test("32.19-T10: Demographics — Given Demographics, when \"I do not wish to provide this information\", then `demographics.title` resolves with `[\"do_not_wish\"]` for ethnicity and race and `\"do_not_wish\"` for sex and `applicant_demographics.* = declined` with `collection_method = internet`; when answered, then only the card's own option ids are sent and the answers are never kept on the card.", { skip }, async () => {
+  // ── decline every group: ["do_not_wish"] for ethnicity and race, "do_not_wish" for sex → applicant_demographics.* = declined, collection_method internet
+  const a = await account("t10a"); const { page, ctx } = await openApply(a.token, 390);
+  await buyToYou(page); await you(page, { name: "Sam Okafor", dob: "1979-12-01", ssn: "701-23-4567", basis: "Own", months: "66" }); await connectStep(page, "7000", "Okafor Design"); await detailsStep(page); await declarationsNone(page);
+  const card0 = card(await cardsOf(a.party_id), "demographics.title"); assert.ok(card0, "demographics.title pending"); assert.equal(card0.status, "pending"); assert.equal(card0.kind, "DemographicsCard"); assert.equal(card0.props["available"], true); assert.equal(card0.props["collection_method"], "internet");
+  const ids = (list: unknown): string[] => (Array.isArray(list) ? (list as Json[]).flatMap((o) => [String(o["id"]), ...(Array.isArray(o["sub"]) ? (o["sub"] as Json[]).map((x) => String(x["id"])) : [])]) : []);
+  const optionIds = { ethnicity: ids(card0.props["ethnicity"]), race: ids(card0.props["race"]), sex: ids(card0.props["sex"]) };
+  const { host } = await hostedCard(page, "demographics.title"); assert.equal(await host.locator('article[data-card-kind="DemographicsCard"]').count(), 1, "the existing DemographicsCard inside the chrome");
+  assert.equal(await host.locator('fieldset:has(legend:text-is("Ethnicity")) input[type="checkbox"]').count(), optionIds.ethnicity.filter((id) => (card0.props["ethnicity"] as Json[]).some((o) => o["id"] === id)).length + 1, "the server's ethnicity list plus the decline (sub-options open on a tap)");
+  const postsBefore = (page.requests ?? []).filter((r) => r.startsWith("POST ")).length;
+  const cardId = await demographicsStep(page, { decline: true }); assert.equal(cardId, card0.card_instance_id);
+  const resolves = posted(page, new RegExp(`/cards/${cardId}/resolve`)); assert.equal(resolves.length, 1, "one resolve"); const body = bodyOf(resolves[0]!);
+  assert.equal(body["option_id"], "submit"); const ev = body["evidence"] as Json; assert.equal(ev["collection_method"], "internet"); assert.ok(ev["answered_at"]);
+  assert.deepEqual(ev["answers"], { ethnicity: ["do_not_wish"], race: ["do_not_wish"], sex: "do_not_wish" }, "the decline per group as the card's own option id");
+  assert.equal((page.requests ?? []).filter((r) => r.startsWith("POST ")).length, postsBefore + 1, "nothing else was posted");
+  // 21.1's applicant_demographics record (32.3-T16: the intake entity's borrower block — the table of migration 0057 is not written by askDemographics)
+  const demographicsOf = async (appId: string): Promise<Json> => { const rec = await intake(appId); assert.ok(rec, "the intake record"); const bs = (rec["borrowers"] as Json[] | undefined) ?? []; const d = bs.map((x) => x["demographics"] as Json | undefined).find((x) => x); assert.ok(d, `21.1's applicant_demographics record: ${JSON.stringify(bs.map((x) => Object.keys(x)))}`); return d; };
+  const d = await demographicsOf(a.application_id);
+  assert.equal(d["declined_ethnicity"], true); assert.equal(d["declined_race"], true); assert.equal(d["declined_sex"], true); assert.equal(d["ethnicity"], null); assert.equal(d["race"], null); assert.equal(d["sex"], null); assert.equal(d["collection_method"], "internet");
+  assert.equal((await db.query(`SELECT 1 FROM restricted_fl.applicant_demographics d JOIN application_borrowers ab ON ab.id = d.application_borrower_id WHERE ab.party_id = $1 AND (d.ethnicity IS NOT NULL OR d.race IS NOT NULL OR d.sex IS NOT NULL)`, [a.party_id])).length, 0, "no answer on the restricted table either");
+  const stored = card(await cardsOf(a.party_id), "demographics.title")!; assert.equal(stored.status, "resolved"); for (const k of ["answers", "ethnicity", "race", "sex"]) assert.equal(k in (stored.evidence ?? {}), false, `${k} never stays on the card`);
+  assert.equal(stored.evidence?.["collection_method"], "internet");
+  const collected = (await events(a.application_id)).find((e) => e.type === "application.demographics.collected"); assert.ok(collected); assert.equal(collected.payload["collection_method"], "internet"); assert.equal(collected.payload["declined_ethnicity"], true); for (const k of ["ethnicity", "race", "sex"]) assert.ok(!(k in collected.payload), `${k} never on the event`);
+  const thread = await api("GET", "/v1/borrower/thread?limit=500", undefined, a.token); assert.doesNotMatch(JSON.stringify(thread.body), /do_not_wish/, "the thread carries no answer");
+  const wireDemo = (thread.body["messages"] as Json[]).map((m) => m["card"] as Json | null).find((c) => c && c["copy_key"] === "demographics.title"); assert.ok(wireDemo); for (const k of ["answers", "ethnicity", "race", "sex"]) assert.equal(k in ((wireDemo["evidence"] as Json | null) ?? {}), false, `${k} never on the wire's card evidence`);
+  assert.equal(card(await cardsOf(a.party_id), "refi.value.confirm")?.status, "pending", "the number cards follow the demographics"); assert.equal(await attr(page, "data-step"), "review");
+  await ctx.close();
+  // ── answered: only the card's own option ids are sent; the answers are never kept on the card
+  const s = await account("t10b"); const P = await openApply(s.token, 1280);
+  await buyToYou(P.page); await you(P.page, { name: "Lee Park", dob: "1993-03-03", ssn: "702-34-5678", basis: "Rent", rent: "2100", months: "30" }); await connectStep(P.page, "9400", "Park Analytics"); await detailsStep(P.page); await declarationsNone(P.page);
+  const c1 = card(await cardsOf(s.party_id), "demographics.title")!; const opt = { ethnicity: ids(c1.props["ethnicity"]), race: ids(c1.props["race"]), sex: ids(c1.props["sex"]) };
+  const id1 = await demographicsStep(P.page, { ethnicity: "Not Hispanic or Latino", race: "White", sex: "Female" });
+  const body1 = bodyOf(posted(P.page, new RegExp(`/cards/${id1}/resolve`))[0]!); const answers = (body1["evidence"] as Json)["answers"] as { ethnicity: string[]; race: string[]; sex: string };
+  assert.deepEqual(answers, { ethnicity: ["not_hispanic_or_latino"], race: ["white"], sex: "female" });
+  for (const e of answers.ethnicity) assert.ok(opt.ethnicity.includes(e), `${e} is one of the card's ethnicity ids`); for (const r of answers.race) assert.ok(opt.race.includes(r), `${r} is one of the card's race ids`); assert.ok(opt.sex.includes(answers.sex), "the sex id is the card's");
+  const d1 = await demographicsOf(s.application_id);
+  assert.deepEqual(d1["ethnicity"], ["not_hispanic_or_latino"]); assert.deepEqual(d1["race"], ["white"]); assert.equal(d1["sex"], "female"); assert.equal(d1["declined_ethnicity"], false); assert.equal(d1["declined_race"], false); assert.equal(d1["declined_sex"], false); assert.equal(d1["collection_method"], "internet");
+  const stored1 = card(await cardsOf(s.party_id), "demographics.title")!; assert.equal(stored1.status, "resolved"); for (const k of ["answers", "ethnicity", "race", "sex"]) assert.equal(k in (stored1.evidence ?? {}), false, `${k} never on the card`);
+  // the wire: the card's option lists are the prompts (the ids are there by design); its evidence carries no answer key, and nothing else on the thread or the record does
+  const wire1 = (await api("GET", "/v1/borrower/thread?limit=500", undefined, s.token)).body; const wireCard = (wire1["messages"] as Json[]).map((m) => m["card"] as Json | null).find((c) => c && c["copy_key"] === "demographics.title"); assert.ok(wireCard);
+  for (const k of ["answers", "ethnicity", "race", "sex"]) assert.equal(k in ((wireCard["evidence"] as Json | null) ?? {}), false, `${k} never on the wire's card evidence`);
+  assert.doesNotMatch(JSON.stringify((wire1["messages"] as Json[]).filter((m) => (m["card"] as Json | null)?.["copy_key"] !== "demographics.title")), /not_hispanic_or_latino/, "no other line carries the answer (the declarations card's `answers` are URLA section 5's, its own)");
+  const rec1 = JSON.stringify((await api("GET", `/v1/borrower/record?subject=${s.application_id}`, undefined, s.token)).body); assert.doesNotMatch(rec1, /not_hispanic_or_latino|declined_ethnicity/, "the record never reads them back");
+  assert.doesNotMatch(await P.page.content(), /not_hispanic_or_latino/, "the page holds the answer only until the card is written");
+  await P.ctx.close();
+});
+test("32.19-T11: Review is a readiness view — Given Review, then it reads `record.status.badge` and the pending cards from `/v1/borrower/thread`, renders no control that names a submission, lists every pending card as a task, and its one CTA resolves the number cards (`refi.value.confirm`, `refi.loan_amount.confirm`, `refi.product.choice`, or `preapproval.target`); the screen's text contains none of \"DU\", \"Desktop Underwriter\", \"Fannie\", \"Approve\", \"Eligible\", \"Ineligible\", \"Refer\".", { skip }, async () => {
+  const a = await account("t11"); const { page, ctx } = await openApply(a.token, 390);
+  await buyToReview(page, { name: "Jamie Lowe", dob: "1986-06-06", ssn: "703-45-6789", employer: "Lowe Dental" });
+  // Review reads record.status.badge and the pending cards from /v1/borrower/thread
+  const rec = await api("GET", `/v1/borrower/record?subject=${a.application_id}`, undefined, a.token); assert.equal(rec.status, 200);
+  const badge = await waitForText(page, "apply-badge", /\S/, 30_000); assert.equal(badge, String((rec.body["status"] as Json)["badge"]), "the badge is the record's"); assert.equal(badge, "Application received");
+  const thread = await api("GET", "/v1/borrower/thread?limit=500", undefined, a.token); assert.equal(thread.status, 200);
+  const wireCards = (thread.body["messages"] as Json[]).map((m) => m["card"] as Json | undefined).filter((c): c is Json => !!c);
+  const INFORMATIONAL = new Set(["StatusCard", "PersonCard", "ChecklistCard", "HandoffCard", "NoticeCard"]);
+  const pendingAsks = wireCards.filter((c) => c["status"] === "pending" && !INFORMATIONAL.has(String(c["kind"])));
+  assert.ok(pendingAsks.length >= 3, `the number cards are pending on the thread: ${pendingAsks.map((c) => c["copy_key"]).join(",")}`);
+  assert.deepEqual(pendingAsks.map((c) => c["copy_key"]).sort(), ["refi.loan_amount.confirm", "refi.product.choice", "refi.value.confirm"]);
+  for (const c of pendingAsks) { const li = page.locator(`.sm-needed li[data-testid="apply-card-${String(c["card_instance_id"])}"]`); assert.equal(await li.count(), 1, `${String(c["copy_key"])} listed under Still needed as a task`); assert.equal(await li.getAttribute("data-step"), "review", "its task is Review's own tap"); }
+  assert.equal(await page.locator(".sm-needed li").count(), pendingAsks.length, "every pending card, and nothing else");
+  assert.match(await page.locator('[data-testid="apply"]').first().innerText(), /Still needed/, "apply.review.needed");
+  // no control names a submission; none of the seven words on the screen; the rows and the fine print
+  const controls = await page.locator('[data-testid="apply"] button, [data-testid="apply"] a').allInnerTexts();
+  for (const t of controls) assert.doesNotMatch(t, /submit|send to|underwrit/i, `no control names a submission: ${t}`);
+  const text = await page.locator('[data-testid="apply"]').first().innerText();
+  assert.doesNotMatch(text, DU_WORDS, "none of DU / Desktop Underwriter / Fannie / Approve / Eligible / Ineligible / Refer");
+  assert.match(text, /Almost there\./); assert.match(text, /Purpose\s+Buy a home/); assert.match(text, /Home\s+24 Juniper Lane, Austin, TX 78701/); assert.match(text, /Name\s+Jamie Lowe/); assert.match(text, /Income\s+\$8,500/);
+  assert.match(text, /You agreed to e-sign, texts and the credit check when you left the home screen\./, "the fine print: the three consents were written at the goal tap");
+  assert.equal((await page.getByTestId("apply-review-value").first().innerText()).trim(), "$650,000"); assert.equal((await page.getByTestId("apply-review-amount").first().innerText()).trim(), "$520,000"); assert.equal((await page.getByTestId("apply-review-product").first().innerText()).trim(), "30-year fixed");
+  assert.equal(await page.getByTestId("apply-review-tbd").count(), 0, "an addressed purchase is not TBD");
+  // its one CTA resolves the number cards; the page posts no command
+  const commandsBefore = posted(page, /\/commands\//).length; assert.equal(commandsBefore, 1, "Property's confirmField is the page's only command so far");
+  await confirmNumbers(page);
+  const cards = await cardsOf(a.party_id); const value = card(cards, "refi.value.confirm")!; const amount = card(cards, "refi.loan_amount.confirm")!; const product = card(cards, "refi.product.choice")!;
+  assert.equal(value.status, "resolved"); assert.equal(fieldOf(value, "property_value_estimate")?.["value_confirmed"], "65000000", "the value ← the price"); assert.equal(value.evidence?.["edited"], true);
+  assert.equal(amount.status, "resolved"); assert.equal(fieldOf(amount, "loan_amount_sought")?.["value_confirmed"], "52000000", "the loan amount ← price − down");
+  assert.equal(product.status, "resolved"); assert.equal(product.evidence?.["option_id"], "FRM30");
+  const evs = await events(a.application_id); assert.ok(seqOf(evs, "application.six_item.captured", (p) => p["item"] === "property_value_estimate") !== null); assert.ok(seqOf(evs, "application.six_item.captured", (p) => p["item"] === "loan_amount_sought") !== null); assert.ok(seqOf(evs, "application.trid_received") !== null, "the six items complete on the tap");
+  assert.equal(posted(page, /\/commands\//).length, commandsBefore, "no command from Review: the CTA is the cards' tap");
+  for (const c of pendingAsks) assert.equal(posted(page, new RegExp(`/cards/${String(c["card_instance_id"])}/resolve`)).length, 1, `${String(c["copy_key"])} resolved once`);
+  assert.equal(await attr(page, "data-step"), "result");
+  assert.doesNotMatch(await page.locator('[data-testid="apply"]').first().innerText(), DU_WORDS, "none of the seven words on Result either");
+  await ctx.close();
+});
+test("32.19-T12: The DU moment from the screens — Given Buy with an address or a refinance driven end to end through the Apply screens at 390 px with the FAKE vendors finishing on the tap, when the number cards are confirmed, then `application.trid_received`, `credit.report.received`, `du.document.emitted{required_missing = 0}`, `du.preflight.passed`, `du.submitted` and `du.findings.received` follow without any command posted by the page, the badge reads Verifying, Result renders the copy library's `du.running` line and the ChecklistCard when it comes, and a re-sent gap card (32.18 rule 7) renders as a task in the copy library's words.", { skip }, async () => {
+  const DU_ORDER = ["application.trid_received", "credit.report.received", "du.document.emitted", "du.preflight.passed", "du.submitted", "du.findings.received"];
+  /** From the number cards' tap to the DU moment: the events in order with no command posted by the page, the badge Verifying, Result's du.running line and the ChecklistCard, the verdict on the ops record. */
+  const duMoment = async (page: Page, a: { token: string; party_id: string; application_id: string }, what: string, commandsExpected: number): Promise<void> => {
+    const commandsBefore = posted(page, /\/commands\//).length; assert.equal(commandsBefore, commandsExpected, `${what}: the page's commands before the tap`);
+    await confirmNumbers(page);
+    const rec = await waitForDuMoment(() => ops(a.application_id), { timeoutMs: 180_000, pollMs: 1_000 });
+    const verdict = duVerdict(rec); assert.ok(verdict.ok, `${what}: ${verdict.detail}`);
+    const evs = await events(a.application_id); const seqs = DU_ORDER.map((t) => seqOf(evs, t)); assert.ok(seqs.every((x) => x !== null), `${what}: ${DU_ORDER.map((t, i) => `${t}=${seqs[i]}`).join(" ")}`);
+    for (let i = 1; i < seqs.length; i++) assert.ok(seqs[i]! > seqs[i - 1]!, `${what}: ${DU_ORDER[i]} follows ${DU_ORDER[i - 1]}`);
+    assert.equal(Number(evs.find((e) => e.type === "du.document.emitted")!.payload["required_missing"]), 0, `${what}: required_missing = 0`);
+    assert.equal(posted(page, /\/commands\//).length, commandsBefore, `${what}: no command posted by the page (${JSON.stringify(posted(page, /\/commands\//))})`);
+    assert.equal(posted(page, /underwriting|du\./).length, 0, `${what}: nothing posted names the run`);
+    // the badge reads Verifying; Result renders the copy library's du.running line and the ChecklistCard when it comes (the screen re-reads the file; nothing is posted)
+    assert.equal(await attr(page, "data-step"), "result");
+    assert.equal(await waitForText(page, "apply-badge", /^Verifying$/), "Verifying", `${what}: the badge`);
+    const record = await api("GET", `/v1/borrower/record?subject=${a.application_id}`, undefined, a.token); assert.equal((record.body["status"] as Json)["badge"], "Verifying");
+    const running = await hostedCard(page, "du.running"); assert.equal(await running.host.locator('article[data-card-kind="StatusCard"]').count(), 1, `${what}: the du.running StatusCard through components/cards`);
+    assert.match(await running.host.innerText(), /We're running your application through underwriting\. It often takes a few minutes\. Nothing needed from you\./, `${what}: the copy library's du.running line`);
+    await page.waitForSelector('[data-testid="apply"] .sm-card-host article[data-card-kind="ChecklistCard"]', { timeout: 60_000 });
+    const checklists = (await cardsOf(a.party_id)).filter((c) => c.kind === "ChecklistCard" && c.status === "pending"); assert.ok(checklists.length >= 1, `${what}: the ChecklistCard on the record`);
+    for (const c of checklists) assert.equal(await page.locator(`[data-testid="apply-card-${c.card_instance_id}"] article[data-card-kind="ChecklistCard"]`).count(), 1, `${what}: ChecklistCard ${c.card_instance_id} (${String(c.props["flow_key"])}) rendered through components/cards`);
+    assert.doesNotMatch(await page.locator('[data-testid="apply"]').first().innerText(), DU_WORDS, `${what}: no DU word on Result`);
+    assert.equal(posted(page, /\/commands\//).length, commandsBefore, `${what}: still no command`);
+  };
+  // ── Buy with an address, end to end at 390 with the FAKE vendors finishing on the tap
+  const a = await account("t12-buy"); const { page, ctx } = await openApply(a.token, 390);
+  await buyToReview(page, { name: "Harper Quinn", dob: "1982-08-08", ssn: "704-56-7890", employer: "Quinn Bakery" });
+  await duMoment(page, a, "buy", 1);
+  // a re-sent gap card (32.18 rule 7) renders as a task in the copy library's words: a preflight refusal at a section 5 point re-sends the declarations sequence under the emission's key
+  const emission = await refuseAtDeclaration(a.application_id);
+  const abId12 = (await borrowerOf(a.application_id, a.party_id)).id;
+  const gap = (await cardsOf(a.party_id)).find((c) => c.copy_key === "declarations.occupancy" && c.props["flow_key"] === `declarations.occupancy:${abId12}:gap:${emission}`); assert.ok(gap, "the declarations card re-sent under the emission's flow_key"); assert.equal(gap.status, "pending");
+  const li = page.locator(`.sm-needed li[data-testid="apply-card-${gap.card_instance_id}"]`); await li.waitFor({ timeout: 30_000 });
+  assert.equal(await li.getAttribute("data-gap"), "true"); assert.match(await li.innerText(), /^One more thing before your application is done — it is on the card here\./, "the copy library's application.gap.resend words"); assert.equal(await li.getAttribute("data-step"), "tasks", "its task is Tasks (the card is hosted there)");
+  await page.getByTestId("apply-tab-tasks").first().click();
+  const hosted = page.locator(`[data-testid="apply-tasks-hosted"] [data-testid="apply-card-${gap.card_instance_id}"]`); await hosted.waitFor({ timeout: 30_000 });
+  assert.equal(await hosted.getAttribute("data-gap"), "true"); assert.equal(await hosted.locator('article[data-card-kind="ChoiceCard"]').count(), 1, "the re-sent card through components/cards"); assert.match(await hosted.innerText(), /One more thing before your application is done/);
+  assert.doesNotMatch(await page.locator('[data-testid="apply"]').first().innerText(), DU_WORDS, "no DU word on Tasks");
+  await ctx.close();
+  // ── A refinance (Lower payment), end to end at 390
+  const r = await account("t12-refi"); const R = await openApply(r.token, 390);
+  await refiToReview(R.page, "77 Saguaro Road, Phoenix, AZ 85004", { name: "Drew Castillo", dob: "1980-10-10", ssn: "705-67-8901", employer: "Castillo Roofing" });
+  await duMoment(R.page, r, "refinance", 0);
+  const refiCards = await cardsOf(r.party_id); assert.equal(fieldOf(card(refiCards, "refi.value.confirm"), "property_value_estimate")?.["value_confirmed"], "50000000"); assert.equal(fieldOf(card(refiCards, "refi.loan_amount.confirm"), "loan_amount_sought")?.["value_confirmed"], "30000000"); assert.equal(card(refiCards, "refi.product.choice")?.evidence?.["option_id"], "FRM30");
+  assert.equal(card(refiCards, "credit.liabilities.confirm")?.status, "pending", "the report's cards followed credit.report.received"); assert.equal(card(refiCards, "refi.current_loan.confirm")?.status, "pending");
+  refiAccount = { token: r.token, party_id: r.party_id, application_id: r.application_id };
+  await R.ctx.close();
+});
 test("32.19-T13: Errors stay on the step — Given a required field empty, then the step stays with `.sm-error` and nothing is posted; given a `409 CARD_FIELD_REQUIRED` or a refusal `{code, copy_key}` from the API, then the step stays and `.sm-error` renders `copy(copy_key)`, never the code.", { todo: true });
-test("32.19-T14: Tasks — Given the seven tasks, then each row's done state is derived from the card statuses (never remembered), a tap jumps to the step, a pending card with no step of its own (a gap card, `credit.liabilities.confirm`, `refi.current_loan.confirm`, a 33.3 refi_trigger card) renders in Tasks through the card component and resolves there, and the nothing-needed state renders when nothing is pending (32.13-T15).", { todo: true });
-test("32.19-T15: My Loan, Chat, Account — Given a fresh account, then My Loan renders `apply.loan.empty`; given a partner-book party (33.1), then My Loan renders the badge Monitored, the partner as servicer, the loan's last four and the numbers, and Apply shows no organic step; Chat posts `POST /v1/borrower/messages` only and never resolves a card or posts a command; Account shows the first name and the partner and Sign out posts `auth/sign-out` and the next load is the door; a second fresh context sees nothing of the first person.", { todo: true });
+test("32.19-T14: Tasks — Given the seven tasks, then each row's done state is derived from the card statuses (never remembered), a tap jumps to the step, a pending card with no step of its own (a gap card, `credit.liabilities.confirm`, `refi.current_loan.confirm`, a 33.3 refi_trigger card) renders in Tasks through the card component and resolves there, and the nothing-needed state renders when nothing is pending (32.13-T15).", { skip }, async () => {
+  assert.ok(refiAccount, "T12 drove the refinance to the DU moment"); const a = refiAccount;
+  const { page, ctx } = await openApply(a.token, 390);   // a fresh context: nothing remembered, every row derived from the API's cards
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-tasks"]', { timeout: 30_000 });
+  const cards = await cardsOf(a.party_id);
+  const expected: Record<typeof TASKS[number], boolean> = { property: card(cards, "refi.home.confirm")?.status === "resolved", you: card(cards, "identity.ssn.title")?.status === "resolved", connect: card(cards, "income.confirm.title")?.status === "resolved" && card(cards, "assets.connect.purpose")?.status !== "pending", details: card(cards, "profile.title")?.status === "resolved", questions: cards.some((c) => c.copy_key.startsWith("declarations.") && c.status === "resolved") && !cards.some((c) => c.copy_key.startsWith("declarations.") && c.status === "pending"), demographics: card(cards, "demographics.title")?.status === "resolved", review: card(cards, "refi.product.choice")?.status === "resolved" };
+  for (const t of TASKS) { assert.equal(expected[t], true, `${t} is done by the card statuses`); assert.equal(await page.getByTestId(`apply-task-${t}`).first().getAttribute("data-done"), "true", `${t}: data-done derived on a fresh page`); }
+  assert.match(await page.getByTestId("apply-tasks").first().innerText(), /7 of 7 complete/);
+  const jp = ((await api("GET", `/v1/borrower/record?subject=${a.application_id}`, undefined, a.token)).body["journey_progress"] as Json); assert.equal((await page.getByTestId("progress-count").first().innerText()).trim(), `${jp["done"]} of ${jp["total"]}`, "the second line is journey_progress, the API's own count");
+  // a tap jumps to the step
+  await page.getByTestId("apply-task-property").first().click(); await page.waitForSelector('[data-testid="apply"][data-tab="apply"][data-step="property"]', { timeout: 30_000 });
+  assert.equal(await page.getByLabel("Property address", { exact: true }).count(), 1);
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-tasks"]', { timeout: 30_000 });
+  // pending cards with no step of their own: credit.liabilities.confirm and refi.current_loan.confirm (after credit.report.received) render through the card component and resolve there
+  const liab = card(cards, "credit.liabilities.confirm"); const cur = card(cards, "refi.current_loan.confirm"); assert.ok(liab && cur, "the report's two cards"); assert.equal(liab.status, "pending"); assert.equal(cur.status, "pending");
+  for (const c of [liab, cur]) {
+    const host = page.locator(`[data-testid="apply-tasks-hosted"] [data-testid="apply-card-${c.card_instance_id}"]`); await host.waitFor({ timeout: 30_000 });
+    assert.equal(await host.locator('article[data-card-kind="ConfirmCard"]').count(), 1, `${c.copy_key} through components/cards`);
+    assert.equal(await page.locator(`.sm-card[data-copy-key="${c.copy_key}"] [data-testid="apply-task-${c.copy_key}"]`).count(), 0);
+    await host.getByRole("button", { name: /^Confirm$/ }).first().click();
+    await page.waitForSelector(`[data-testid="apply-card-${c.card_instance_id}"]`, { state: "detached", timeout: 30_000 }); await noError(page, c.copy_key);
+    const after = card(await cardsOf(a.party_id), c.copy_key)!; assert.equal(after.status, "resolved", `${c.copy_key} resolved from Tasks`); assert.equal(after.command_ref, "application.confirmField"); assert.ok(after.evidence?.["command_output"] !== undefined, "its command ran");
+    assert.equal(posted(page, new RegExp(`/cards/${c.card_instance_id}/resolve`)).length, 1);
+  }
+  assert.equal(await page.getByTestId("apply-task-review").first().getAttribute("data-done"), "true", "the rows stay derived");
+  // a gap card (32.18 rule 7): the declarations sequence re-sent under the emission's key is hosted here with the copy library's line, and resolves here (its last tap re-runs the assembly)
+  const answeredBefore = (await events(a.application_id)).filter((e) => e.type === "application.declarations.answered").length;
+  const emission = await refuseAtDeclaration(a.application_id); const abId = (await borrowerOf(a.application_id, a.party_id)).id;
+  const gap = (await cardsOf(a.party_id)).find((c) => c.props["flow_key"] === `declarations.occupancy:${abId}:gap:${emission}`); assert.ok(gap, "the re-sent card");
+  const gapHost = page.locator(`[data-testid="apply-tasks-hosted"] [data-testid="apply-card-${gap.card_instance_id}"]`); await gapHost.waitFor({ timeout: 30_000 });
+  assert.equal(await gapHost.getAttribute("data-gap"), "true"); assert.match(await gapHost.innerText(), /One more thing before your application is done — it is on the card here\./);
+  assert.equal(await page.getByTestId("apply-task-questions").first().getAttribute("data-done"), "true", "the interview's own sequence stays done; the gap is its own task");
+  await tapCard(page, "declarations.occupancy", "Yes, and I haven't owned another home in the past three years"); await tapCard(page, "declarations.clean_energy_lien", "No"); await tapCard(page, "declarations.title", "None of these apply to me");
+  await page.waitForSelector(`[data-testid="apply-card-${gap.card_instance_id}"]`, { state: "detached", timeout: 30_000 });
+  await page.waitForSelector(`[data-testid="apply-tasks-hosted"] .sm-card-host[data-gap="true"]`, { state: "detached", timeout: 30_000 }); await noError(page, "the gap sequence");
+  const gapCards = (await cardsOf(a.party_id)).filter((c) => String(c.props["flow_key"] ?? "").includes(`:gap:${emission}`)); assert.equal(gapCards.length, 3, "5a.A, 5a.E, the list"); assert.ok(gapCards.every((c) => c.status === "resolved"), "the gap sequence resolved from Tasks");
+  assert.equal((await events(a.application_id)).filter((e) => e.type === "application.declarations.answered").length, answeredBefore + 1, "the gap card's last tap ran the command");
+  // a 33.x card with no step of its own (an OfferCard, the kind 33.2 sends a partner-book homeowner) renders here through the OfferCard component and resolves here
+  const offerId = await sendCard(a.application_id, a.party_id, "OfferCard", "offer.card", { refi_opportunity_id: randomUUID(), current_rate: "7.000", offered_rate: "6.125", apr: "6.201", new_pi_payment_cents: "340262", monthly_savings_cents: "37630", costs_to_borrower_cents: "0", lender_legal_name: "Partner Bank", mlo_name: "Jordan Rivera", mlo_nmlsr_id: "987654", expires_at: "2027-03-01T00:00:00-07:00", not_a_commitment_text: "This is not a commitment to lend;", rates_change_daily_text: "rates change daily." }, null);
+  const offer = page.locator(`[data-testid="apply-tasks-hosted"] [data-testid="apply-card-${offerId}"]`); await offer.waitFor({ timeout: 30_000 });
+  assert.equal(await offer.locator('article[data-card-kind="OfferCard"]').count(), 1, "the OfferCard through components/cards");
+  await offer.getByRole("button", { name: /^Not now$/ }).first().click(); await page.waitForSelector(`[data-testid="apply-card-${offerId}"]`, { state: "detached", timeout: 30_000 }); await noError(page, "offer");
+  const offerRow = (await cardsOf(a.party_id)).find((c) => c.card_instance_id === offerId)!; assert.equal(offerRow.status, "resolved"); assert.equal(offerRow.evidence?.["option_id"], "not_now");
+  assert.equal(await page.locator('[data-testid="apply-tasks-hosted"]').count(), 0, "nothing hosted once every ask is resolved");
+  await ctx.close();
+  // the nothing-needed state (32.13-T15): a file with every task done and zero owner=you items — T4's still-looking purchase — renders needs.none on Tasks
+  assert.ok(tbdAccount, "T4 drove the still-looking purchase to the preapproval request"); const t = tbdAccount;
+  const rec = await api("GET", `/v1/borrower/record?subject=${t.application_id}`, undefined, t.token); assert.deepEqual(rec.body["needed_from_you"], [], "zero owner=you items"); assert.equal((rec.body["needed_summary"] as Json)["nothing_needed"], true);
+  const N = await openApply(t.token, 390); await N.page.getByTestId("apply-tab-tasks").first().click();
+  const none = N.page.getByTestId("tasks-empty").first(); await none.waitFor({ timeout: 30_000 });
+  assert.equal((await none.innerText()).trim(), "Nothing needed from you. We'll message you when something is.", "needs.none from the copy library");
+  assert.equal(await N.page.getByTestId("apply-needed-count").count(), 0, "no needed count when nothing is needed"); assert.equal(await N.page.locator('[data-testid="apply-tasks-hosted"]').count(), 0);
+  for (const k of TASKS) assert.equal(await N.page.getByTestId(`apply-task-${k}`).first().getAttribute("data-done"), "true", `${k} done on the still-looking file`);
+  await N.ctx.close();
+});
+test("32.19-T15: My Loan, Chat, Account — Given a fresh account, then My Loan renders `apply.loan.empty`; given a partner-book party (33.1), then My Loan renders the badge Monitored, the partner as servicer, the loan's last four and the numbers, and Apply shows no organic step; Chat posts `POST /v1/borrower/messages` only and never resolves a card or posts a command; Account shows the first name and the partner and Sign out posts `auth/sign-out` and the next load is the door; a second fresh context sees nothing of the first person.", { skip }, async () => {
+  // ── a fresh account: My Loan renders apply.loan.empty — no dollar sign, no digit; Chat posts POST /v1/borrower/messages only; Account shows the first name and the partner
+  const a = await account("t15"); const { page, ctx } = await openApply(a.token, 390);
+  await page.getByTestId("apply-tab-loan").first().click(); const empty = page.getByTestId("apply-loan-empty").first(); await empty.waitFor({ timeout: 30_000 });
+  const emptyText = (await empty.innerText()).trim(); assert.match(emptyText, /After this application funds, your loan will live here\./, "apply.loan.empty"); assert.doesNotMatch(emptyText, /[$\d]/, "no dollar sign, no digit");
+  assert.equal(await page.getByTestId("apply-badge").count(), 0, "no badge without a loan");
+  const me = await api("GET", "/v1/borrower/me", undefined, a.token); assert.equal(me.status, 200); const partnerName = (me.body["partner"] as Json)["legal_name"] as string; const firstName = String((me.body["party"] as Json)["first_name"] ?? "");
+  // Chat: POST /v1/borrower/messages only — never a card resolve, never a command
+  await page.getByTestId("apply-tab-chat").first().click(); await page.waitForSelector('[data-testid="apply-chat"]', { timeout: 30_000 });
+  const postsBefore = (page.requests ?? []).filter((r) => r.startsWith("POST ")).length; const cardsBefore = await cardsOf(a.party_id);
+  await page.locator(".sm-composer input").first().fill("When is my credit pulled?"); await page.locator(".sm-composer input").first().press("Enter");
+  await page.waitForSelector('[data-testid="apply-chat"] .sm-msg.me', { timeout: 30_000 });
+  assert.match(await page.locator('[data-testid="apply-chat"] .sm-msg.me').first().innerText(), /When is my credit pulled\?/);
+  const chatPosts = (page.requests ?? []).filter((r) => r.startsWith("POST ")).slice(postsBefore); assert.equal(chatPosts.length, 1, `one POST from Chat: ${JSON.stringify(chatPosts)}`); assert.ok(chatPosts[0]!.startsWith("POST /v1/borrower/messages "), chatPosts[0]); assert.equal(bodyOf(chatPosts[0]!)["text"], "When is my credit pulled?");
+  assert.equal(posted(page, /\/cards\/.*\/resolve/).length, 0, "no card resolved from Chat"); assert.equal(posted(page, /\/commands\//).length, 0, "no command from Chat");
+  const stored = await db.query<{ body_text: string | null; sender: string }>(`SELECT m.body_text, m.sender FROM messages m JOIN conversations c ON c.conversation_id = m.conversation_id WHERE c.party_id = $1 AND m.sender = 'borrower' ORDER BY m.at DESC LIMIT 1`, [a.party_id]); assert.equal(stored[0]?.body_text, "When is my credit pulled?", "the borrower's line on the thread");
+  const cardsAfter = await cardsOf(a.party_id); assert.deepEqual(cardsAfter.map((c) => [c.card_instance_id, c.status]), cardsBefore.map((c) => [c.card_instance_id, c.status]), "no card changed on a chat line");
+  // Account: the first name and the partner
+  await page.getByTestId("apply-tab-account").first().click(); await page.getByTestId("apply-account-who").first().waitFor({ timeout: 30_000 });
+  assert.equal((await page.getByTestId("apply-account-name").first().innerText()).trim(), firstName || "Signed in", "the first name (me.party.first_name), or apply.account.signed_in");
+  assert.equal((await page.getByTestId("apply-account-partner").first().innerText()).trim(), partnerName, "the partner (me.partner.legal_name)");
+  // Sign out posts auth/sign-out and the next load is the door
+  await page.getByTestId("apply-sign-out").first().click(); await page.waitForSelector('[data-testid="apply"][data-door="welcome"]', { timeout: 30_000 });
+  assert.equal(posted(page, /\/v1\/borrower\/auth\/sign-out/).length, 1, "POST auth/sign-out");
+  assert.ok((await sessionsOf(a.party_id)).every((s) => s.revoked_at !== null), "the session is revoked");
+  await page.reload({ waitUntil: "load" }); await page.waitForSelector('[data-testid="apply"][data-door="welcome"]', { timeout: 30_000 });
+  assert.equal(await page.getByTestId("apply-tab-apply").count(), 0, "no tabs signed out");
+  // a second fresh context sees nothing of the first person
+  const other = await openApply(null, 390); assert.equal(await attr(other.page, "data-door"), "welcome");
+  const body = await other.page.locator("body").first().innerText(); assert.ok(!body.includes(a.email), "not the first e-mail"); if (firstName) assert.ok(!body.includes(firstName), "not the first name"); assert.ok(!body.includes("When is my credit pulled?"), "not the first person's line");
+  assert.equal((await other.ctx.cookies()).filter((c) => c.name === "sm_borrower_session").length, 0);
+  await closeAll({ ctx }, other);
+  // ── a partner-book party (33.1): the demo book imported under this test's partner, the homeowner signed in by code — My Loan renders the badge Monitored, the partner as servicer, the loan's last four and the numbers; Apply shows no organic step
+  const partner = (await db.query<{ legal_name: string }>(`SELECT legal_name FROM parties WHERE id = $1`, [partnerPartyId]))[0]!.legal_name;
+  const book = demoBook(); const b64 = (bytes: Uint8Array | string): string => Buffer.from(bytes).toString("base64");
+  const imp = await api("POST", "/v1/partner-book/imports", { partner: { legal_name: partner, nmlsr_id: "1234567", servicer_number: "123456789", mers_org_id: "1000123" }, as_of_date: DEMO_AS_OF, profile: "m3-v1", tape: { filename: "partner-book-demo.xlsx", content_base64: b64(book.tape) }, supplement: { filename: "partner-book-demo-supplement.csv", content_base64: b64(book.supplement) } }, TOKEN, { "x-actor-id": "u-ops-analyst" });
+  assert.equal(imp.status, 200, JSON.stringify(imp.body).slice(0, 600)); await settle();
+  const loan1 = book.loans.find((l) => l.n === 1)!; assert.ok(loan1.email);
+  const loanRow = (await db.query<{ id: string; servicer_loan_number: string; status: string }>(`SELECT id, servicer_loan_number, status FROM loans WHERE partner_party_id = $1 AND servicer_loan_number = $2`, [partnerPartyId, loan1.servicer_loan_number]))[0]; assert.ok(loanRow, "loan 1 on the book"); assert.equal(loanRow.status, "monitored");
+  ipN += 1; const ip = `10.19.9.${(ipN % 200) + 1}`;
+  const req = await api("POST", "/v1/borrower/auth/otp", { action: "request", channel: "email", destination: loan1.email }, undefined, { "x-forwarded-for": ip }); assert.equal(req.status, 200, JSON.stringify(req.body)); assert.equal(req.body["delivery"], "FAKE");
+  const ver = await api("POST", "/v1/borrower/auth/otp", { action: "verify", challenge_id: req.body["challenge_id"], code: req.body["fake_code"] }, undefined, { "x-forwarded-for": ip }); assert.equal(ver.status, 200, JSON.stringify(ver.body)); await settle();
+  const hoToken = ver.body["token"] as string; const hoParty = (ver.body["party"] as Json)["party_id"] as string;
+  const hoMe = await api("GET", "/v1/borrower/me", undefined, hoToken); const subjects = hoMe.body["subjects"] as Json[]; const loanSubject = subjects.find((s) => s["loan_id"]); assert.ok(loanSubject, `a loan subject: ${JSON.stringify(subjects)}`); assert.equal(loanSubject["loan_id"], loanRow.id); assert.ok(!subjects.some((s) => s["application_id"]), "no organic application for a partner-book party");
+  const hoRecord = await api("GET", `/v1/borrower/record?subject=${loanRow.id}`, undefined, hoToken); assert.equal(hoRecord.status, 200, JSON.stringify(hoRecord.body).slice(0, 300));
+  const pb = hoRecord.body["partner_book"] as Json; assert.equal(pb["monitored"], true); assert.equal(pb["partner_name"], partner); assert.equal(pb["loan_last4"], loan1.servicer_loan_number.slice(-4)); const numbers = hoRecord.body["numbers"] as Json; assert.ok(numbers["upb_cents"], "the facts' UPB");
+  const H2 = await openApply(hoToken, 390); const hp = H2.page;
+  assert.equal(await attr(hp, "data-tab"), "loan", "a loan-only party lands on My Loan"); assert.equal(await attr(hp, "data-step"), null);
+  assert.equal(await waitForText(hp, "apply-badge", /^Monitored$/, 30_000), "Monitored", "the badge");
+  assert.match(await hp.getByTestId("apply-loan-servicer").first().innerText(), new RegExp(`Serviced by\\s+${escapeRe(partner)}`), "the partner as servicer");
+  assert.equal((await hp.getByTestId("apply-loan-last4").first().innerText()).trim(), `Loan ending in ${loan1.servicer_loan_number.slice(-4)}`, "the loan's last four");
+  const recordText = await hp.getByTestId("apply-loan-record").first().innerText();
+  assert.match(recordText, new RegExp(escapeRe(usd(BigInt(String(numbers["upb_cents"]))))), "the numbers: the facts' UPB through components/record"); assert.match(recordText, new RegExp(escapeRe(partner)), "the servicer of record under People");
+  assert.match(recordText, /Your loan is on the record here\./, "the badge one-liner (partner_book.monitored)");
+  assert.doesNotMatch(recordText, new RegExp(loan1.servicer_loan_number), "never the whole loan number");
+  assert.equal(await hp.locator('[data-testid="apply-loan-record"] [data-record-section="status"]').count(), 1); assert.equal(await hp.locator('[data-testid="apply-loan-record"] [data-record-section="numbers"]').count(), 1); assert.equal(await hp.locator('[data-testid="apply-loan-record"] [data-record-section="people"]').count(), 1);
+  // Apply shows no organic step and no goal card
+  await hp.getByTestId("apply-tab-apply").first().click(); await hp.waitForSelector('[data-testid="apply"][data-tab="apply"]', { timeout: 30_000 });
+  assert.equal(await attr(hp, "data-step"), null, "no step for a loan-only party"); assert.equal(await hp.locator('.sm-card-host[data-copy-key="entry.goal.question"]').count(), 0); assert.equal(await hp.getByTestId("apply-continue").count(), 0);
+  assert.equal((await cardsOf(hoParty)).filter((c) => c.copy_key === "entry.goal.question").length, 0, "no goal card sent to a partner-book party");
+  await hp.getByTestId("apply-tab-account").first().click(); assert.equal((await hp.getByTestId("apply-account-partner").first().innerText()).trim(), partner);
+  const hoFirst = String((hoMe.body["party"] as Json)["first_name"] ?? ""); assert.equal(hoFirst, loan1.first_name, "the book's borrower has a first name (33.1)"); assert.equal((await hp.getByTestId("apply-account-name").first().innerText()).trim(), hoFirst, "Account shows the first name (me.party.first_name), not the fallback");
+  await hp.getByTestId("apply-sign-out").first().click(); await hp.waitForSelector('[data-testid="apply"][data-door="welcome"]', { timeout: 30_000 });
+  await H2.ctx.close();
+});
 test("32.19-T16: Deep links, returns, `?card=` — Given `/app/d/{token}` without a session, then `Account` renders with the token retained and after the session `/app?card={id}` lands on the step that owns the card's copy key (`STEP_OF_COPY_KEY`) or on Tasks with the card expanded; `/app/return/{vendor}/{card}` and `/app/auth/google/callback` land the same way; an unknown or another party's card lands on Apply with no card and no data revealed.", { todo: true });
 test("32.19-T17: The chrome at 390 — Given every Apply screen at 390 px, then the five tabs and the primary CTA are in the viewport, `document.documentElement.scrollWidth ≤ 390`, `footer.disclosure` is present, the mark and the paper tokens are `apply.css`'s, and axe reports no serious violation at 390 and at 1280.", { todo: true });
 test("32.19-T18: Every string is a copy key — Given every string the Apply screens render, then it is a key of copy-library.md (the `apply.*` family) rendered through `lib/copy`, no `.tsx` under `components/apply` contains a sentence literal, and 32.13-T13/T14 pass over the new keys.", { todo: true });

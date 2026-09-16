@@ -23,17 +23,22 @@ export class PgNoticeRepository {
       [v.templateCode, v.version, v.effectiveFrom, v.effectiveTo ?? null, v.sourceHash, v.sampleFormBasis ?? null, toJson(v.contentRules), toJson(v.layoutRules), v.readability ? toJson(v.readability) : null, v.plainLanguageStatus, v.approvedBy ?? null, v.approvedAt ?? null, v.ruleSet]);
   }
   async saveNotice(n: Notice, q: Queryable = this.db): Promise<void> {
-    await q.query(`INSERT INTO notices (id, template_code, template_version, loan_id, case_id, recipient_party_ids, address_snapshot, payload_hash, payload, channel_decision, status, held_reason, produced_at, sent_at, superseded_by)
-      VALUES ($1, $2, $3, $4, $5, $6::uuid[], $7::jsonb, $8, $9::jsonb, $10::jsonb, $11, $12, $13, $14, $15)
-      ON CONFLICT (id) DO UPDATE SET channel_decision = EXCLUDED.channel_decision, status = EXCLUDED.status, held_reason = EXCLUDED.held_reason, sent_at = EXCLUDED.sent_at, superseded_by = EXCLUDED.superseded_by`,
+    // 35.2: `document_id` is the rendered PDF's `documents` row (set once, never cleared); the content columns stay immutable (0009 notices_content_immutable)
+    await q.query(`INSERT INTO notices (id, template_code, template_version, loan_id, case_id, recipient_party_ids, address_snapshot, payload_hash, payload, channel_decision, status, held_reason, produced_at, sent_at, superseded_by, document_id)
+      VALUES ($1, $2, $3, $4, $5, $6::uuid[], $7::jsonb, $8, $9::jsonb, $10::jsonb, $11, $12, $13, $14, $15, $16)
+      ON CONFLICT (id) DO UPDATE SET channel_decision = EXCLUDED.channel_decision, status = EXCLUDED.status, held_reason = EXCLUDED.held_reason, sent_at = EXCLUDED.sent_at, superseded_by = EXCLUDED.superseded_by, document_id = coalesce(notices.document_id, EXCLUDED.document_id)`,
       [n.id, n.templateCode, n.templateVersion, n.loanId ?? null, n.caseId ?? null, n.recipients.map((r) => r.partyId).filter((p) => /^[0-9a-f-]{36}$/i.test(p)), toJson(n.recipients.map((r) => ({ party_id: r.partyId, name: r.name, address: r.mailingAddress }))),
-        n.payloadHash, toJson(n.payload), n.channelDecision ? toJson(n.channelDecision) : null, n.status, n.heldReason ?? null, n.producedAt, n.sentAt ?? null, n.supersededBy ?? null]);
-    await q.query(`INSERT INTO notice_checklist_results (notice_id, template_version, passed, results) VALUES ($1, $2, $3, $4::jsonb)`, [n.id, n.templateVersion, n.checklist.passed, toJson(n.checklist.results)]);
+        n.payloadHash, toJson(n.payload), n.channelDecision ? toJson(n.channelDecision) : null, n.status, n.heldReason ?? null, n.producedAt, n.sentAt ?? null, n.supersededBy ?? null, n.renderedDocumentId ?? null]);
+    // one checklist row per (notice, template version): render-then-send in one command evaluates the checklist once (35.2 T2)
+    await q.query(`INSERT INTO notice_checklist_results (notice_id, template_version, passed, results) SELECT $1, $2, $3, $4::jsonb WHERE NOT EXISTS (SELECT 1 FROM notice_checklist_results WHERE notice_id = $1 AND template_version = $2)`, [n.id, n.templateVersion, n.checklist.passed, toJson(n.checklist.results)]);
     for (const d of n.deliveries) {
       // DELTA-08: an esign_portal delivery records the card that carried the document beside the rendered document (0111)
-      await q.query(`INSERT INTO notice_deliveries (notice_id, attempt_no, channel, vendor, vendor_piece_id, submitted_at, mailed_at, email_status, returned_at, return_reason, card_instance_id, rendered_document_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        ON CONFLICT (notice_id, attempt_no) DO UPDATE SET mailed_at = EXCLUDED.mailed_at, email_status = EXCLUDED.email_status, returned_at = EXCLUDED.returned_at, return_reason = EXCLUDED.return_reason`,
-        [n.id, d.attemptNo, d.channel, d.vendor, d.vendorPieceId, d.submittedAt, d.mailedAt ?? null, d.emailStatus ?? null, d.returnedAt ?? null, d.returnReason ?? null, d.cardInstanceId ?? null, d.renderedDocumentId ?? null]);
+      // 35.2 rule 9: the upsert is additive — proof-of-mailing facts written by mail.manifest.ingest (mailed_at, imb, manifest_id, mail_manifest_id) are never overwritten by a later save of the in-memory notice
+      // 35.2 (0166): the delivery's recipient rides the row so a mail piece finds its address without a positional guess; a party id that is not a uuid (a unit fixture's) leaves the column null
+      const partyId = typeof d.partyId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(d.partyId) ? d.partyId : null;
+      await q.query(`INSERT INTO notice_deliveries (notice_id, attempt_no, channel, vendor, vendor_piece_id, submitted_at, mailed_at, email_status, returned_at, return_reason, card_instance_id, rendered_document_id, party_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (notice_id, attempt_no) DO UPDATE SET mailed_at = coalesce(notice_deliveries.mailed_at, EXCLUDED.mailed_at), email_status = coalesce(EXCLUDED.email_status, notice_deliveries.email_status), returned_at = coalesce(notice_deliveries.returned_at, EXCLUDED.returned_at), return_reason = coalesce(notice_deliveries.return_reason, EXCLUDED.return_reason), rendered_document_id = coalesce(notice_deliveries.rendered_document_id, EXCLUDED.rendered_document_id), party_id = coalesce(notice_deliveries.party_id, EXCLUDED.party_id)`,
+        [n.id, d.attemptNo, d.channel, d.vendor, d.vendorPieceId, d.submittedAt, d.mailedAt ?? null, d.emailStatus ?? null, d.returnedAt ?? null, d.returnReason ?? null, d.cardInstanceId ?? null, d.renderedDocumentId ?? null, partyId]);
     }
   }
   async statusOf(id: string): Promise<{ status: string; template_version: string; payload_hash: string } | undefined> {

@@ -325,7 +325,7 @@ type Services = { runtime?: Runtime; deferWrite?: (fn: (q: Queryable) => Promise
 function boundToCommand(loanId: string, ctx: CommandContext, rt: ToolRuntime): { runtime: Runtime; bound: BoundUnit } {
   const services = rt.services as Services; const runtime = services.runtime; const deferWrite = services.deferWrite;
   if (!runtime || !deferWrite) throw new RangeError("the cashiering unit needs the hosted runtime (services.runtime, services.deferWrite)");
-  return { runtime, bound: { scope: { loanId }, store: rt.store, mark: 0, openEscalations: [], globalKeys: new Set(), deferred: [], ctx, escalations: rt.escalations, toolRt: rt, deferWrite } };
+  return { runtime, bound: { scope: { loanId }, store: rt.store, mark: 0, openEscalations: [], globalKeys: new Set(), deferred: [], deferredLate: [], ctx, escalations: rt.escalations, toolRt: rt, deferWrite } };
 }
 /**
  * The `cashiering_daily` unit inside `cycles.run_unit`'s command (35.3 rule 5: the unit's events, ledger sets, timers, the decisions, the

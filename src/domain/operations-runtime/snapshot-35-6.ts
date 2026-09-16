@@ -24,6 +24,9 @@ import { loadRecord, src, type OrchRecord, type Source, RecordGap } from "./fact
 import { closingFacts, partyFacts, loanTerms, escrowFacts, cdRow, productFacts, ltvPct, type ClosingFacts } from "./facts-35-6-b.ts";
 import { environmentOf } from "./fakes-35-6.ts";
 import { orchestrationByApplication, EV, ORCH_ACTOR } from "./orchestration-35-6.ts";
+import { EntityStore } from "../../app/tools.ts";
+import type { Cents } from "../../kernel/money/cents.ts";
+import { creditConsent } from "./closeout-35-10/derive.ts";
 
 type Row = Record<string, unknown>;
 const S = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
@@ -312,6 +315,24 @@ export async function buildFundingSnapshot(rt: Runtime, applicationId: string, o
 
 // ───────────────────────────── the hand-off from the stored snapshot ─────────────────────────────
 export interface FundFromSnapshotResult extends FundApplicationResult { readonly snapshot_id: string; readonly snapshot_hash: string; readonly overridden: readonly string[] }
+/**
+ * 35.10 rule 6 on the orchestrated hand-off: the same-servicer escrow credit — the open `refinance_closeouts` row names the prior loan; the borrower's
+ * `consents{kind=escrow_credit_to_new_loan}` (24.4 `decideEscrowTreatment`, 30.3's gate) is read by 35.10's own reader (closeout-35-10/derive.ts creditConsent);
+ * the figure is the prior loan's ledger `escrow` balance now, never a quote-time copy, capped at the CD's initial deposit (30.2's range). Null when the application
+ * is not a serviced refinance, no consent is on the record, or the balance is zero — the same derivation src/runtime/refinance-closeout.ts's port default makes when
+ * no orchestration owns the hand-off; on an orchestrated application the pass hands off first (35.10 rule 10) and the closeout links on `loan.staged`.
+ */
+async function sameServicerEscrowCredit(rt: Runtime, applicationId: string, deposit: Cents | null): Promise<Cents | null> {
+  const closeout = (await rt.db.query<{ prior_loan_id: string }>(`SELECT prior_loan_id::text AS prior_loan_id FROM refinance_closeouts WHERE application_id = $1 AND mode = 'serviced_same_servicer' AND status NOT IN ('completed', 'unwound', 'cancelled') ORDER BY opened_at DESC LIMIT 1`, [applicationId]))[0];
+  if (!closeout) return null;
+  const store = new EntityStore(); store.seed(await rt.entities.load({ loanId: closeout.prior_loan_id, applicationId }));
+  const events = [...await rt.uow.events.byLoan(closeout.prior_loan_id), ...await rt.uow.events.byApplication(applicationId)];
+  if (creditConsent(store, events, closeout.prior_loan_id, applicationId) === null) return null;
+  const escrow = -BigInt((await rt.db.query<{ s: string }>(`SELECT coalesce(sum(amount_cents), 0)::text AS s FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = 'escrow'`, [closeout.prior_loan_id]))[0]!.s);
+  if (escrow <= 0n) return null;
+  return deposit !== null && escrow > deposit ? deposit : escrow;
+}
+
 export async function fundFromSnapshot(rt: Runtime, applicationId: string, o: { now: string; actor: Actor; snapshot_id: string | null; overrides: Record<string, unknown> | null }): Promise<FundFromSnapshotResult> {
   const cols = `id::text AS id, snapshot, snapshot_hash, gaps, refused_code, fixture_used`;
   const row = (o.snapshot_id
@@ -327,8 +348,11 @@ export async function fundFromSnapshot(rt: Runtime, applicationId: string, o: { 
     for (const k of Object.keys(o2)) overridden.push(k);
     snapshot = { ...base, ...o2, application_id: base.application_id, partner_id: base.partner_id };
   }
-  const funded = await fundedFromLog(rt, applicationId);
-  if (!funded) throw new SnapshotRefused("NO_LOAN_FUNDED", `no loan.funded on the application's log (26.3's confirmDisbursement) — the hand-off has nothing to board`);
+  const fundedLog = await fundedFromLog(rt, applicationId);
+  if (!fundedLog) throw new SnapshotRefused("NO_LOAN_FUNDED", `no loan.funded on the application's log (26.3's confirmDisbursement) — the hand-off has nothing to board`);
+  // 35.10 rule 6: a refinance whose prior loan this platform services, with the borrower's escrow-credit consent on the record, boards with the prior loan's escrow balance on the funded payload (30.2's opening set reads `escrow_credit_from_prior_loan_cents`)
+  const credit = fundedLog.escrow_credit_from_prior_loan_cents == null ? await sameServicerEscrowCredit(rt, applicationId, snapshot.final_cd?.initial_escrow_deposit_cents ?? null) : null;
+  const funded = credit !== null ? { ...fundedLog, escrow_credit_from_prior_loan_cents: credit } : fundedLog;
   const r = await fundApplication(rt, applicationId, await rehydrate(rt, applicationId, snapshot), funded, o.actor);
   let snapshotId = row.id; let hash = row.snapshot_hash;
   if (overridden.length && !r.duplicate) {

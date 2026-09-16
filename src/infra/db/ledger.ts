@@ -43,10 +43,11 @@ export class PgLedgerRepository {
   private readonly db: Queryable;
   constructor(db: Queryable) { this.db = db; }
 
-  /** Persist a set the domain already validated. The balance trigger re-checks at COMMIT. */
-  async post(set: EntrySet, q: Queryable = this.db): Promise<void> {
-    await q.query(`INSERT INTO ledger_entry_sets (id, effective_date, posted_at, description, source_event_id, reverses_set_id) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [set.id, set.effectiveDate, set.postedAt, set.description, set.sourceEventId ?? null, set.reversesSetId ?? null]);
+  /** Persist a set the domain already validated. The balance trigger re-checks at COMMIT. `loanId`: the command's loan — recorded on the set when no line carries a loan (a settlement's custodial-only sets; migration 0222), so the loan's hydration finds it. */
+  async post(set: EntrySet, q: Queryable = this.db, loanId?: string | null): Promise<void> {
+    const setLoan = loanId && !set.lines.some((l) => l.account.scope === "loan") ? loanId : null;
+    await q.query(`INSERT INTO ledger_entry_sets (id, effective_date, posted_at, description, source_event_id, reverses_set_id, loan_id) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [set.id, set.effectiveDate, set.postedAt, set.description, set.sourceEventId ?? null, set.reversesSetId ?? null, setLoan]);
     for (const l of set.lines) {
       const a = l.account;
       await q.query(`INSERT INTO ledger_lines (id, set_id, sequence, scope, account, loan_id, custodial_account_id, amount_cents, rule_ref, memo) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
@@ -57,7 +58,7 @@ export class PgLedgerRepository {
     const w = whereAccount(account, 1);
     const params: unknown[] = [...w.params];
     let sql = `SELECT coalesce(sum(l.amount_cents), 0)::bigint AS s FROM ledger_lines l`;
-    if (asOf !== undefined) { params.push(asOf); sql += ` JOIN ledger_entry_sets s ON s.id = l.set_id WHERE ${w.sql} AND s.effective_date <= $${params.length}`; }
+    if (asOf !== undefined) { params.push(asOf); sql += ` WHERE ${w.sql} AND l.set_id IN (SELECT id FROM ledger_entry_sets WHERE effective_date <= $${params.length})`; }
     else sql += ` WHERE ${w.sql}`;
     const rows = await this.db.query<{ s: bigint }>(sql, params);
     return rows[0]!.s;
@@ -68,7 +69,14 @@ export class PgLedgerRepository {
   }
   /** Every set touching a loan (any line with that loan_id), lines included, oldest first. */
   async setsForLoan(loanId: string): Promise<EntrySet[]> {
-    const sets = await this.db.query<SetRow>(`SELECT DISTINCT s.* FROM ledger_entry_sets s JOIN ledger_lines l ON l.set_id = s.id WHERE l.loan_id = $1 ORDER BY s.posted_at, s.id`, [loanId]);
+    return this.setsWhere(`s.id IN (SELECT l.set_id FROM ledger_lines l WHERE l.loan_id = $1)`, loanId);
+  }
+  /** The custodial-only sets a loan's own commands posted (migration 0222: `ledger_entry_sets.loan_id`) — a settlement's cash split and investor-share sets. Not part of the loan's listed record (that is `setsForLoan`), but hydrated with it so 16.2's reversal finds every set the settlement names. */
+  async setsPostedByLoan(loanId: string): Promise<EntrySet[]> {
+    return this.setsWhere(`s.loan_id = $1`, loanId);
+  }
+  private async setsWhere(where: string, loanId: string): Promise<EntrySet[]> {
+    const sets = await this.db.query<SetRow>(`SELECT s.* FROM ledger_entry_sets s WHERE ${where} ORDER BY s.posted_at, s.id`, [loanId]);
     const out: EntrySet[] = [];
     for (const s of sets) {
       const lines = (await this.db.query<LineRow>(`SELECT * FROM ledger_lines WHERE set_id = $1 ORDER BY sequence`, [s.id])).map(rowToLine);

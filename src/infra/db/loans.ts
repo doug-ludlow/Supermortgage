@@ -38,16 +38,31 @@ export class PgLoanRepository {
   }
 
   /**
-   * `loans.status` projection from the event spine (the row is a read model of `loan_events`; nothing else flips it).
-   * 16.2 rule 3 / 16.1: `loan.paid_in_full` retires the row (`paid_off`); 16.2 rule 6: a `payoff.reversed` inside the
-   * finality window reopens it (`active`) — after BD2 17:00 ET the reversal is refused upstream (NO_REVERSAL_AFTER_CLOSE),
-   * so a closed-period payoff never reactivates. Runs inside the command's transaction (PgUnitOfWork).
+   * `loans.status` projection from the event spine (the row is a read model of `loan_events`; nothing else flips it — 35.10
+   * NO_DIRECT_STATUS_WRITE: a contract test greps `src/` for any other writer).
+   * 16.2 rule 3 / 16.1: `loan.paid_in_full` retires the row (`paid_off`, retired_reason `payoff`); 16.2 rule 6: a `payoff.reversed`
+   * inside the finality window reopens it (`active`, the retirement columns cleared) — after BD2 17:00 ET the reversal is refused
+   * upstream (NO_REVERSAL_AFTER_CLOSE), so a closed-period payoff never reactivates.
+   * 35.10 rule 7: `refinance.prior_loan.retired{mode}` — a `monitored` loan (33.1's row) is retired by the refinance that paid it
+   * through the partner (`monitored` → `paid_off`, retired_reason `refinance_partner`); a serviced prior loan was retired by
+   * `loan.paid_in_full` already and the event restates the reason (`refinance_same_servicer`). `refinance.new_loan.linked{new_loan_id}`
+   * writes `refinanced_by_loan_id`. 33.1 rule 8 / edge cases: `partner_book.loan.resolved{status}` (the analyst's book.resolve) and
+   * `partner_book.loan.loaded{status}` (a later tape marking the loan paid or transferred) move a `monitored` row to that status.
+   * Runs inside the command's transaction (PgUnitOfWork).
    */
-  async projectStatus(events: readonly { readonly type: string; readonly loanId?: string }[], q: Queryable = this.db): Promise<void> {
+  async projectStatus(events: readonly { readonly type: string; readonly loanId?: string; readonly payload?: Record<string, unknown>; readonly occurredAt?: string }[], q: Queryable = this.db): Promise<void> {
     for (const e of events) {
       if (!e.loanId) continue;
-      if (e.type === "loan.paid_in_full") await q.query(`UPDATE loans SET status = 'paid_off' WHERE id = $1 AND status IN ('staged', 'active')`, [e.loanId]);
-      else if (e.type === "payoff.reversed") await q.query(`UPDATE loans SET status = 'active' WHERE id = $1 AND status = 'paid_off'`, [e.loanId]);
+      const p = e.payload ?? {};
+      const at = e.occurredAt ?? new Date().toISOString();
+      if (e.type === "loan.paid_in_full") await q.query(`UPDATE loans SET status = 'paid_off', retired_at = coalesce(retired_at, $2::timestamptz), retired_reason = coalesce(retired_reason, 'payoff') WHERE id = $1 AND status IN ('staged', 'active')`, [e.loanId, at]);
+      else if (e.type === "payoff.reversed") await q.query(`UPDATE loans SET status = 'active', retired_at = NULL, retired_reason = NULL, refinanced_by_loan_id = NULL WHERE id = $1 AND status = 'paid_off'`, [e.loanId]);
+      else if (e.type === "refinance.prior_loan.retired") {
+        if (p["mode"] === "monitored_partner") await q.query(`UPDATE loans SET status = 'paid_off', retired_at = $2::timestamptz, retired_reason = 'refinance_partner' WHERE id = $1 AND status = 'monitored'`, [e.loanId, at]);
+        else await q.query(`UPDATE loans SET retired_at = coalesce(retired_at, $2::timestamptz), retired_reason = 'refinance_same_servicer' WHERE id = $1 AND status = 'paid_off'`, [e.loanId, at]);
+      }
+      else if (e.type === "refinance.new_loan.linked" && typeof p["new_loan_id"] === "string") await q.query(`UPDATE loans SET refinanced_by_loan_id = $2 WHERE id = $1`, [e.loanId, p["new_loan_id"]]);
+      else if ((e.type === "partner_book.loan.resolved" || e.type === "partner_book.loan.loaded") && (p["status"] === "paid_off" || p["status"] === "transferred_out")) await q.query(`UPDATE loans SET status = $2::loan_status WHERE id = $1 AND status = 'monitored'`, [e.loanId, p["status"]]);
     }
   }
 

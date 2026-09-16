@@ -88,8 +88,14 @@ export class CommandBus {
       if (touched.length) refuse("MONEY_FIELD", "1.1 guardrail: money fields are never agent-corrected", `${touched.join(", ")} require an officer waiver or a transferor correction`);
     }
     for (const g of cmd.guardrails ?? []) { const why = g.refuse(input, ctx); if (why) refuse(g.code, g.citation, why); }
-    // 4. run
-    const output = await cmd.handler(input, ctx);
+    // 4. run — a refusal raised below the handler that asks to ride the bus (`busRefusal: true` with a code and a citation: 35.2's RenderRefused for a glyph outside WinAnsi, thrown by the Notice Registry under any rendering tool) becomes a CommandRefused; a section's own typed refusal (ControlsRefused, LockRefused, …) keeps its shape for the surface that answers it
+    let output: O;
+    try { output = await cmd.handler(input, ctx); }
+    catch (e) {
+      const typed = e as { busRefusal?: unknown; code?: unknown; citation?: unknown };
+      if (e instanceof Error && !(e instanceof CommandRefused) && typed.busRefusal === true && typeof typed.code === "string") refuse(typed.code, typeof typed.citation === "string" ? typed.citation : `${cmd.process} handler refusal`, e.message);
+      throw e;
+    }
     // 5. audit
     let decisionId: string | undefined;
     const d = cmd.decision ? cmd.decision(input, output, ctx) : null;

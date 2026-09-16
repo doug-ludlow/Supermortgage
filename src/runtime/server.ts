@@ -57,7 +57,10 @@ import { orchestrationByApplication, orchestrationOwnsHandoff } from "../domain/
 import { hasRole } from "../app/roles.ts";
 import { SnapshotRefused } from "../domain/operations-runtime/snapshot-35-6.ts";
 import { RescissionRefused } from "../domain/compliance-disclosures/ops-25-3.ts";
+import { CyclesRefused } from "../domain/operations-runtime/service.ts";
 import { PortUnavailable } from "../app/tools.ts";
+// 35.11 rule 10: a port's own typed failure thrown by a tool (the FAKE bank's rejection of a date, a feed not yet refreshed) is a typed refusal the unit of work rolled back — never an unhandled 500
+import { AdapterUnavailable, PermanentRejection, TransientFailure } from "../infra/integrations/failures.ts";
 import { StaleRecord } from "../domain/operations-runtime/seam/guard.ts";
 import { RoleDenied } from "../app/roles.ts";
 import { StaffError } from "./staff/roles.ts";
@@ -80,6 +83,7 @@ import { isUuid } from "../infra/db/client.ts";
 import { plainDate } from "../kernel/calendar/date.ts";
 import type { Logger } from "./log.ts";
 import { createBorrowerRouter, parseMultipart, type BorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
+import { handleVerifyRoute } from "./documents/verify-route.ts";
 import { holdsOf, importPartnerBook, listPartnerBookImports, partnerBookReport, partnerBookStatus, resolvePartnerBookLoan, seedPartnerBookDemo, type PartnerBookImportInput } from "./partner-book.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 import { OffsetClock, advanceDemoClock, demoClockStatus } from "./demo-clock.ts";
@@ -182,7 +186,8 @@ export function createApiServer(opts: ServerOptions): Server {
   const consoleServer = opts.console === false ? null : createConsoleServer({ store: new PgConsoleStore(runtime.db, runtime.registry, runtime.agents, { fakeReviewers: runtime.reviewers ? { roles: runtime.reviewers.roles, delaySeconds: runtime.reviewers.delaySeconds, resolve: fakeResolve } : null }), clock: runtime.clock, runtime, apiToken: opts.apiToken, environment: opts.borrower?.environment ?? runtime.environment, logger });
   // 35.7 rule 2: the /v1 door — the shared API_TOKEN outside production (source shared_token), else an api_principals row (source principal); production refuses the shared token
   const v1 = new V1Auth(runtime, { apiToken: opts.apiToken });
-  const borrower = opts.borrowerRouter ?? createBorrowerRouter({ runtime, logger, ...(opts.borrower ?? {}) });
+  // 35.2: the borrower router's object store is the runtime's (PgFakeBlobStore over document_blobs in every nonprod stage) unless the caller wires one
+  const borrower = opts.borrowerRouter ?? createBorrowerRouter({ runtime, logger, blobs: runtime.blobs, ...(opts.borrower ?? {}) });
   // the demo clock routes refuse in production (docs/DEPLOY.md "The demo clock"); the runtime's environment is the one source (35.7), the borrower options may name it too
   const environment = opts.borrower?.environment ?? runtime.environment;
 
@@ -215,6 +220,8 @@ export function createApiServer(opts: ServerOptions): Server {
         res.writeHead(302, { location: "/ops", "set-cookie": `sm_token=${encodeURIComponent(t)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200` }); res.end();
         logger.info("http", { method, path: "/login", status: 302, ms: Date.now() - started }); return;
       }
+      // 35.2 / 16.1 rule 9: the payoff verification portal is public — the token printed on the statement is the only key
+      if (await handleVerifyRoute(runtime, req, res, url, method)) { logger.info("http", { method, path, status: res.statusCode, ms: Date.now() - started }); return; }
       // the borrower API authenticates its own sessions (and the vendor webhook its signature); the ops token is never accepted there
       if (await borrower.handle(req, res, url, method)) return;
       // 32.14 §6.3 / 34.1: the ops console page lives at /ops and its JSON API at /ops/api/* (and the legacy /api/*); the console authenticates its own staff sessions (src/console/server.ts) — the ops token is one way in only for the deploy workflow's header actor
@@ -429,6 +436,8 @@ export function createApiServer(opts: ServerOptions): Server {
       // a section's own typed refusal thrown by its tool (not a bus guardrail): the same 409 shape, its code and reason kept (32.5 T10, 32.7 T6)
       if (e instanceof CardRefused) { done(409, { error: "refused", code: e.code, reason: e.message }, { refused: e.code }); return; }
       if (e instanceof RescissionRefused) { done(409, { error: "refused", code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }
+      // 35.3's own typed refusal (RUN_NOT_FOUND, JOB_NOT_DEAD, RECEIPT_ONCE, …): the same 409 shape with its code and detail — a typed refusal the unit of work rolled back, never a 500 (35.11 rule 10's `refused_typed`)
+      if (e instanceof CyclesRefused) { done(409, { error: "refused", code: e.code, reason: e.message, ...e.detail }, { refused: e.code }); return; }
       if (e instanceof BoardingRefused) { done(409, { error: "refused", command: "applications.fund", code: e.code, citation: "30.2 rule 2 / OB-018: boarding is refused until the source record is corrected", reason: e.message, application_id: e.applicationId, validations: e.validations }, { refused: e.code }); return; }
       if (e instanceof ApplicationNotFound) { done(404, { error: "no_such_application", reason: e.message }); return; }
       // 35.6 rule 6: the hand-off refused by the snapshot (FIXTURE_REFUSED in production, SNAPSHOT_GAP, NO_LOAN_FUNDED) — the same 409 shape with the paths
@@ -437,6 +446,9 @@ export function createApiServer(opts: ServerOptions): Server {
       if (e instanceof AiPathUnavailable) { done(503, { error: "ai_path_unavailable", reason: e.message }); return; }
       if (e instanceof ToolNotFound) { done(404, { error: "no_such_tool", reason: e.message }); return; }
       if (e instanceof PortUnavailable) { done(501, { error: "not_wired", reason: e.message }); return; }
+      if (e instanceof PermanentRejection) { done(409, { error: "refused", code: `PORT_REJECTED:${e.code}`, kind: "rejected", reason: e.message, details: [...e.details] }, { refused: `PORT_REJECTED:${e.code}` }); return; }
+      if (e instanceof TransientFailure) { done(409, { error: "refused", code: "PORT_TRANSIENT", kind: "transient", retryable: true, reason: e.message }, { refused: "PORT_TRANSIENT" }); return; }
+      if (e instanceof AdapterUnavailable) { done(409, { error: "refused", code: "PORT_UNAVAILABLE", kind: "unavailable", fallback: e.fallbackKind, reason: e.message }, { refused: "PORT_UNAVAILABLE" }); return; }
       if (e instanceof RangeError || e instanceof TypeError || e instanceof SyntaxError) { done(400, { error: "bad_request", reason: e.message }); return; }
       logger.error("unhandled", { method, path, error: e });
       done(500, { error: "internal" });

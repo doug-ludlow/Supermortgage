@@ -78,7 +78,7 @@ export const SHAPES = {
   identity_session: { vendor: true, vendor_session_id: true, client_secret: true, return_url: true, card_instance_id: true, application_id: true, status: true, delivery: true } satisfies Shape,
   identity_webhook: { received: true, vendor: true, vendor_session_id: true, outcome: true, level: true, application_id: true, prefilled: true, all_borrowers_verified: true, gate_open: true } satisfies Shape,
   document_uploaded: { document_id: true, application_id: true, status: true, integrity_status: true, quarantined: true, quarantine_reason: true, duplicate_of: true, matched_request_ids: true, received_at: true, doc_class: true, byte_size: true, sha256: true } satisfies Shape,
-  document_link: { document_id: true, title: true, doc_class: true, mime_type: true, url: true, expires_at: true } satisfies Shape,
+  document_link: { document_id: true, title: true, doc_class: true, mime_type: true, url: true, expires_at: true, sha256: true, page_count: true, template_code: true, template_version: true, text_layer: true } satisfies Shape,   // 35.2: the row's hash, the template version for the viewer's footer and the bytes' own text layer
   deep_link: { token: true, target: { card_instance_id: true, document_id: true, route: true }, expires_at: true } satisfies Shape,
   record: RECORD,
   thread: { conversation_id: true, messages: [MESSAGE], cards: [CARD], pinned_placed_by: true, pinned_card: CARD, next_after: true, has_more: true } satisfies Shape,

@@ -11,16 +11,18 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { FooterDisclosure } from "@/components/shell/FooterDisclosure";
 import { api, ApiRequestError } from "@/lib/api/client";
 import { copy, copyExtra, copyOptions } from "@/lib/copy";
-import type { AnyCardInstance } from "@/lib/types/cards";
+import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
 import type { BorrowerMe, BorrowerRecord, ThreadMessage } from "@/lib/types/record";
-import { EMPTY, doneFrom, stepOfCopyKey, type Door, type Draft, type Step, type Tab } from "./apply-model";
+import { EMPTY, doneFrom, pending, pendingDeclaration, resolved, stepOfCard, uniqueCards, type Door, type Draft, type Step, type Tab } from "./apply-model";
 import { DoorScreens, TabScreens } from "./door";
 import { StepScreen } from "./steps";
-import { flush, loadCards, messageOf } from "./wire";
+import { flush, loadCards, messageOf, waitAfterDeclaration } from "./wire";
 import "./apply.css";
 
 const TABS: readonly Tab[] = ["apply", "chat", "loan", "tasks", "account"];
 const APPLICATION_POLL_MS = 30_000;
+/** The flows react to a tap asynchronously (a card arrives moments after the resolve that earned it; the DU moment runs itself): the screens that wait for cards re-read the file on a short interval, bounded. */
+const AWAIT_CARDS_MS = 700; const AWAIT_CARDS_FOR_MS = 30_000; const WATCH_MS = 2_000; const WATCH_FOR_MS = 5 * 60_000;
 
 const applicationOf = (me: BorrowerMe | null): string | null => me?.subjects.find((s) => s.application_id)?.application_id ?? null;
 const loanOf = (me: BorrowerMe | null): string | null => me?.subjects.find((s) => s.loan_id)?.loan_id ?? null;
@@ -57,7 +59,7 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
       setRecord(rec);
     } else setRecord(null);
     const thread = await api.thread();
-    setCards(thread.cards);
+    setCards(uniqueCards(thread.cards));
     setMessages(thread.messages);
     return next;
   }, []);
@@ -94,7 +96,7 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
     const card = cards.find((c) => c.card_instance_id === cardToFocus);
     setCardToFocus(undefined);
     if (!card) return;
-    const owner = stepOfCopyKey(card.copy_key);
+    const owner = stepOfCard(card);
     if (owner) { setTab("apply"); setStep(owner); } else { setTab("tasks"); }
     setFocusedCard(card.card_instance_id);
   }, [cardToFocus, signedIn, cards]);
@@ -109,10 +111,29 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
 
   const onContinue = () => run(async () => {
     const fresh = signedIn ? await loadCards() : cards;
-    const r = await flush(step, { draft, cards: fresh, applicationId });
+    const r = await flush(step, { draft, cards: fresh, applicationId, record });
+    if (r.patch) patch(r.patch);   // the SSN leaves the draft once its card is written (never echoed, never kept)
     setStep(r.next);
     if (r.outcomes.length) await refresh();
   });
+
+  /**
+   * A card hosted inside the chrome (a caution row's lift card, a declarations question, the demographics card, a Tasks orphan, a
+   * document under My Loan): the same resolve call as the steps' taps, then the page's view of the file re-read. A declarations
+   * tap waits for the next question the flows send (or the sequence's end) and moves on to Demographics when the sequence is
+   * over; the demographics tap moves on to Review (the number cards ride `application.demographics.collected`).
+   */
+  const onResolveCard = async (cardInstanceId: string, req: ResolveRequest): Promise<void> => {
+    await run(async () => {
+      const card = cards.find((c) => c.card_instance_id === cardInstanceId);
+      await api.resolveCard(cardInstanceId, req);
+      const declaration = card?.copy_key.startsWith("declarations.") === true;
+      const after = declaration ? await waitAfterDeclaration(cardInstanceId) : null;
+      await refresh();
+      if (declaration && tab === "apply" && step === "questions" && after && !pendingDeclaration(after) && (pending(after, "demographics.title") || resolved(after, "demographics.title"))) setStep("demographics");
+      if (card?.copy_key === "demographics.title" && tab === "apply" && step === "demographics") setStep("review");
+    });
+  };
 
   const onSignOut = () => run(async () => {
     await api.signOut();
@@ -135,12 +156,31 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
   const tabLabels = copyOptions("apply.tabs");
   const showStep = signedIn && tab === "apply" && applicationId !== null;
 
+  // the screens that wait on the flows: Questions / Demographics / Review until their card arrives (short, bounded), Result and Tasks while the file moves (the DU moment, the report's cards, a re-sent gap card)
+  const awaiting = signedIn && tab === "apply" && applicationId !== null && (
+    (step === "questions" && !pendingDeclaration(cards) && !cards.some((c) => c.copy_key.startsWith("declarations.") && c.status === "resolved")) ||
+    (step === "demographics" && !pending(cards, "demographics.title") && !resolved(cards, "demographics.title")) ||
+    (step === "review" && !cards.some((c) => ["refi.value.confirm", "preapproval.target"].includes(c.copy_key))));
+  const watching = signedIn && ((tab === "apply" && step === "result") || tab === "tasks");
+  useEffect(() => {
+    if (!awaiting && !watching) return;
+    const every = awaiting ? AWAIT_CARDS_MS : WATCH_MS; const until = Date.now() + (awaiting ? AWAIT_CARDS_FOR_MS : WATCH_FOR_MS);
+    let inFlight = false;
+    const id = setInterval(() => {
+      if (Date.now() > until) { clearInterval(id); return; }
+      if (inFlight || busy) return;
+      inFlight = true;
+      refresh().catch((e: unknown) => setError(messageOf(e))).finally(() => { inFlight = false; });
+    }, every);
+    return () => clearInterval(id);
+  }, [awaiting, watching, busy, refresh]);
+
   const body = () => {
     if (!booted) return null;
     if (!me) return <DoorScreens door={door} accountMode={accountMode} setDoor={setDoor} setAccountMode={setAccountMode} onSession={() => void run(landed)} />;
-    if (tab !== "apply") return <TabScreens tab={tab} me={me} record={record} cards={cards} messages={messages} draft={draft} done={done} focusedCard={focusedCard} setTab={setTab} setStep={setStep} onSignOut={onSignOut} />;
+    if (tab !== "apply") return <TabScreens tab={tab} me={me} record={record} cards={cards} messages={messages} draft={draft} done={done} focusedCard={focusedCard} setTab={setTab} setStep={setStep} onSignOut={onSignOut} onResolveCard={onResolveCard} openCard={setFocusedCard} busy={busy} />;
     if (!applicationId) return null;   // a loan-only party (33.x): no step and no goal card on Apply (owner decision 6)
-    return <StepScreen step={step} draft={draft} cards={cards} record={record} busy={busy} patch={patch} onContinue={onContinue} setStep={setStep} />;
+    return <StepScreen step={step} draft={draft} cards={cards} record={record} busy={busy} patch={patch} onContinue={onContinue} setStep={setStep} setTab={setTab} onResolveCard={onResolveCard} />;
   };
 
   return (

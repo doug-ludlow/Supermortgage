@@ -12,8 +12,10 @@
  * token is the placeholder `escalation_role` — 35.3's SM_JOB_DEAD_2H, whose role lives on the dead unit's `cycle_registry`
  * row (timers-35-3.ts breachRoleFor_35_3: `jobs → cycle_registry.escalation_role`). A 35.3 clock's payload is enriched from
  * its subject (timers-35-3.ts enrichBreach_35_3: the run's `cycle_code, period_key, units_done, units_total`; the job's
- * `cycle_code, period_key, unit_id, error_class`) so the escalation names what stalled (T12); every other clock's payload is
- * what it always was: `timer_code, timer_id, due_at, breach`.
+ * `cycle_code, period_key, unit_id, error_class`) so the escalation names what stalled (T12). A 35.11 clock's payload, severity
+ * and owner come from its enricher (stewardship.ts BREACH_ENRICHERS: the adapter and D15 for SM_OPS_ADAPTER_DOWN_1H; the cycle,
+ * the period and `consecutive_misses` for SM_OPS_CYCLE_MISSED_2H, sev 1 → `compliance` on a second consecutive miss — 35.11 T3, T5).
+ * Every other clock's payload is what it always was: `timer_code, timer_id, due_at, breach`.
  *
  * 35.9 rule 7 ("Every breach runs its registered action in the breach transaction"): after a page's escalations are saved, the
  * page's transaction runs `breach.execute{timer_id}` for each breach it evaluated, on a command view of that transaction
@@ -26,6 +28,8 @@
  * with no run at all (a demo advance that sweeps once a day at noon is not an outage). A page leaves that instance armed
  * (`deferred`) and it is not counted as due.
  */
+import { breachPayloadOf } from "./closeout-35-10/breach.ts";
+type Row = Record<string, unknown>;
 import type { DomainEvent } from "../../kernel/events/index.ts";
 import { MemoryEventStore } from "../../kernel/events/index.ts";
 import { TimerEngine, type TimerInstance } from "../../kernel/timers/engine.ts";
@@ -34,6 +38,8 @@ import type { PlainDate } from "../../kernel/calendar/date.ts";
 import { EscalationService } from "../../app/escalations.ts";
 import type { Runtime } from "../../runtime/app.ts";
 import { breachRoleFor_35_3, enrichBreach_35_3 } from "./timers-35-3.ts";
+// 35.11: a process may enrich the escalation of its own clock's breach when it is opened — SM_OPS_ADAPTER_DOWN_1H names the adapter and D15, SM_OPS_CYCLE_MISSED_2H the cycle, the period and consecutive_misses (and the row's second clause: sev 1 → compliance) — reads only, in the page's transaction
+import { BREACH_ENRICHERS } from "./stewardship.ts";
 import { executeBreachActions } from "./default-35-9/sweep.ts";
 import { orchestrationBreachContext } from "./orchestration-35-6.ts";
 
@@ -89,12 +95,18 @@ async function breachPage(rt: Runtime, nowIso: string, pageSize: number, asOfDat
     const escalations = new EscalationService(events, rt.clock);
     const breaches: BreachSummary[] = [];
     for (const b of engine.evaluate(nowIso)) {
-      const sev = b.severity ?? 4;
       const fallback = resolveBreachRole(b) ?? "ops_analyst";
       const cycles = b.def.process === CYCLES_PROCESS_ID;
-      const owner = cycles ? await breachRoleFor_35_3(q, b.instance, fallback) : fallback;
-      // 35.6's clocks: the registry says the escalation names application_id, step and waiting_on (the orchestration row the timer's application is on)
-      const extra = cycles ? await enrichBreach_35_3(q, b.instance) : await orchestrationBreachContext(rt, b.instance).catch(() => ({}));
+      // 35.11: the steward's own clocks — the enricher may raise the severity and name the owner (the registry row's second clause); a failing enricher is logged and the breach opens on the row's first clause
+      const enrich = BREACH_ENRICHERS.get(b.instance.code);
+      const enriched = enrich ? await enrich(q, { id: b.instance.id, code: b.instance.code, subject: b.instance.subject }, nowIso).catch((e: unknown) => { rt.logger?.error("breach enricher failed", { code: b.instance.code, timer_id: b.instance.id, error: e }); return null; }) : null;
+      const sev = enriched?.severity ?? b.severity ?? 4;
+      const owner = enriched?.ownerRole ?? (cycles ? await breachRoleFor_35_3(q, b.instance, fallback) : fallback);
+      // 35.10 T13: a closeout clock's escalation names its closeout (the arming step event's application_id, prior_loan_id, step, waiting_on)
+      const refi = !cycles && b.instance.code.startsWith("SM_REFI_") ? breachPayloadOf((await q.query<{ payload: Row }>(`SELECT payload FROM loan_events WHERE id = $1`, [b.instance.armedByEventId]))[0]?.payload ?? null) : null;
+      // 35.6's clocks (SM_ORCH_*): the registry says the escalation names application_id, step and waiting_on (the orchestration row the timer's application is on)
+      const orch = !cycles && b.instance.code.startsWith("SM_ORCH_") ? await orchestrationBreachContext(rt, b.instance).catch(() => ({})) : null;
+      const extra = cycles ? await enrichBreach_35_3(q, b.instance) : (refi ?? orch ?? enriched?.payload ?? {});
       escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), severity: String(sev), slaTimerId: b.instance.id,
         payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText, ...extra } }, { kind: "system", id: "sweep" });
       breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });

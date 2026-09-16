@@ -41,7 +41,7 @@ import { CASHIERING_AGENT, MODEL_VERSION_DETERMINISTIC, PROMPT_VERSION_35_5 } fr
 import { EXCLUDED_STATUSES, RULE_SET_ALLOCATION } from "./cashiering-cycle.ts";
 import { platformServicingPartyId } from "./servicing-config.ts";
 import { bindUnit, commitUnit, executeInUnit, openUnit, type BoundUnit } from "./in-process.ts";
-import { ports35_5 } from "./ports-35-5.ts";
+import { ports35_5, txOf, type StoredDocument } from "./ports-35-5.ts";
 
 export const CYCLE_LOCKBOX_INGEST = "lockbox_ingest";
 /** Event literals this file emits. */
@@ -231,7 +231,7 @@ async function ingestOneFile(rt: Runtime, lockbox: LockboxConfig, cutoff: { cuto
   //     refuses the batch before anything is written), `lockbox.batch.received` (arms 2.1's and 6.1's deposit clocks and SM_LOCKBOX_BATCH_POSTED_1BD, re-arms
   //     SM_LOCKBOX_FILE_EXPECTED_1BD), the stored file and the rows; a variance batch opens the officer escalation and stops here (CONTROL_TOTAL_MATCH)
   const opened = await openUnit(rt, {});
-  let bound: BoundUnit | undefined; let received: DomainEvent | undefined; let escalationId: string | null = null; let documentId: string | null = null; let lockboxClearing: string | null = null;
+  let bound: BoundUnit | undefined; let received: DomainEvent | undefined; let escalationId: string | null = null; let documentId: string | null = null; let lockboxClearing: string | null = null; let stored: StoredDocument | undefined;
   const items: ItemPlan[] = [];
   await rt.uow.run({}, async (uow) => {
     bound = await bindUnit(rt, opened, uow); const ctx = bound.ctx;
@@ -253,8 +253,10 @@ async function ingestOneFile(rt: Runtime, lockbox: LockboxConfig, cutoff: { cuto
       escalationId = e.id;
       if (opts.recordDecision) ctx.decide({ agent: CASHIERING_AGENT.id, action: "lockbox.ingest", rationale: `CONTROL_TOTAL_MATCH: Σ items ${s(sum)} ≠ control total ${s(parsed.control_total_cents)} (variance ${s(variance)}¢) — batch ${batchId} in variance, nothing posted, officer escalation ${e.id}; ${toJson(decisionRecord({ batch_id: batchId, sha256: f.sha256, posted: 0, unidentified: 0, variance_cents: s(variance), status: "variance", duplicate_of: null }, input))}`, ruleSetVersion: RULE_SET_ALLOCATION, subject: agg(batchId), ruleCode: "CONTROL_TOTAL_MATCH", confidence: 1, modelVersion: MODEL_VERSION_DETERMINISTIC, promptVersion: PROMPT_VERSION_35_5 });
     }
+    // 35.2 timer table row 1: the file (a variance batch's too) is stored inside the unit of work so `document.staged` / `document.stored` arm and satisfy SM_DOC_WORM_DRAIN_1D through its TimerEngine (ports-35-5.ts txOf)
+    stored = await ports.documents.store(txOf(ctx), { kind: LOCKBOX_FILE_KIND, bytes: f.content, mime_type: "text/plain", retention_class: "life_of_loan_plus_4y", metadata: { source: "lockbox", lockbox_id: lockbox.id, batch_id: batchId, file_name: f.file_name, receipt_date: receiptDate, queue_document_id: f.document_id } }, { events: ctx.events, actor: CASHIERING_AGENT, now: ctx.clock.now() });
   }, { clock: rt.clock, commit: async (q) => {
-    const doc = await ports.documents.store(q, { kind: LOCKBOX_FILE_KIND, bytes: f.content, mime_type: "text/plain", retention_class: "life_of_loan_plus_4y", metadata: { source: "lockbox", lockbox_id: lockbox.id, batch_id: batchId, file_name: f.file_name, receipt_date: receiptDate, queue_document_id: f.document_id } });
+    const doc = stored!;
     documentId = doc.document_id;
     await insertBatch(q, { id: batchId, lockbox_id: lockbox.id, file_name: f.file_name, sha256: f.sha256, document_id: doc.document_id, receipt_date: receiptDate, cutoff_tz: cutoff.cutoff_tz, items: items.length, control_total_cents: parsed.control_total_cents, items_identified: items.filter((it) => it.disposition === "identified").length, items_unidentified: items.filter((it) => it.disposition === "unidentified").length, items_rejected: 0, status: variance === 0n ? "received" : "variance", variance_cents: variance });
     await insertItems(q, batchId, items);

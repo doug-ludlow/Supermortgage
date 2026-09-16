@@ -8,7 +8,10 @@
  *                  wins over the database) and written JSONB in the exact shapes 2.x write today (section2-3.ts settle for an ACH-settled
  *                  payment, section2-1.ts for a suspense item, section02.ts feeRecord for a fee); 35.1's projectors copy them unchanged.
  *   CyclePort      a read of 35.3's `cycle_runs` row for `(cycle_code, period_key)` — what a T-id asserts a day's run with.
- *   DocumentsPort  the baseline `documents` row (`storage_uri = worm_pending:<id>`, `metadata.storage_status = staged`) 35.2 recognises.
+ *   DocumentsPort  35.2's `documents.store` (documents/store.ts storeDocument over `rt.blobs`): the row staged beside its `document_blobs`
+ *                  bytes and drained inline to the object store in the same transaction (35.2 rule 4), `document.staged` /
+ *                  `document.stored` appended on the caller's event store or persisted with the row; `read` hands a stored file's
+ *                  bytes back (the deferred ACH file's retransmit). The pre-merge `baselineDocuments` (bytes in the metadata) is gone.
  *   TransmitPort   `ports.nacha.transmit` directly; 35.1's outbox replaces it (`integration_messages{adapter: nacha}`).
  *
  * The set is keyed by `Runtime.root` (35.1 open question 8: a tool sees a command view — an `Object.create` of the runtime whose
@@ -21,11 +24,13 @@ import { toJson } from "../../infra/db/client.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { EntityStore, PortUnavailable } from "../../app/tools.ts";
 import type { UowContext } from "../../infra/db/unit-of-work.ts";
-import type { Actor } from "../../kernel/events/index.ts";
 import type { PlainDate } from "../../kernel/calendar/date.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import type { Fee } from "../cashiering/types.ts";
 import type { Runtime } from "../../runtime/app.ts";
+import { MemoryEventStore, type Actor, type EventStore } from "../../kernel/events/index.ts";
+import { AdapterUnavailable } from "../../infra/integrations/failures.ts";
+import { storeDocument } from "./documents/store.ts";
 import { CASHIERING_AGENT } from "./installments.ts";
 
 type Row = Record<string, unknown>;
@@ -145,20 +150,40 @@ export function typedCycleRuns(rt: Runtime): CyclePort {
 }
 
 // ---------------------------------------------------------------- 35.2 seam: documents.store
-export interface StoredDocument { readonly document_id: string; readonly sha256: string; }
-export interface DocumentsPort { store(q: Queryable, doc: { kind: string; bytes: Uint8Array | string; mime_type: string; retention_class?: string; loan_id?: string | null; metadata?: Row }): Promise<StoredDocument>; }
-/** The FAKE stage keeps a file's bytes in the row's metadata up to this size (a NACHA file for the demo book is ~10 KB; a deferred ACH file is retransmitted from them — ach.ts retransmitDeferred escalates one it cannot find); 35.2's WORM store keeps every file. */
-export const FAKE_BYTES_MAX = 1 << 20;
-/** The baseline `documents` row 35.2 recognises (35.2 rule 4: `storage_uri = worm_pending:<id>`, `storage_status: staged`); the bytes ride in the metadata (≤ FAKE_BYTES_MAX) until 35.2's WORM store. */
-export const baselineDocuments: DocumentsPort = {
-  async store(q, doc) {
-    const bytes = typeof doc.bytes === "string" ? Buffer.from(doc.bytes, "utf8") : Buffer.from(doc.bytes);
-    const sha256 = createHash("sha256").update(bytes).digest("hex"); const id = randomUUID();
-    const metadata = { ...(doc.metadata ?? {}), storage_status: "staged", fake_store: "35.5", ...(bytes.length <= FAKE_BYTES_MAX ? { fake_bytes_b64: bytes.toString("base64") } : {}) };
-    await q.query(`INSERT INTO documents (id, kind, sha256, byte_size, storage_uri, mime_type, retention_class, metadata, loan_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`, [id, doc.kind, sha256, bytes.length, `worm_pending:${id}`, doc.mime_type, doc.retention_class ?? "life_of_loan_plus_4y", toJson(metadata), doc.loan_id ?? null]);
-    return { document_id: id, sha256 };
-  },
-};
+export interface StoredDocument { readonly document_id: string; readonly sha256: string; readonly storage_status: "staged" | "stored"; readonly storage_uri: string; }
+/** The events the store appends (`document.staged`, `document.stored`, `document.drain.failed`) ride the caller's store when it hands one (a unit's ctx, before persist); otherwise they are persisted with the row on `q` (the commit hook's transaction — the sweep's breach-pass precedent). */
+export interface DocumentIo { readonly events: EventStore; readonly actor: Actor; readonly now: string; }
+export interface DocumentsPort {
+  store(q: Queryable, doc: { kind: string; bytes: Uint8Array | string; mime_type: string; retention_class?: string; loan_id?: string | null; metadata?: Row }, io?: DocumentIo): Promise<StoredDocument>;
+  /** A stored file's bytes (the object store; the staged copy in `document_blobs` while the store is unreachable), or null when the store holds none. */
+  read(q: Queryable, documentId: string): Promise<Buffer | null>;
+}
+/**
+ * The unit of work's own transaction, for a store that must run inside it: 35.2 timer table row 1 (SM_DOC_WORM_DRAIN_1D, armed on
+ * `document.staged`, satisfied by `document.stored`) arms only through the unit of work's TimerEngine — an event appended in a
+ * commit hook rides `rt.uow.events.append` past the timers already saved and arms no clock, so a store outage would leave the file
+ * staged with no breach clock. Absent only in a harness without a database.
+ */
+export function txOf(ctx: Pick<UowContext, "q">): Queryable { if (!ctx.q) throw new RangeError("35.5 stores a file inside its unit of work: the hosted runtime's UowContext.q is required"); return ctx.q; }
+/** 35.2's store on this runtime's object store (PgFakeBlobStore over `document_blobs` in every nonprod stage): the file's row `staged` with its bytes and, the store being reachable, `stored` at `fake-blob://<id>#<generation>` in the same transaction — the hash is the bytes (rule 1), staging first (rule 4). The 35.5 cycles store inside their unit of work (`txOf(ctx)`, `io = ctx.events`) so the drain clock arms and is satisfied there. */
+export function wormDocuments(rt: Runtime): DocumentsPort {
+  return {
+    async store(q, doc, io) {
+      const bytes = typeof doc.bytes === "string" ? Buffer.from(doc.bytes, "utf8") : Buffer.from(doc.bytes);
+      const own = new MemoryEventStore(rt.clock, doc.loan_id ? { loanId: doc.loan_id } : {}); const events: EventStore = io?.events ?? own;
+      const r = await storeDocument({ q, blobs: rt.blobs, events, actor: io?.actor ?? CASHIERING_AGENT, now: io?.now ?? rt.clock.now() },
+        { kind: doc.kind, bytes, mime_type: doc.mime_type, retention_class: doc.retention_class ?? "life_of_loan_plus_4y", loan_id: doc.loan_id ?? null, metadata: doc.metadata ?? {} });
+      if (!io) await rt.uow.events.append(own.since(0), q);   // the document events in the row's transaction (the caller's events were persisted before its commit hook ran)
+      return { document_id: r.document_id, sha256: r.sha256, storage_status: r.storage_status === "stored" ? "stored" : "staged", storage_uri: r.storage_uri };
+    },
+    async read(q, documentId) {
+      try { const b = await rt.blobs.get(documentId, q); if (b) return Buffer.isBuffer(b.bytes) ? b.bytes : Buffer.from(b.bytes); }
+      catch (e) { if (!(e instanceof AdapterUnavailable)) throw e; }
+      const staged = (await q.query<{ content: Buffer | null }>(`SELECT content FROM document_blobs WHERE document_id = $1`, [documentId]))[0]?.content ?? null;
+      return staged ? (Buffer.isBuffer(staged) ? staged : Buffer.from(staged)) : null;
+    },
+  };
+}
 
 // ---------------------------------------------------------------- 35.1 seam: the ACH file transmit (the outbox replaces it)
 export interface TransmitPort { transmitAchFile(file: { file_id: string; file_name: string; content: string }, now: string): Promise<{ status: "accepted" | "rejected" | "deferred"; ack?: Row; reason?: string }>; }
@@ -174,7 +199,7 @@ export function directNachaTransmit(rt: Runtime): TransmitPort {
 export interface Ports35_5 { readonly cashRows: CashRowsPort; readonly cycles: CyclePort; readonly documents: DocumentsPort; readonly transmit: TransmitPort; }
 const installed = new WeakMap<Runtime, Partial<Ports35_5>>();
 const rootOf = (rt: Runtime): Runtime => (rt as { readonly root?: Runtime }).root ?? rt;
-export function defaultPorts35_5(rt: Runtime): Ports35_5 { return { cashRows: jsonbCashRows(rt), cycles: typedCycleRuns(rt), documents: baselineDocuments, transmit: directNachaTransmit(rt) }; }
+export function defaultPorts35_5(rt: Runtime): Ports35_5 { return { cashRows: jsonbCashRows(rt), cycles: typedCycleRuns(rt), documents: wormDocuments(rt), transmit: directNachaTransmit(rt) }; }
 /** Replace one or more ports for this runtime (35.2 at its merge; a test double) — installed on the root, seen through every command view. */
 export function installPorts35_5(rt: Runtime, impl: Partial<Ports35_5>): void { const root = rootOf(rt); installed.set(root, { ...(installed.get(root) ?? {}), ...impl }); }
 /** The ports bound to `rt` (a view's reads ride the command's connection) with the root's installed overrides. */

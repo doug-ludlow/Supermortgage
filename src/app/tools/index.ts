@@ -228,6 +228,7 @@ export function bindTools(rt: ToolRuntime, agents: AgentRegistry, defs: readonly
   for (const d of defs) {
     const cmd = toolCommand(d, rt, escalates.get(d.process) ?? []);
     agents.registerTool(d.agent, cmd.name);
+    for (const a of d.agents ?? []) agents.registerTool(a, cmd.name);
     out.set(`${d.process} ${d.name}`, cmd);
   }
   return out;

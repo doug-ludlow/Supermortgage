@@ -58,7 +58,7 @@ import { CASHIERING_AGENT, MODEL_VERSION_DETERMINISTIC, PROMPT_VERSION_35_5, rea
 import { EXCLUDED_STATUSES, etDate, loanCashStateFromRows } from "./cashiering-cycle.ts";
 import { jurisdictionRulesFor, servicingConfigIfAny } from "./servicing-config.ts";
 import { bindUnit, commitUnit, executeInUnit, openUnit, type BoundUnit } from "./in-process.ts";
-import { ports35_5 } from "./ports-35-5.ts";
+import { ports35_5, txOf, type StoredDocument } from "./ports-35-5.ts";
 
 export const RULE_SET_RETURNS = "cashiering.returns.v1";
 export const CYCLE_ACH_FILE_BUILD = "ach_file_build";
@@ -326,14 +326,16 @@ export async function buildAchFile(rt: Runtime, input: BuildInput, opts: { recor
   const fileIdModifier = String.fromCharCode(65 + Math.min(modifierIndex, 25));
   const content = buildNachaFile({ immediateDestination: ` ${FAKE_ODFI.immediate_destination}`, immediateOrigin: FAKE_ODFI.immediate_origin, fileDate: asOf, fileTime: `${String(wc.hour).padStart(2, "0")}${String(wc.minute).padStart(2, "0")}`, fileIdModifier, batches });
   const hash = sha256(content); const fileId = randomUUID(); const fileName = `SM-ACH-${asOf.replace(/-/g, "")}-${fileIdModifier}.ach`;
-  let documentId: string | null = null;
+  let documentId: string | null = null; let stored: StoredDocument | undefined;
   const rep: Omit<BuildReport, "receipt_event_id" | "transmitted" | "ack_status" | "transmit_reason" | "transmitted_event_id" | "document_id" | "built_event_id"> = { ...base, file_id: fileId, file_name: fileName, sha256: hash, file_id_modifier: fileIdModifier, entries: traced.length, entry_ids: traced.map((x) => x.id), total_debit_cents: s(total) };
-  const built = await rt.uow.run({}, (ctx) => {
+  const built = await rt.uow.run({}, async (ctx) => {
     const ev = ctx.events.append({ type: FILE_BUILT, aggregate: { kind: ACH_FILE_KIND, id: fileId }, actor: CASHIERING_AGENT, payload: { file_id: fileId, as_of_date: asOf, run_id: run.run_id, file_name: fileName, file_id_modifier: fileIdModifier, entries: traced.length, entry_ids: traced.map((x) => x.id), total_debit_cents: s(total), sha256: hash, refused: refused.map((x) => ({ enrollment_id: x.enrollment_id, gate: x.gate, code: x.code })), skipped: skipped.length, window: { t1, t2 }, origination: true } });
     if (opts.recordDecision) ctx.decide({ agent: CASHIERING_AGENT.id, action: "ach.file.build", rationale: `${buildRationale(rep)} — ${toJson(buildRecord({ ...rep, transmitted: false }))}`, ruleSetVersion: RULE_SET_RETURNS, subject: { kind: ACH_FILE_KIND, id: fileId }, ...(refused.length ? { ruleCode: "GATES_ARE_2_3S" } : {}), confidence: 1, modelVersion: MODEL_VERSION_DETERMINISTIC, promptVersion: PROMPT_VERSION_35_5 });
+    // 35.2 timer table row 1: the file is stored inside the unit of work (its transaction, its events) so `document.staged` arms SM_DOC_WORM_DRAIN_1D through the TimerEngine and the inline `document.stored` satisfies it — a store outage leaves the row staged with its clock armed (ports-35-5.ts txOf)
+    stored = await ports.documents.store(txOf(ctx), { kind: ACH_FILE_KIND, bytes: content, mime_type: "text/plain", retention_class: "respa_5y", metadata: { source: "nacha", file_id: fileId, as_of_date: asOf, file_name: fileName, file_id_modifier: fileIdModifier, entries: traced.length } }, { events: ctx.events, actor: CASHIERING_AGENT, now });
     return ev;
   }, { clock: rt.clock, commit: async (q) => {
-    const doc = await ports.documents.store(q, { kind: ACH_FILE_KIND, bytes: content, mime_type: "text/plain", retention_class: "respa_5y", metadata: { source: "nacha", file_id: fileId, as_of_date: asOf, file_name: fileName, file_id_modifier: fileIdModifier, entries: traced.length } });
+    const doc = stored!;
     documentId = doc.document_id;
     await insertAchFile(q, { id: fileId, file_id_modifier: fileIdModifier, built_at: now, entry_count: traced.length, total_debit_cents: total, document_id: doc.document_id, hash });
     for (const x of traced) {
@@ -366,21 +368,22 @@ async function transmitFile(rt: Runtime, f: { file_id: string; file_name: string
 /**
  * A file the ODFI deferred (an outage) is retransmitted by the next build with the same stored document; one whose bytes the store no
  * longer holds is never retried silently — `ack_status = 'deferred_unretrievable'` and one `officer` escalation (its entries stay `built`
- * on the file; 35.1's outbox keeps the payload and 35.2's WORM store every file, so the branch is the FAKE stage's).
+ * on the file; 35.1's outbox keeps the payload and 35.2's store every file, so the branch is a row whose bytes never reached it).
  */
 async function retransmitDeferred(rt: Runtime, now: string): Promise<string[]> {
-  const rows = await rt.db.query<{ id: string; entry_count: number; metadata: Row | null }>(`SELECT f.id, f.entry_count, d.metadata FROM ach_files f LEFT JOIN documents d ON d.id = f.document_id WHERE f.transmitted_at IS NULL AND f.ack_status = 'deferred' ORDER BY f.built_at`);
-  const out: string[] = [];
+  const rows = await rt.db.query<{ id: string; entry_count: number; document_id: string | null; metadata: Row | null }>(`SELECT f.id, f.entry_count, f.document_id, d.metadata FROM ach_files f LEFT JOIN documents d ON d.id = f.document_id WHERE f.transmitted_at IS NULL AND f.ack_status = 'deferred' ORDER BY f.built_at`);
+  const out: string[] = []; const ports = ports35_5(rt);
   for (const r of rows) {
     const fileName = String(r.metadata?.file_name ?? `SM-ACH-${r.id}.ach`);
-    const b64 = r.metadata && typeof r.metadata.fake_bytes_b64 === "string" ? r.metadata.fake_bytes_b64 : null;
-    if (!b64) {
+    // the stored file's bytes from 35.2's store (the object, or the staged copy while the store is unreachable); none — the row's bytes never reached the store
+    const bytes = r.document_id ? await ports.documents.read(rt.db, r.document_id) : null;
+    if (!bytes) {
       await rt.db.tx((q) => q.query(`UPDATE ach_files SET ack_status = 'deferred_unretrievable' WHERE id = $1 AND ack_status = 'deferred'`, [r.id]));
       const opened = await openUnit(rt, {}); let bound: BoundUnit | undefined;
       await rt.uow.run({}, async (uow) => { bound = await bindUnit(rt, opened, uow); bound.escalations.open({ kind: "officer", ownerRole: "officer", severity: "2", payload: { rule_code: "ACH_FILE_RETRANSMIT_UNAVAILABLE", file_id: r.id, file_name: fileName, entries: r.entry_count, next: "the deferred file's bytes are not in the document store, so the build cannot retransmit it: its entries stay built on the file — rebuild them for the ODFI once it is reachable" } }, CASHIERING_AGENT); }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); } });
       continue;
     }
-    const tx = await transmitFile(rt, { file_id: r.id, file_name: fileName, content: Buffer.from(b64, "base64").toString("utf8"), entries: r.entry_count }, now);
+    const tx = await transmitFile(rt, { file_id: r.id, file_name: fileName, content: bytes.toString("utf8"), entries: r.entry_count }, now);
     if (tx.status === "accepted") out.push(r.id);
   }
   return out;
@@ -610,14 +613,16 @@ export async function ingestReturnFile(rt: Runtime, input: IngestInput, opts: { 
     }
     const returnsN = parsed.filter((x) => x.kind === "return").length; const nocsN = parsed.length - returnsN; const matched = items.filter((x) => x.matched).length; const unmatched = items.length - matched;
     // (D) the file stored and its row written once processed, with `ach.return_file.received` (an unmatched return is the officer's)
-    let documentId: string | null = null; const openedG = await openUnit(rt, {}); let boundG: BoundUnit | undefined;
+    let documentId: string | null = null; const openedG = await openUnit(rt, {}); let boundG: BoundUnit | undefined; let stored: StoredDocument | undefined;
     const fileEv = await rt.uow.run({}, async (uow) => {
       boundG = await bindUnit(rt, openedG, uow);
       const ev = boundG.ctx.events.append({ type: RETURN_FILE_RECEIVED, aggregate: { kind: ACH_RETURN_FILE_KIND, id: fileId }, actor: CASHIERING_AGENT, payload: { file_id: fileId, as_of_date: asOf, file_name: f.file_name, sha256: f.sha256, returns: returnsN, nocs: nocsN, entries_matched: matched, entries_unmatched: unmatched, received_at: f.received_at, actioned: items.filter((x) => x.action).length, errors: errors.length, origination: true } });
       for (const x of items.filter((y) => !y.matched)) boundG.escalations.open({ kind: "officer", ownerRole: "officer", severity: "2", payload: { rule_code: "RETURN_UNMATCHED", return_file_id: fileId, trace: x.trace, code: x.code, amount_cents: x.amount_cents, next: "a return with no entry of ours: reconcile with the ODFI" } }, CASHIERING_AGENT);
+      // 35.2 timer table row 1: stored inside the unit of work so `document.staged` / `document.stored` arm and satisfy SM_DOC_WORM_DRAIN_1D through its TimerEngine (ports-35-5.ts txOf)
+      stored = await ports.documents.store(txOf(boundG.ctx), { kind: ACH_RETURN_FILE_KIND, bytes: f.content, mime_type: "text/plain", retention_class: "respa_5y", metadata: { source: "nacha", return_file_id: fileId, as_of_date: asOf, file_name: f.file_name, queue_document_id: f.document_id } }, { events: boundG.ctx.events, actor: CASHIERING_AGENT, now });
       return ev;
     }, { clock: rt.clock, commit: async (q) => {
-      const doc = await ports.documents.store(q, { kind: ACH_RETURN_FILE_KIND, bytes: f.content, mime_type: "text/plain", retention_class: "respa_5y", metadata: { source: "nacha", return_file_id: fileId, as_of_date: asOf, file_name: f.file_name, queue_document_id: f.document_id } });
+      const doc = stored!;
       documentId = doc.document_id;
       await insertReturnFile(q, { id: fileId, as_of_date: asOf, file_name: f.file_name, sha256: f.sha256, document_id: doc.document_id, returns: returnsN, nocs: nocsN, entries_matched: matched, entries_unmatched: unmatched, received_at: f.received_at, processed_at: now });
       if (boundG) await commitUnit(q, rt, boundG);
@@ -656,6 +661,6 @@ export async function achReturnAction(i: ToolInput, ctx: CommandContext, rt: Too
   if (action && !RETURN_ACTIONS.includes(action as ReturnAction)) throw new RangeError(`action must be one of ${RETURN_ACTIONS.join(", ")}`);
   const services = rt.services as Services; const runtime = services.runtime; const deferWrite = services.deferWrite;
   if (!runtime || !deferWrite) throw new RangeError("ach.return.action needs the hosted runtime (services.runtime, services.deferWrite)");
-  const bound: BoundUnit = { scope: { loanId: ctx.loanId }, store: rt.store, mark: 0, openEscalations: [], globalKeys: new Set(), deferred: [], ctx, escalations: rt.escalations, toolRt: rt, deferWrite };
+  const bound: BoundUnit = { scope: { loanId: ctx.loanId }, store: rt.store, mark: 0, openEscalations: [], globalKeys: new Set(), deferred: [], deferredLate: [], ctx, escalations: rt.escalations, toolRt: rt, deferWrite };
   return actionReturn(runtime, bound, { entry_id: entryId, action: action ? (action as ReturnAction) : null, as_of: etDate(ctx.now), actor: ctx.actor }, { recordDecision: false });
 }

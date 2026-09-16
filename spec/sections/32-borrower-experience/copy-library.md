@@ -662,6 +662,7 @@ The lines the borrower API and the shell author themselves (src/runtime/borrower
 - `credit.freeze.lift` — StatusCard — "Your credit file is frozen, so the bureau couldn't share it. Lift the freeze with the bureau, then tap Try again. Nothing else changes." — *S4: a freeze is not a decline; no adverse inference.*
 - `deep_link.unknown` — refusal — "That link doesn't work. Sign in and we'll find your place." — options `Sign in` — *S5: `GET /v1/borrower/deeplink/{token}` answers 404.*
 - `deep_link.expired` — refusal — "That link has expired. Sign in and we'll take you there." — options `Sign in` — *S5: 410.*
+- `document.unavailable` — line — "This document is no longer available." — *35.2 edge cases: a request to open a disposed document answers 410 with the tombstone; the borrower copy replaces the viewer body.*
 - `entry.step.continue` — button — "Continue" — *S1: the one submit for the state select and the two estimate fields (chips resolve on tap; a select or typed field needs an explicit submit for keyboard users, WCAG 3.2.2).*
 - `entry.voice.code_texted` — spoken line — "I've texted a six-digit code to this number. Enter it on your keypad to continue." — *32.14 §4 voice entry: consents are never taken by voice; the identity code goes to the calling number.*
 - `entry.sms.options_hint` — line — "Reply with a number." — *32.14 §4 SMS entry: the options of a ChoiceCard are spelled "1) … 2) … 3) …" from the copy line's options.*
@@ -817,15 +818,31 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `apply.you.rent` — field — "Monthly rent" — *32.19 §2.2 you: only when renting.*
 - `apply.you.months` — field — "Months at this address" — *32.19 §2.2 you: under 24 opens the prior-address panel.*
 - `apply.you.prior` — heading — "Your prior address" — *32.19 §2.2 you: SQ-06.*
+- `apply.you.prior_street` — field — "Prior street address" — *32.19 §2.2 you: `identity.prior_residence.title.prior_address_line`.*
+- `apply.you.prior_city` — field — "Prior city" — *32.19 §2.2 you: `prior_city`.*
+- `apply.you.prior_state` — field — "Prior state" — helper: "Two letters, like TX" — *32.19 §2.2 you: `prior_state`.*
+- `apply.you.prior_zip` — field — "Prior ZIP code" — *32.19 §2.2 you: `prior_postal_code`.*
+- `apply.you.prior_basis` — field — "How you lived there" — options `Own` · `Rent` · `Rent-free` — *32.19 §2.2 you: `prior_residency_basis` (own · rent · living_rent_free).*
+- `apply.you.prior_rent` — field — "Monthly rent there" — *32.19 §2.2 you: `prior_monthly_rent_cents`, only when renting there.*
+- `apply.you.prior_months` — field — "Months you lived there" — *32.19 §2.2 you: `prior_months_at_address`.*
+- `apply.you.caution` — heading — "About your credit" — *32.19 §2.2 you / 32.16-T14: the caution row above a frozen bureau's lift card (`credit.freeze.lift`), never a toast or a modal.*
+- `apply.you.required` — refusal — "Fill in your name, birth date and months here." — *32.19 §3.0: a required field empty stays on the step; nothing is posted. The birth date is YYYY-MM-DD.*
+- `apply.you.ssn_invalid` — refusal — "Your Social Security number is nine digits." — *32.19 §3.0: checked before anything is posted.*
+- `apply.you.rent_required` — refusal — "Tell us the monthly rent." — *32.19 §3.0: the rent is required when the basis is Rent (`required_when`).*
+- `apply.you.prior_required` — refusal — "Fill in your prior address, how you lived there and the months." — *32.19 §3.0: the prior-residence panel's six fields.*
 - `apply.connect.title` — heading — "Connect once." — *32.19 §2.2 connect.*
 - `apply.connect.fake_note` — line — "Payroll and bank use FAKE vendors here. Type your monthly income and continue." — *32.19 §2.2: shown under SHOW_FAKE_MARKERS.*
 - `apply.connect.income` — field — "Monthly income" — *32.19 §2.2 connect.*
 - `apply.connect.employer` — field — "Employer" — *32.19 §2.2 connect: an edit on `income.confirm.title`.*
 - `apply.connect.cta` — button — "Connect and continue" — *32.19 §2.2 connect: the FAKE finishes on the tap.*
+- `apply.connect.required` — refusal — "Type your monthly income and employer." — *32.19 §3.0: nothing is posted without both.*
 - `apply.details.title` — heading — "A few facts." — *32.19 §2.2 details.*
 - `apply.details.citizenship` — field — "Citizenship" — options `U.S. citizen` · `Permanent resident` · `Non-permanent resident` — *32.19 §2.2 details.*
 - `apply.details.marital` — field — "Marital status" — options `Unmarried` · `Married` · `Separated` — *32.19 §2.2 details.*
 - `apply.details.dependents` — field — "Dependents" — *32.19 §2.2 details.*
+- `apply.details.military` — field — "Military service" — options `No` · `Currently serving on active duty` · `Retired, discharged or separated` · `Reserve or National Guard, never activated` · `Surviving spouse` — *32.19 §2.2 details: `profile.title.military_service` (none · active_duty · retired_or_separated · reserve_or_guard · surviving_spouse).*
+- `apply.details.language` — field — "Language preference" — options `English` · `Spanish` · `Chinese` · `Korean` · `Tagalog` · `Vietnamese` · `Other` · `I'd rather not say` — *32.19 §2.2 details: `profile.title.language_preference` (Form 1103); empty → `not_answered`.*
+- `apply.details.required` — refusal — "Answer the first four questions to continue." — *32.19 §3.0: the profile card's required four (citizenship, marital status, dependents, military service), checked before anything is posted.*
 - `apply.details.spouse_later` — line — "Your spouse's part comes later. Nothing to add now." — *32.19 §2.2: no `application.inviteParty` is posted.*
 - `apply.questions.title` — heading — "Do any apply?" — *32.19 §2.2 questions.*
 - `apply.questions.lead` — line — "Bankruptcy, foreclosure, lawsuits, alimony, borrowed funds." — *32.19 §2.2 questions: the list the declarations cover, one question at a time.*
@@ -855,6 +872,21 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `apply.account.signed_in` — label — "Signed in" — *32.19 §2.3: when the party has no first name yet.*
 - `apply.account.sign_out` — button — "Sign out" — *32.19 §2.3: `POST auth/sign-out`; the next load is the door.*
 - `apply.chat.placeholder` — field — "Message" — helper: "Ask Supermortgage" — *32.19 §2.3: the composer; `POST /v1/borrower/messages` only.*
+- `apply.chat.empty` — line — "Ask anything about your loan or application." — *32.19 §2.3: the Chat tab before the first line.*
+- `apply.questions.waiting` — line — "Loading your questions…" — *32.19 §2.2 questions: shown while the first declarations card is awaited from the flows.*
+- `apply.questions.done` — line — "Your answers are in." — *32.19 §2.2 questions: the sequence's last tap ran the command; Continue goes on.*
+- `apply.questions.answer_first` — refusal — "Answer the question on the card first." — *32.19 §3.0: Continue never skips a pending declarations card; nothing is posted.*
+- `apply.demographics.done` — line — "Thanks. That part is done." — *32.19 §2.2 demographics: the card is resolved; Continue goes on.*
+- `apply.demographics.answer_first` — refusal — "Answer or decline on the card first." — *32.19 §3.0: the demographics card is pending; nothing is posted.*
+- `apply.review.products` — labels — "Loan type" — options `30-year fixed` · `15-year fixed` — *32.19 §2.2 review: FRM30, or FRM15 for Pay off sooner (`refi.product.choice`).*
+- `apply.review.required` — refusal — "Fill in the numbers above first." — *32.19 §3.0: the value, the balance or the down payment is empty; nothing is posted.*
+- `apply.result.waiting` — line — "Your application is in. We are checking it now." — *32.19 §2.2 result: before the copy library's `du.running` card arrives.*
+- `apply.tasks.journey_label` — label — "Progress" — *32.19 §2.3 / 32.16-T13: beside `journey_progress`.*
+- `apply.tasks.journey` — line — "{{done}} of {{total}}" — *32.19 §2.3 / 32.16-T13: `journey_progress` as the API derives it ("7 of 12").*
+- `apply.tasks.needed_count` — line — "{{count}} needed from you" — *32.19 §2.3 / 32.16-T16: `needed_summary.count`, the record's own number.*
+- `apply.loan.servicer` — label — "Serviced by" — *32.19 §2.3 My Loan: the servicer of record (33.1 rule 6).*
+- `apply.loan.number` — line — "Loan ending in {{last4}}" — *32.19 §2.3 My Loan: the loan's last four, never the number.*
+- `apply.loan.nothing_scheduled` — line — "Nothing scheduled" — *32.19 §2.3 My Loan: no next event on the record.*
 
 ## Channel variants (rules)
 

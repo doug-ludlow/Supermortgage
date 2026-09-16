@@ -948,7 +948,7 @@ test("32.16-T28: Given every `card.sent` event in the refinance, purchase and se
   clock.set(MST("2026-12-15", "10:00")); const tokA = (await t28signIn(A)).token;
   const asked = await t28api("POST", "/v1/borrower/messages", { text: "I would like to make a payment on my loan.", subject: { loan_id: loanId } }, tokA);
   assert.equal(asked.status, 200, JSON.stringify(asked.body).slice(0, 400)); await settle();
-  await j.firstPayment(); await settle(); await tick("2027-01-02T16:00:00.000Z"); await j.payoff(); await settle(); await tick("2027-02-01T16:00:00.000Z");
+  await j.firstPayment(); await settle(); await tick("2027-01-02T16:00:00.000Z"); await j.payoffDirect(); await settle(); await tick("2027-02-01T16:00:00.000Z");
   assert.ok((await db.query(`SELECT 1 FROM loan_events WHERE loan_id = $1 AND type = 'loan.paid_in_full'`, [loanId])).length >= 1, "the loan paid in full");
 
   // ---- fixture 2: the purchase — 32.3's contract path (T29): an organic application, the goal, five items stated, the contract uploaded and confirmed

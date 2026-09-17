@@ -19,6 +19,7 @@ enum Format {
     /// `clock()`: the current time as "9:41 AM".
     static func clock(_ date: Date = Date()) -> String {
         date.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(enUS))
+            .replacingOccurrences(of: "\u{202F}", with: " ")
     }
 
     /// `dayLabel()`: "{Weekday} morning|afternoon|evening" — before noon, before 17:00, after.

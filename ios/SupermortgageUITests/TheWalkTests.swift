@@ -50,12 +50,13 @@ final class TheWalkTests: XCTestCase {
 
         // Review it → Approve
         tap(app.buttons["chat.option.Review it"], 15)
-        waitFor(app.staticTexts["Cancel PMI"], 10)
+        waitFor(app.staticTexts["sheet.title"], 10)
+        XCTAssertEqual(app.staticTexts["sheet.title"].label, "Cancel PMI")
         tap(app.buttons["button.Approve"], 10)
 
         // Feed shows "PMI cancellation sent"
         tap(app.buttons["tab.feed"], 10)
-        waitFor(app.staticTexts["PMI cancellation sent"], 10)
+        waitFor(text(containing: "PMI cancellation sent"), 10)
 
         // Work shows "2 need you"
         tap(app.buttons["tab.work"], 10)

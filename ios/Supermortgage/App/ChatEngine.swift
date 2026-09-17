@@ -42,17 +42,21 @@ final class ChatEngine {
     }
 
     /// A status row: spinner with `loading`, then a check with `done` (and `small`) after `ms`.
-    func progress(_ loading: String, done: String, small: String? = nil, ms: Int = 1600) async {
+    /// Returns false when the task was cancelled (a reset), so callers stop there.
+    @discardableResult
+    func progress(_ loading: String, done: String, small: String? = nil, ms: Int = 1600) async -> Bool {
         let id = UUID()
         model.chat.append(Message(id: id, role: .agent, body: .progress(ProgressState(loading: loading, done: nil, small: nil)), options: nil, used: false))
         do {
             try await clock.sleep(ms: ms)
         } catch {
-            return
+            model.chat.removeAll { $0.id == id }
+            return false
         }
         if let i = model.chat.firstIndex(where: { $0.id == id }) {
             model.chat[i].body = .progress(ProgressState(loading: loading, done: done, small: small))
         }
+        return true
     }
 
     // MARK: The script
@@ -96,27 +100,28 @@ final class ChatEngine {
     ]
 
     func scriptNumber() async {
+        guard !Task.isCancelled else { return }
         model.setupDone = true
-        model.log("First pass complete · number computed")
+        model.addLog("First pass complete · number computed")
         model.post("🏠", "Your number: \(Format.money(model.total)) a month",
                    "Mortgage \(Format.money(Home.payment)) (including \(Format.money(Home.escrow)) escrow and \(Format.money(Home.pmi)) PMI) · utilities $368 · internet $89 · services and subscriptions $173. This is what the house costs you today. It only goes one way from here.")
-        await say(.number(lead: Copy.numberLead, amount: Format.money(model.total), rows: model.breakdown()), delay: 1400)
-        await say(.bullets(lead: Copy.findingsLead, items: ChatEngine.findings), delay: 1600)
+        guard await say(.number(lead: Copy.numberLead, amount: Format.money(model.total), rows: model.breakdown()), delay: 1400) != nil else { return }
+        guard await say(.bullets(lead: Copy.findingsLead, items: ChatEngine.findings), delay: 1600) != nil else { return }
         model.post("✂️", "Cancelled two things you were paying for nothing", "Title lock ($19.99) and a home warranty ($54). The county recorder sends deed alerts free; I turned those on. −$74 a month.")
         model.post("🧾", "Your servicer over-collected your escrow", "The annual analysis was off by $412. Refund requested. I’ll post when it lands.")
         model.post("🛡️", "PMI can come off", "You’re at 70% of value. One approval and I send the request.", tag: "Needs you", action: .reviewPMI)
         model.post("📉", "Rates this morning: 5.75%", "Three-eighths under your 6.125%. A refinance saves about $164 a month. Ready when you are.", action: .startRefi)
         model.media.append(MediaItem(title: "Escrow refund request · confirmation", kind: .camera))
-        model.log("Cancelled title lock ($19.99/mo)")
-        model.log("Cancelled home warranty ($54/mo)")
-        model.log("Requested escrow refund ($412)")
-        model.log("Turned on county recorder alerts")
-        await say(.text(Copy.actionsMessage), options: [ChatOption("Review it", .reviewPMI, primary: true)], delay: 1300)
-        await say(.text(Copy.refinanceOffer), options: [
+        model.addLog("Cancelled title lock ($19.99/mo)")
+        model.addLog("Cancelled home warranty ($54/mo)")
+        model.addLog("Requested escrow refund ($412)")
+        model.addLog("Turned on county recorder alerts")
+        guard await say(.text(Copy.actionsMessage), options: [ChatOption("Review it", .reviewPMI, primary: true)], delay: 1300) != nil else { return }
+        guard await say(.text(Copy.refinanceOffer), options: [
             ChatOption("Start the refinance", .startRefi, primary: true),
             ChatOption("Show me the numbers", .showArtifact(.refi)),
             ChatOption("Not yet", .notYet),
-        ], delay: 1700)
+        ], delay: 1700) != nil else { return }
         model.startSnippets()
         model.armProactive()
     }
@@ -161,7 +166,7 @@ final class ChatEngine {
             await say(.text(Copy.answerPaused))
             return
         }
-        await say(.text(Copy.answerDefault))
-        model.log("Looked into: “\(String(q.prefix(60)))”")
+        guard await say(.text(Copy.answerDefault)) != nil else { return }
+        model.addLog("Looked into: “\(String(q.prefix(60)))”")
     }
 }

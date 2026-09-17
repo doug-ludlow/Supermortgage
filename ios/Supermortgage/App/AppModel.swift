@@ -187,7 +187,7 @@ final class AppModel: ObservableObject {
 
     // MARK: - Logging and posting
 
-    func log(_ text: String) {
+    func addLog(_ text: String) {
         log.insert(LogEntry(text: text, at: Format.clock()), at: 0)
     }
 
@@ -297,11 +297,11 @@ final class AppModel: ObservableObject {
     func connectMortgage(_ label: String) {
         engine.user(label)
         connections.mortgage = true
-        log("Mortgage statement read")
+        addLog("Mortgage statement read")
         run { [weak self] in
             guard let self else { return }
-            await self.engine.progress("Reading your statement…", done: Home.address,
-                                       small: "Fannie Mae conforming · 6.125% fixed · \(Format.money(Home.payment, 2)) a month · PMI $146", ms: 1700)
+            guard await self.engine.progress("Reading your statement…", done: Home.address,
+                                             small: "Fannie Mae conforming · 6.125% fixed · \(Format.money(Home.payment, 2)) a month · PMI $146", ms: 1700) else { return }
             await self.engine.scriptCredit()
         }
     }
@@ -311,16 +311,16 @@ final class AppModel: ObservableObject {
         if label == "Not now" {
             run { [weak self] in
                 guard let self else { return }
-                await self.engine.say(.text(Copy.creditDeclined), delay: 600)
+                guard await self.engine.say(.text(Copy.creditDeclined), delay: 600) != nil else { return }
                 await self.engine.scriptPlaid()
             }
             return
         }
         connections.credit = true
-        log("Credit checked (soft pull) · 742")
+        addLog("Credit checked (soft pull) · 742")
         run { [weak self] in
             guard let self else { return }
-            await self.engine.progress("Checking your credit…", done: "Credit report ready", small: "742 · 3 accounts · no late payments", ms: 1500)
+            guard await self.engine.progress("Checking your credit…", done: "Credit report ready", small: "742 · 3 accounts · no late payments", ms: 1500) else { return }
             await self.engine.scriptPlaid()
         }
     }
@@ -331,10 +331,10 @@ final class AppModel: ObservableObject {
         let n = accounts > 0 ? accounts : 3
         engine.user("Connected Northstar Bank · \(n) accounts")
         connections.plaid = true
-        log("Connected \(n) bank accounts")
+        addLog("Connected \(n) bank accounts")
         run { [weak self] in
             guard let self else { return }
-            await self.engine.progress("Reading 12 months of transactions…", done: "Found 9 recurring home charges", ms: 1800)
+            guard await self.engine.progress("Reading 12 months of transactions…", done: "Found 9 recurring home charges", ms: 1800) else { return }
             await self.engine.scriptNumber()
         }
     }
@@ -355,7 +355,7 @@ final class AppModel: ObservableObject {
             feed[i].body = "Request and valuation sent to your servicer. They have 30 days; I follow up on day 15 and day 30. −$146 a month when it clears."
         }
         media.append(MediaItem(title: "PMI request · sent confirmation", kind: .camera))
-        log("PMI cancellation request sent")
+        addLog("PMI cancellation request sent")
         engine.user("Approved")
         run { [weak self] in await self?.engine.say(.text(Copy.pmiSent), delay: 700) }
         router.toast("PMI request sent")
@@ -381,10 +381,10 @@ final class AppModel: ObservableObject {
             feed[i].title = "Refinance opened at 5.75%"
             feed[i].body = "I’ve filled in what I know. Pricing is watched hourly; you’ll get a card before the lock. −$164 a month when it funds."
         }
-        log("Refinance opened · 5.75%")
+        addLog("Refinance opened · 5.75%")
         run { [weak self] in
             guard let self else { return }
-            await self.engine.say(.text(Copy.refiOpening), delay: 700)
+            guard await self.engine.say(.text(Copy.refiOpening), delay: 700) != nil else { return }
             do { try await self.clock.sleep(ms: 900) } catch { return }
             self.router.refinanceShown = true
         }
@@ -417,15 +417,15 @@ final class AppModel: ObservableObject {
         media.append(MediaItem(title: label, kind: .camera))
         run { [weak self] in
             guard let self else { return }
-            await self.engine.progress("Reading it…", done: "Read. Nothing new against what I have — filed under Media.", ms: 1500)
-            self.log("Read an upload: \(label)")
+            guard await self.engine.progress("Reading it…", done: "Read. Nothing new against what I have — filed under Media.", ms: 1500) else { return }
+            self.addLog("Read an upload: \(label)")
         }
     }
 
     func scheduled(_ slot: String) {
         router.dismiss()
         engine.user(slot)
-        log("Call scheduled \(slot)")
+        addLog("Call scheduled \(slot)")
         run { [weak self] in await self?.engine.say(.text("Booked for \(slot). They’ll have the full picture."), delay: 600) }
     }
 
@@ -476,7 +476,7 @@ final class AppModel: ObservableObject {
         guard let w = item(id: id) else { return }
         router.dismiss()
         router.toast("\(name.isEmpty ? "Agent" : name) is on it…")
-        log("Ran now: \(w.title)")
+        addLog("Ran now: \(w.title)")
         do { try await clock.sleep(ms: 1400) } catch { return }
         if let i = work.firstIndex(where: { $0.id == id }) {
             if work[i].status == .waiting && id == "w35" {
@@ -499,7 +499,7 @@ final class AppModel: ObservableObject {
     func togglePause(_ id: String) {
         guard let i = work.firstIndex(where: { $0.id == id }) else { return }
         work[i].paused.toggle()
-        log("\(work[i].paused ? "Paused" : "Resumed"): \(work[i].title)")
+        addLog("\(work[i].paused ? "Paused" : "Resumed"): \(work[i].title)")
     }
 
     func setBuffer(_ amount: Int) {
@@ -508,7 +508,7 @@ final class AppModel: ObservableObject {
             w.status = .running
             w.meta = "Buffer \(Format.money(Double(amount))) · sweeps on the 1st"
         }
-        log("Buffer set to \(Format.money(Double(amount)))")
+        addLog("Buffer set to \(Format.money(Double(amount)))")
         router.dismiss()
         router.toast("Buffer set to \(Format.money(Double(amount)))")
     }
@@ -533,16 +533,16 @@ final class AppModel: ObservableObject {
                 w.meta = "Watching bills against your baseline"
             }
             post("⚡", "Switched you to a time-of-day plan", "Your interval data says evenings are light. About $22 a month, starting next cycle.")
-            log("Utilities connected · rate plan switched")
+            addLog("Utilities connected · rate plan switched")
         case .grid:
             update(.grid) { w in
                 w.status = .running
                 w.meta = "Thermostat enrolled · first event pays next month"
             }
-            log("Thermostat enrolled in demand response")
+            addLog("Thermostat enrolled in demand response")
         case .ins:
             insuranceConnected = true
-            log("Insurance carrier connected")
+            addLog("Insurance carrier connected")
         }
         router.toast("Connected")
         if key == .smud || key == .util || key == .ins {
@@ -555,7 +555,7 @@ final class AppModel: ObservableObject {
     func saveGoal(_ title: String, note raw: String) {
         let note = raw.trimmed.isEmpty ? "Planning" : raw.trimmed
         goals.append(Goal(title: title, note: note))
-        log("New goal: \(title)")
+        addLog("New goal: \(title)")
         router.dismiss()
         router.toast("Added to Tracking")
         if title == "No tenants" {
@@ -572,12 +572,12 @@ final class AppModel: ObservableObject {
         if !text.isEmpty { memory = text }
         router.dismiss()
         router.toast("Saved")
-        log("Memory edited")
+        addLog("Memory edited")
     }
 
     func setPaused(_ on: Bool) {
         paused = on
-        log(on ? "Paused everything" : "Resumed")
+        addLog(on ? "Paused everything" : "Resumed")
         router.toast(on ? "Paused" : "Back to work")
     }
 
@@ -638,14 +638,14 @@ final class AppModel: ObservableObject {
         guard escrowRefund == .requested else { return }
         escrowRefund = .approved
         post("💵", "Escrow refund approved — $412", "Your servicer approved the refund. It lands as a credit on your October statement.")
-        log("Escrow refund approved ($412)")
+        addLog("Escrow refund approved ($412)")
         router.toast("\(name) posted to your feed")
         await engine.say(.text(Copy.escrowApprovedMessage), delay: 400)
     }
 
     func roofPoolOpened() async {
         post("🏘️", "Four homes on your street are on Supermortgage", "I’m pooling a roof bid for next spring with your neighbors. Nothing needed from you yet.")
-        log("Roof pool opened with 3 neighbors")
+        addLog("Roof pool opened with 3 neighbors")
         router.toast("\(name) posted to your feed")
         await engine.say(.text(Copy.roofPoolMessage), delay: 400)
     }

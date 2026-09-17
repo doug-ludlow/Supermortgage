@@ -200,6 +200,12 @@ export function isOwnBookkeeping(r: { kind: string; title: string; detail?: unkn
   return false;
 }
 const SWEEP_ACTOR: Actor = { kind: "system", id: "work-35-8" };
+/** One item per source (the unique index work_items_open_source_idx): a source key collected twice in one pass is opened once — the second occurrence is dropped and named to the log, never a duplicate-key failure of the whole pass (the deployed sweep's work.breaches pass failed every minute on that index, 2026-09-16). */
+export function dedupeSources<T extends { readonly source_kind: string; readonly source_id: string }>(sources: readonly T[], onDuplicate?: (dup: T) => void): T[] {
+  const seen = new Set<string>(); const out: T[] = [];
+  for (const x of sources) { const k = `${x.source_kind}:${x.source_id}`; if (seen.has(k)) { onDuplicate?.(x); continue; } seen.add(k); out.push(x); }
+  return out;
+}
 /** The pass: open an item per new source, close the items whose source closed (`source_closed`). One global unit of work per change set. */
 export async function queuePass(rt: Runtime, now: string, o: { ports?: WorkPorts } = {}): Promise<QueuePassReport> {
   const ports = portsOf(o.ports);
@@ -211,7 +217,7 @@ export async function queuePass(rt: Runtime, now: string, o: { ports?: WorkPorts
   const have = new Set(openRows.map((r) => key(r.source_kind, r.source_id)));
   const want = new Set([...sources.map((x) => key(x.source_kind, x.source_id)), ...present]);
   // the item's age is the item's, from the sweep that opened it (timer table rows 2–3 anchor on `opened_at`: "an item needing a person has sat two business days"), never the source's first instant — a clock armed already past due would breach a day late (src/runtime/demo-clock.test.ts); a source re-opened after its item was closed or cancelled (Q4) ages from now the same way. The source's own instant stays its `due_at` / the console row's.
-  const toOpen = sources.filter((x) => !have.has(key(x.source_kind, x.source_id)) && x.source_kind !== "manual").map((x) => ({ ...x, opened_at: now }));
+  const toOpen = dedupeSources(sources.filter((x) => !have.has(key(x.source_kind, x.source_id)) && x.source_kind !== "manual").map((x) => ({ ...x, opened_at: now })), (dup) => rt.logger?.warn("work.queue: one source collected twice in a pass — the second is dropped", { source_kind: dup.source_kind, source_id: dup.source_id, screen_code: dup.screen_code }));
   // an `approval_pending` item of this process names a `work_actions` proposal (a uuid); another process's proposal item (35.9's referral: `<case_id>:refer`) is opened and closed by that process's own port (default-35-9/ports.ts) and is never this pass's to close
   const toClose = openRows.filter((r) => !want.has(key(r.source_kind, r.source_id)) && r.source_kind !== "manual" && (r.source_kind !== "approval_pending" || isUuid(r.source_id)));
   let opened = 0; let closed = 0;

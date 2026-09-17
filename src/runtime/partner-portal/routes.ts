@@ -25,6 +25,9 @@
  *   GET  /v1/partner/book/holds                     every partner role    36.2: holdsOf for the tenant, partner-grade, no resolve control
  *   POST /v1/partner/book/loans/{id}/resolve        no partner role       36.2 rule 9: 403 ROLE_REQUIRED{role: ops_analyst, act_as: []} before any read (also any POST under …/book/holds)
  *   GET  /v1/partner/book/loans/{id}                every partner role    the tenant's loan (34.3's bookLoan scoped by ./scope.ts); another tenant's → 404 NOT_FOUND (36.1-T3)
+ *   GET  /v1/partner/eligibility?bucket=&state=&on_hold=  every partner role  36.3: the board — { as_of_date, counts, loans: PartnerLoanRow[] } (./eligibility.ts); every other query key dropped unread
+ *   GET  /v1/partner/pipeline                       every partner role    36.4: the feed — { items: PipelineItem[] } newest first (./pipeline.ts); no query key in V1
+ *   GET  /v1/partner/pipeline/{loan_id}             every partner role    36.4: the member's { loan, stages, current, clocks }; another tenant's, the new active loan's or an unknown id → 404 NOT_FOUND
  *
  * Rule 3 on every session route: the request may name a held role (body `role` or `?role=`); a read falls back to the
  * least-privileged accepted held role and answers `acted_as`; an act is 403 ROLE_REQUIRED{role, held, act_as} before any write.
@@ -45,6 +48,8 @@ import { PartnerError, chooseRole, defaultRole, ADMIN_ROLES, READ_ROLES, type Pa
 import { tenantLoan } from "./scope.ts";
 import { firstNameLastInitial } from "./mask.ts";
 import { BOOK_COPY, maskReportNumbers as maskFor, partnerHolds, partnerImport, partnerImportInputOf, partnerImportReport, partnerImports, partnerStatus } from "./book.ts";
+import { eligibilityQueryFromUrl, partnerEligibility } from "./eligibility.ts";
+import { partnerPipeline, partnerPipelineLoan } from "./pipeline.ts";
 export { firstNameLastInitial };
 
 export const PARTNER_PREFIX = "/v1/partner/";
@@ -214,6 +219,29 @@ export function createPartnerRouter(opts: PartnerRouterOptions): PartnerRouter {
       return { status: 200, acted_as: role, subject, body: { acted_as: role, loan: { loan_id: l.loan.loan_id, servicer_loan_number: number, status: l.loan.status, partner_party_id: l.loan.partner_party_id, partner_legal_name: l.loan.partner_legal_name, property: l.loan.property ? { city: l.loan.property.city, state: l.loan.property.state } : null },
         homeowner: { party_id: l.homeowner.party_id, name: firstNameLastInitial(l.homeowner.legal_name) }, on_hold: l.on_hold, hold: l.hold, facts_as_of: l.facts_by_as_of.length ? l.facts_by_as_of[l.facts_by_as_of.length - 1]!.as_of_date : null,
         reviews: l.reviews.map((r) => ({ as_of_date: r.as_of_date, verdict: r.verdict, reasons: r.reasons })), readiness: l.readiness.length ? l.readiness[l.readiness.length - 1] : null, offers: l.offers.map((o) => ({ opportunity_id: o.opportunity_id, status: o.status, offer_valid_until: o.offer_valid_until, expired: o.expired })), clocks: l.clocks } };
+    }
+    // ───────── 36.3: the eligibility board — every partner role reads it (Trigger & frequency); the three keys narrow, every other key is dropped unread (rule 3: never applied,
+    // never an error, never on the log row — the applied and dropped key NAMES go to the server log only); the counts are the whole tenant book's on every answer (rule 4)
+    if (method === "GET" && rest === "eligibility") {
+      const role = actAs(ctx, READ_ROLES, preferred, "read");
+      const subject = { kind: "eligibility", id: ctx.session.partner_party_id }; note({ subject, acted_as: role });
+      const query = eligibilityQueryFromUrl(url);
+      if (query.dropped.length) logger.info("partner.eligibility.keys_dropped", { partner_party_id: ctx.session.partner_party_id, dropped: query.dropped, applied: query.applied });
+      return { status: 200, acted_as: role, subject, body: { ...(await partnerEligibility(runtime, ctx.session, query, now)), acted_as: role } };
+    }
+    // ───────── 36.4: the pipeline feed and a member's detail — every partner role reads them; the list is the tenant's members only (another tenant's are absent, never refused —
+    // 36.4-T5), the detail for another tenant's loan, the new active loan or an unknown id is 404 NOT_FOUND and logged refused (rule 9); no query key in V1 (Open question 5)
+    if (method === "GET" && rest === "pipeline") {
+      const role = actAs(ctx, READ_ROLES, preferred, "read");
+      const subject = { kind: "pipeline", id: ctx.session.partner_party_id }; note({ subject, acted_as: role });
+      return { status: 200, acted_as: role, subject, body: { ...(await partnerPipeline(runtime, ctx.session, now)), acted_as: role } };
+    }
+    if (method === "GET" && (m = /^pipeline\/([^/]+)$/.exec(rest))) {
+      const role = actAs(ctx, READ_ROLES, preferred, "read");
+      const loanId = decodeURIComponent(m[1]!);
+      const subject = { kind: "pipeline.loan", id: UUID.test(loanId) ? loanId : null }; note({ subject, acted_as: role });
+      if (!UUID.test(loanId)) throw new PartnerError(404, "NOT_FOUND", "no such loan");
+      return { status: 200, acted_as: role, subject, body: { ...(await partnerPipelineLoan(runtime, ctx.session, loanId, role, now)), acted_as: role } };
     }
     const fallback = defaultRole(ctx.user.roles);
     return { status: 404, body: { error: "not_found", code: "NOT_FOUND", reason: "no such partner route" }, subject: { kind: "route", id: null }, ...(fallback ? { acted_as: fallback } : {}) };

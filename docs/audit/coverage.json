@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8748/8787 (99.6%): tids 2448/2480, tables 852/852, timers 2097/2097, notices 309/309, tools 1575/1579, figures 1467/1470; processes at 100%: 206/212; retired 27; hosted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql), persisted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql)",
+ "brief": "spec units built 8761/8787 (99.7%): tids 2458/2480, tables 852/852, timers 2097/2097, notices 309/309, tools 1575/1579, figures 1470/1470; processes at 100%: 208/212; retired 27; hosted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql), persisted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql)",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2448
+   "built": 2458
   },
   "tables": {
    "spec": 852,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1470,
-   "built": 1467
+   "built": 1470
   },
   "units": {
    "spec": 8787,
-   "built": 8748
+   "built": 8761
   }
  },
  "exec_totals": {
@@ -437,9 +437,9 @@
   },
   "36": {
    "spec": 40,
-   "built": 19,
+   "built": 32,
    "processes": 6,
-   "done": 2
+   "done": 4
   }
  },
  "done": [
@@ -648,7 +648,9 @@
   "35.11",
   "35.12",
   "36.1",
-  "36.2"
+  "36.2",
+  "36.3",
+  "36.4"
  ],
  "processes": [
   {
@@ -11524,15 +11526,9 @@
    "title": "The eligibility board: three buckets projected from the daily review",
    "tids": {
     "spec": 5,
-    "built": 0,
-    "todo": 5,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5
-    ]
+    "built": 5,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -11557,12 +11553,8 @@
    },
    "figures": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "$3,069.79",
-     "$441,366.13",
-     "$605,000.00"
-    ]
+    "built": 3,
+    "missing": []
    },
    "hosted": {
     "spec": 0,
@@ -11576,9 +11568,9 @@
    },
    "units": {
     "spec": 8,
-    "built": 0
+    "built": 8
    },
-   "pct": 0.0,
+   "pct": 100.0,
    "retired": []
   },
   {
@@ -11586,15 +11578,9 @@
    "title": "The refinance pipeline feed: members in motion, projected from the rows that already exist",
    "tids": {
     "spec": 5,
-    "built": 0,
-    "todo": 5,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5
-    ]
+    "built": 5,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -11634,9 +11620,9 @@
    },
    "units": {
     "spec": 5,
-    "built": 0
+    "built": 5
    },
-   "pct": 0.0,
+   "pct": 100.0,
    "retired": []
   },
   {

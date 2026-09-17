@@ -34,6 +34,13 @@ jobs:
         run: python3 tools/spec_lint_names.py
       - run: npm run du:verify
       - run: npm run spec:lint
+      - name: the partner app's own gates (apps/partner typecheck, lint, unit tests — the walk suite runs in the shards)
+        working-directory: apps/partner
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm run test:unit
       - name: migrations apply cleanly
         env: { DATABASE_URL: postgresql://sm:sm@localhost:5432/supermortgage }
         run: |
@@ -56,7 +63,8 @@ jobs:
   # (src/domain/borrower/32-13, 32-16.rail, 32-17) `next build` apps/borrower into .next-t13 and drive it with
   # Playwright's Chromium from /opt/pw-browsers, so every shard installs the app and the browser (the shard a
   # file lands in moves as files are added; installing everywhere is what keeps the partition free to move) and
-  # restores the build from a cache keyed on the app's sources.
+  # restores the build from a cache keyed on the app's sources. The partner app (apps/partner) is installed and
+  # cached the same way for src/domain/servicing-partner-portal/36-app.walk, which builds it into .next-t36.
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -83,6 +91,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             apps/borrower/package-lock.json
+            apps/partner/package-lock.json
       - run: npm ci
       - name: xmllint and psql on the runner (src/infra/integrations/du-schema throws without xmllint; db/migrate.sh needs psql)
         run: sudo apt-get update -q >/dev/null && sudo apt-get install -y -q libxml2-utils postgresql-client >/dev/null
@@ -92,6 +101,18 @@ jobs:
           npm ci
           sudo mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" && sudo chown "$(id -u):$(id -g)" "$PLAYWRIGHT_BROWSERS_PATH"
           npx playwright install --with-deps chromium
+      - name: install the partner app (36-app.walk builds it and drives it with the same Chromium)
+        working-directory: apps/partner
+        run: npm ci
+      - name: restore the partner app's standalone build (.next-t36) keyed on its sources
+        id: next-build-partner
+        uses: actions/cache@v4
+        with:
+          path: apps/partner/.next-t36
+          key: next-t36-${{ runner.os }}-${{ hashFiles('apps/partner/app/**', 'apps/partner/components/**', 'apps/partner/lib/**', 'apps/partner/*.ts', 'apps/partner/*.json', 'apps/partner/scripts/**') }}
+      - name: mark the restored partner build current
+        if: steps.next-build-partner.outputs.cache-hit == 'true'
+        run: find apps/partner/.next-t36 -exec touch {} +
       - name: restore the borrower app's standalone build (.next-t13) keyed on its sources
         id: next-build
         uses: actions/cache@v4

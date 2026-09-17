@@ -68,6 +68,7 @@ After every deploy a real browser walks the Apply product on the deployed demo a
 | Apply | `/app` | the borrower product: Apply, Chat, My Loan, Tasks, Account; sign-in by code, password, passkey or Google (`apps/borrower`, Next.js) |
 | Video door | `/video` | a live call with Michelle that opens an account on the spot (a FAKE stage unless a Tavus key is set) |
 | Operator portal | `/ops` | staff sign-in, the directory, the partner book, clocks, escalations, agent decisions, the AI log, the work screens (`src/console`) |
+| Partner portal | `/partners` | the servicing partner's people: sign-in by code and password, the tape drop, the eligibility board, the refinance pipeline, the daily report, the partner's users (`apps/partner`, Next.js, over `/v1/partner/*`) |
 | API | `/v1/*` | every command the surfaces use, the operator endpoints (transfers, partner-book imports, the sweep, the demo clock) |
 
 **Agents.** Forty named agents (`spec/registry/agents.json`), from boarding and cashiering to the refinance analyst, the readiness agent and the ops steward, each with an allowlist of tools, guardrails and a decision record per action. Decisions that matter (credit, selection, money) are deterministic engines with decision records; the model speaks to the borrower and explains the analyst's review, and a guard rejects any figure it types.

@@ -1,0 +1,32 @@
+{
+  "name": "@supermortgage/partner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Supermortgage servicing partner portal (section 36) — Next.js App Router, mounted at /partners against /v1/partner/*",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "postbuild": "node --experimental-strip-types scripts/stage-standalone.mts",
+    "start": "node .next/standalone/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "npm run typecheck && node --experimental-strip-types scripts/lint-money.mts",
+    "test": "npm run test:unit",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "next": "16.3.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "playwright": "1.56.1",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

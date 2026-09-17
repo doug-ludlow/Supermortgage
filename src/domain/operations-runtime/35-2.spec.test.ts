@@ -200,9 +200,10 @@ async function shell(apiBase: string): Promise<string> {
   appProc = spawn(process.execPath, [`${APP_DIR}${DIST}/standalone/server.js`], { cwd: `${APP_DIR}${DIST}/standalone`, env: { ...process.env, PORT: String(port), HOSTNAME: "127.0.0.1", API_BASE_URL: apiBase, NODE_ENV: "production" }, stdio: ["ignore", "pipe", "pipe"] });
   appProc.stdout?.on("data", (d: Buffer) => { appLog += d.toString(); }); appProc.stderr?.on("data", (d: Buffer) => { appLog += d.toString(); });
   appBase = `http://127.0.0.1:${port}`;
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) { try { const r = await fetch(`${appBase}/app`, { redirect: "manual" }); if (r.status < 500) return appBase; } catch { /* not up yet */ } await new Promise((r) => setTimeout(r, 250)); }
-  throw new Error(`the borrower app did not start on ${appBase}:\n${appLog.slice(-2000)}`);
+  // three minutes, not one: the standalone server prints "Ready" at once, but its first render of /app loads the route on a cold, shared CI runner and took longer than 60 s on CI 322's shard 4 (35.2-T16); the last answer seen is named so a 5xx reads apart from no answer
+  const deadline = Date.now() + 180_000; let last = "no answer";
+  while (Date.now() < deadline) { try { const r = await fetch(`${appBase}/app`, { redirect: "manual" }); if (r.status < 500) return appBase; last = `HTTP ${r.status}`; } catch (e) { last = e instanceof Error ? e.message : String(e); } await new Promise((r) => setTimeout(r, 250)); }
+  throw new Error(`the borrower app did not start on ${appBase} (last: ${last}):\n${appLog.slice(-2000)}`);
 }
 async function stopShell(): Promise<void> { await browser?.close().catch(() => undefined); browser = null; appProc?.kill(); appProc = null; }
 async function pageFor(apiBase: string, token: string, path: string): Promise<{ page: Page; ctx: Context }> {

@@ -1,0 +1,13 @@
+# Build context for Dockerfile.partner (BuildKit picks <Dockerfile>.dockerignore over .dockerignore).
+# Only apps/partner's sources go in; the root package, docs, infra and every node_modules stay out.
+*
+!apps/partner
+apps/partner/node_modules
+apps/partner/.next
+apps/partner/.next-*
+apps/partner/test-results
+apps/partner/playwright-report
+apps/partner/tests
+apps/partner/walk-out
+apps/partner/*.tsbuildinfo
+apps/partner/.env*

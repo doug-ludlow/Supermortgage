@@ -5,7 +5,7 @@
 # vars.GCP_WIF_PROVIDER, vars.GCP_DEPLOYER_SA, vars.TF_STATE_BUCKET).
 # No GitHub secrets are needed: authentication is Workload Identity Federation.
 #
-# Order: preflight -> terraform -> build (api + borrower, in parallel) -> migrate -> deploy.
+# Order: preflight -> terraform -> build (api + borrower + partner, in parallel) -> migrate -> deploy.
 name: deploy
 
 on:
@@ -98,6 +98,7 @@ jobs:
       api_hostname: ${{ steps.out.outputs.api_hostname }}
       console_hostname: ${{ steps.out.outputs.console_hostname }}
       borrower_url: ${{ steps.out.outputs.borrower_url }}
+      partner_url: ${{ steps.out.outputs.partner_url }}
       dns_records: ${{ steps.out.outputs.dns_records }}
       api_token_secret: ${{ steps.out.outputs.api_token_secret }}
     steps:
@@ -143,6 +144,7 @@ jobs:
             echo "api_hostname=$(terraform output -raw api_url | sed 's#^https://##')"
             echo "console_hostname=$(terraform output -raw console_url | sed 's#^https://##')"
             echo "borrower_url=$(terraform output -raw borrower_url)"
+            echo "partner_url=$(terraform output -raw partner_url)"
             echo "dns_records=$(terraform output -json godaddy_dns_records | jq -c .)"
             echo "api_token_secret=$(terraform output -raw api_token_secret)"
           } >> "$GITHUB_OUTPUT"
@@ -239,6 +241,55 @@ jobs:
           docker push "${{ steps.tags.outputs.image }}"
           docker push "${{ steps.tags.outputs.branch_image }}"
 
+  build-partner:
+    name: build partner image
+    needs: terraform
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.tags.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Compute image tags
+        id: tags
+        env:
+          REPO: ${{ needs.terraform.outputs.artifact_repo }}
+        run: |
+          slug="$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//' | cut -c1-63)"
+          {
+            echo "image=${REPO}/partner:${GITHUB_SHA}"
+            echo "branch_image=${REPO}/partner:${slug}"
+          } >> "$GITHUB_OUTPUT"
+
+      # apps/partner (section 36): Next.js standalone build (Dockerfile.partner at the repo root) with the borrower image's
+      # three build args — the environment, and the partner named on the sign-in door before a session exists to read it from.
+      - name: docker build (partner)
+        run: |
+          docker build \
+            -f Dockerfile.partner \
+            --build-arg "NEXT_PUBLIC_ENVIRONMENT=${ENVIRONMENT}" \
+            --build-arg "NEXT_PUBLIC_PARTNER_LEGAL_NAME=${{ vars.PARTNER_LEGAL_NAME || 'Partner Bank' }}" \
+            --build-arg "NEXT_PUBLIC_PARTNER_NMLSR_ID=${{ vars.PARTNER_NMLSR_ID || '123456' }}" \
+            -t "${{ steps.tags.outputs.image }}" \
+            -t "${{ steps.tags.outputs.branch_image }}" \
+            .
+
+      - name: docker push (partner)
+        run: |
+          docker push "${{ steps.tags.outputs.image }}"
+          docker push "${{ steps.tags.outputs.branch_image }}"
+
   migrate:
     name: migrate database
     needs: [terraform, build]
@@ -269,7 +320,7 @@ jobs:
 
   deploy:
     name: deploy
-    needs: [terraform, build, build-borrower, migrate]
+    needs: [terraform, build, build-borrower, build-partner, migrate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4   # db/migrations names the migration head the manifest records (35.12 rule 1)
@@ -310,6 +361,14 @@ jobs:
         run: |
           gcloud run deploy supermortgage-borrower \
             --image "${{ needs.build-borrower.outputs.image }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --quiet
+
+      - name: Deploy the partner portal
+        run: |
+          gcloud run deploy supermortgage-partner \
+            --image "${{ needs.build-partner.outputs.image }}" \
             --region "${{ vars.GCP_REGION }}" \
             --project "${{ vars.GCP_PROJECT_ID }}" \
             --quiet
@@ -434,6 +493,31 @@ jobs:
             "https://${API_HOSTNAME}/app"
           echo "borrower app OK via ${LB_IP}"
 
+      # 36: the partner portal through its /partners, /partners/* URL-map rule. Unauthenticated, the app answers 200 on
+      # /partners (the shell renders, then sends the browser to /partners/sign-in — a client-side redirect, never a 3xx from
+      # the server) and 200 on the door; the cookie proxy forwards /partners/api/v1/partner/me to the API with no bearer,
+      # which answers 401 (36.1 rule 7) — proof the service reaches the API through the load balancer.
+      - name: Smoke test /partners (partner portal) through the load balancer
+        continue-on-error: true
+        env:
+          API_HOSTNAME: ${{ needs.terraform.outputs.api_hostname }}
+          LB_IP: ${{ needs.terraform.outputs.lb_ip }}
+        run: |
+          code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --retry 10 --retry-delay 15 --retry-all-errors \
+            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
+            "https://${API_HOSTNAME}/partners")"
+          test "${code}" = "200" || { echo "expected 200 from /partners, got ${code}"; exit 1; }
+          code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
+            "https://${API_HOSTNAME}/partners/sign-in")"
+          test "${code}" = "200" || { echo "expected 200 from /partners/sign-in (the door), got ${code}"; exit 1; }
+          code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
+            "https://${API_HOSTNAME}/partners/api/v1/partner/me")"
+          test "${code}" = "401" || { echo "expected 401 from /partners/api/v1/partner/me without a partner session, got ${code}"; exit 1; }
+          echo "/partners and /partners/sign-in serve the partner portal; /partners/api/v1/partner/me refuses without a session via ${LB_IP}"
+
       - name: Smoke test / (302 to /app) and /ops (console) through the load balancer
         continue-on-error: true
         env:
@@ -476,8 +560,10 @@ jobs:
           API_HOSTNAME: ${{ needs.terraform.outputs.api_hostname }}
           CONSOLE_HOSTNAME: ${{ needs.terraform.outputs.console_hostname }}
           BORROWER_URL: ${{ needs.terraform.outputs.borrower_url }}
+          PARTNER_URL: ${{ needs.terraform.outputs.partner_url }}
           IMAGE: ${{ needs.build.outputs.image }}
           BORROWER_IMAGE: ${{ needs.build-borrower.outputs.image }}
+          PARTNER_IMAGE: ${{ needs.build-partner.outputs.image }}
           SQL: ${{ needs.terraform.outputs.sql_connection_name }}
         run: |
           {
@@ -485,6 +571,7 @@ jobs:
             echo
             echo "- Image: \`${IMAGE}\`"
             echo "- Borrower image: \`${BORROWER_IMAGE}\`"
+            echo "- Partner image: \`${PARTNER_IMAGE}\`"
             echo "- Cloud SQL: \`${SQL}\`"
             echo "- Load balancer IP: \`${LB_IP}\`"
             echo
@@ -499,6 +586,7 @@ jobs:
             echo "- https://${API_HOSTNAME}/healthz"
             echo "- https://${CONSOLE_HOSTNAME}/"
             echo "- ${BORROWER_URL} (borrower app)"
+            echo "- ${PARTNER_URL} (partner portal)"
             echo
             echo "API token: \`gcloud secrets versions access latest --secret supermortgage-api-token --project ${{ vars.GCP_PROJECT_ID }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -516,8 +604,17 @@ jobs:
   # Secret Manager into WALK_OPS_TOKEN (masked); without it those outcomes fail by
   # name, never pass. Outcome 9 needs the partner book a `seed_demo=true` dispatch
   # imports; an unseeded book fails, never passes.
+  #
+  # Then the partner walk (36; apps/partner/tests/walk/partner-walk.mts): the same browser
+  # on /partners — the door under the partner's name, the seeded partner_admin's sign-in
+  # (the code the FAKE port echoes, the password set at enrolment or kept from an earlier
+  # walk), Home's counts, Eligibility's sum, a loan page's Monitored banner and disabled
+  # Serviced tab, sign-out. It runs after the borrower walk whatever that read, keeps its
+  # own report as the artifact "partner-walk", and the same log dump covers it. The seeded
+  # partner_admin comes from the `seed_demo=true` dispatch too; absent, the walk fails by
+  # name ("the seeded partner_admin is absent: dispatch seed_demo"), never passes.
   walk:
-    name: demo walk (real browser, the Apply product)
+    name: demo walk (real browser, the Apply product and the partner portal)
     needs: [terraform, deploy]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -564,6 +661,35 @@ jobs:
           path: apps/borrower/walk-out
           if-no-files-found: warn
           retention-days: 14
+
+      # 36: the partner portal's walk — its own dependencies (apps/partner's lockfile carries `playwright` at the borrower's
+      # version, so the Chromium the step above installed is reused) and its own walk-out beside the borrower's.
+      - name: Install the partner app's dependencies and Chromium
+        if: ${{ !cancelled() }}
+        working-directory: apps/partner
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Walk the partner portal
+        if: ${{ !cancelled() }}
+        working-directory: apps/partner
+        env:
+          DEMO_BASE: https://${{ needs.terraform.outputs.api_hostname }}
+          WALK_OUT: walk-out
+          # the door names the partner the image was built with (build-partner's build arg, from the same repository variables)
+          WALK_DOOR_PARTNER_LEGAL_NAME: ${{ vars.PARTNER_LEGAL_NAME || 'Partner Bank' }}
+          WALK_DOOR_PARTNER_NMLSR_ID: ${{ vars.PARTNER_NMLSR_ID || '123456' }}
+          # WALK_PARTNER_PASSWORD: unset → the walk's deterministic default (set at the seeded admin's enrolment, reused on every later walk)
+        run: |
+          node --experimental-strip-types tests/walk/partner-walk.mts
+      - name: Keep the partner walk's screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner-walk
+          path: apps/partner/walk-out
+          if-no-files-found: warn
+          retention-days: 14
       - name: The demo's log around the walk (only when the walk failed)
         if: failure()
         env:
@@ -589,8 +715,10 @@ jobs:
             'value(timestamp,resource.labels.service_name,resource.labels.job_name,jsonPayload.message,jsonPayload.command,jsonPayload.kind,jsonPayload.events,jsonPayload.ms,jsonPayload.flows,jsonPayload.passes,jsonPayload.outcome)'
       - name: Summary
         if: always()
-        working-directory: apps/borrower
         run: |
-          if [ -f walk-out/report.json ]; then
-            { echo "## Demo walk"; echo; node -e 'const r=require("./walk-out/report.json"); console.log(`${r.passed} of ${r.checks.length} outcomes hold on ${r.base}`); console.log(); for (const c of r.checks) console.log(`- ${c.ok ? "ok" : "NOT ok"} ${c.n}. ${c.what}${c.detail ? " — " + c.detail.replace(/\n/g, " ") : ""}`)'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ -f apps/borrower/walk-out/report.json ]; then
+            { echo "## Demo walk"; echo; node -e 'const r=require("./apps/borrower/walk-out/report.json"); console.log(`${r.passed} of ${r.checks.length} outcomes hold on ${r.base}`); console.log(); for (const c of r.checks) console.log(`- ${c.ok ? "ok" : "NOT ok"} ${c.n}. ${c.what}${c.detail ? " — " + c.detail.replace(/\n/g, " ") : ""}`)'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f apps/partner/walk-out/report.json ]; then
+            { echo; echo "## Partner walk"; echo; node -e 'const r=require("./apps/partner/walk-out/report.json"); console.log(`${r.passed} of ${r.checks.length} outcomes hold on ${r.base}`); console.log(); for (const c of r.checks) console.log(`- ${c.ok ? "ok" : "NOT ok"} ${c.n}. ${c.what}${c.detail ? " — " + c.detail.replace(/\n/g, " ") : ""}`)'; } >> "$GITHUB_STEP_SUMMARY"
           fi

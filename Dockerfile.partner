@@ -1,0 +1,44 @@
+# Supermortgage servicing partner portal (apps/partner, section 36) — Next.js standalone output, served at /partners.
+#   docker build -f Dockerfile.partner -t supermortgage-partner .
+#   docker run -p 8080:8080 -e API_BASE_URL=https://demo.supermortgage.com supermortgage-partner
+# The partner API (/v1/partner/*) is authenticated by a partner session alone: the server-side cookie proxy
+# (app/api/[...path]/route.ts) forwards the sm_partner_session cookie as the bearer and holds no API token —
+# nothing else is read at run besides API_BASE_URL (docs/partner-portal/00-CLAUDE-BUILD-INSTRUCTIONS.md §6).
+
+# ---- deps ------------------------------------------------------------------
+FROM node:22-bookworm-slim AS deps
+WORKDIR /src
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+COPY apps/partner/package.json apps/partner/package-lock.json ./
+RUN npm ci --no-audit --no-fund && npm cache clean --force
+
+# ---- build -----------------------------------------------------------------
+FROM node:22-bookworm-slim AS build
+WORKDIR /src
+# The environment the bundle is built for (deploy.yml passes its ENVIRONMENT, "nonprod" by default), inlined by Next as
+# NEXT_PUBLIC_ENVIRONMENT the way the borrower image carries it. Empty (a plain docker build) means a production bundle.
+ARG NEXT_PUBLIC_ENVIRONMENT=""
+# The partner's legal name on the sign-in door before any session exists to read it from (§7: "Partner legal name on the
+# door (from a public config or the invite)"; app/sign-in/page.tsx). deploy.yml passes the repository variable
+# PARTNER_LEGAL_NAME, "Partner Bank" when unset — the same variable the borrower image's disclosure footer reads.
+ARG NEXT_PUBLIC_PARTNER_LEGAL_NAME="Partner Bank"
+# The partner's NMLSR ID beside its name on the door. deploy.yml passes the repository variable PARTNER_NMLSR_ID, "123456"
+# (the demo partner) when unset. Once signed in, the shell names the partner from GET /v1/partner/me, never from these.
+ARG NEXT_PUBLIC_PARTNER_NMLSR_ID="123456"
+ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production NEXT_PUBLIC_ENVIRONMENT=$NEXT_PUBLIC_ENVIRONMENT NEXT_PUBLIC_PARTNER_LEGAL_NAME=$NEXT_PUBLIC_PARTNER_LEGAL_NAME NEXT_PUBLIC_PARTNER_NMLSR_ID=$NEXT_PUBLIC_PARTNER_NMLSR_ID
+COPY --from=deps /src/node_modules ./node_modules
+COPY apps/partner/ ./
+# `next build` type-checks and emits .next/standalone; the postbuild step (scripts/stage-standalone.mts) copies the static
+# assets beside it, and the runtime stage below copies them again so the layout matches the borrower image's.
+RUN npm run build
+
+# ---- runtime ---------------------------------------------------------------
+FROM node:22-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=8080
+# standalone = server.js + the traced node_modules; static assets and public/ are copied beside it
+COPY --from=build --chown=node:node /src/.next/standalone ./
+COPY --from=build --chown=node:node /src/.next/static ./.next/static
+USER node
+EXPOSE 8080
+CMD ["node", "server.js"]

@@ -43,7 +43,7 @@ Twenty-seven T-ids are retired by a dated owner decision in [docs/decisions/](do
 | The operations runtime | §35 | 715 / 715 | 12 / 12 |
 | The servicing partner portal | §36 | 0 / 40 | 0 / 6 (specified, not built) |
 
-After every deploy a real browser walks the Apply product on the deployed demo and checks ten things a person must see work (`apps/borrower/tests/walk/demo-walk.mts`): the door, the account, a purchase to the underwriting run, a purchase still looking for a home, a cash-out refinance to the same run, errors shown in plain words, My Loan and Tasks, sign-out, the partner-book homeowner's door, and returns and deep links. A failed outcome fails the deploy. The walk takes about two and a half minutes and read ten of ten on the latest deploy. That walk, not the fractions, is the platform's claim that the surface works.
+After every deploy a real browser walks the Apply product on the deployed demo and checks ten things a person must see work (`apps/borrower/tests/walk/demo-walk.mts`): the door, the account, a purchase to the underwriting run, a purchase still looking for a home, a cash-out refinance to the same run, errors shown in plain words, My Loan and Tasks, sign-out, the partner-book homeowner's door, and returns and deep links. A failed outcome fails the deploy. The walk takes about two and a half minutes and read ten of ten on the latest deploy. That walk, not the fractions, is the platform's claim that the surface works. The same job then walks the partner portal at `/partners` (`apps/partner/tests/walk/partner-walk.mts`: the door, the seeded admin's sign-in, Home, Eligibility, a loan page's banner and Serviced tab, sign-out — seven outcomes, each recorded by name).
 
 ## What is here
 
@@ -68,7 +68,7 @@ After every deploy a real browser walks the Apply product on the deployed demo a
 | Apply | `/app` | the borrower product: Apply, Chat, My Loan, Tasks, Account; sign-in by code, password, passkey or Google (`apps/borrower`, Next.js) |
 | Video door | `/video` | a live call with Michelle that opens an account on the spot (a FAKE stage unless a Tavus key is set) |
 | Operator portal | `/ops` | staff sign-in, the directory, the partner book, clocks, escalations, agent decisions, the AI log, the work screens (`src/console`) |
-| Partner portal | `/partners` | the servicing partner's people: sign-in by code and password, the tape drop, the eligibility board, the refinance pipeline, the daily report, the partner's users (`apps/partner`, Next.js, over `/v1/partner/*`) |
+| Partner portal | `/partners` | the servicing partner's people: sign-in by code and password, the tape drop, the eligibility board, the refinance pipeline, the daily report, the partner's users (`apps/partner`, Next.js, over `/v1/partner/*`); deployed at `/partners` on the demo host as its own Cloud Run service behind the load balancer (`Dockerfile.partner`, `infra/terraform`), walked after every deploy by `apps/partner/tests/walk/partner-walk.mts` |
 | API | `/v1/*` | every command the surfaces use, the operator endpoints (transfers, partner-book imports, the sweep, the demo clock) |
 
 **Agents.** Forty named agents (`spec/registry/agents.json`), from boarding and cashiering to the refinance analyst, the readiness agent and the ops steward, each with an allowlist of tools, guardrails and a decision record per action. Decisions that matter (credit, selection, money) are deterministic engines with decision records; the model speaks to the borrower and explains the analyst's review, and a guard rejects any figure it types.

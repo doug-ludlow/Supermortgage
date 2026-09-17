@@ -82,6 +82,18 @@ variable "borrower_max_instances" {
   default     = 10
 }
 
+variable "partner_min_instances" {
+  description = "Minimum Cloud Run instances for the servicing partner portal (supermortgage-partner)."
+  type        = number
+  default     = 1
+}
+
+variable "partner_max_instances" {
+  description = "Maximum Cloud Run instances for the servicing partner portal."
+  type        = number
+  default     = 10
+}
+
 variable "borrower_default_partner_id" {
   description = "32.14 DELTA-15: the Phase I partner — a `parties` row id (uuid) the borrower entry names when no application names a partner. Empty means the newest servicer party (the seeded demo partner)."
   type        = string

@@ -60,6 +60,28 @@ resource "google_secret_manager_secret_iam_member" "borrower_api_token" {
   member    = "serviceAccount:${google_service_account.borrower.email}"
 }
 
+# Identity the servicing partner portal (apps/partner, Dockerfile.partner) runs as. It writes
+# logs and reads no secret: its cookie proxy forwards the partner session as the bearer and
+# nothing else (the partner routes are session-authenticated; the API token opens nothing on
+# /v1/partner/*, 36.1-T7), so no Secret Manager grant exists for it.
+resource "google_service_account" "partner" {
+  account_id   = "supermortgage-partner"
+  display_name = "Supermortgage partner portal (Cloud Run service)"
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_project_iam_member" "partner_roles" {
+  for_each = toset([
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter",
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.partner.email}"
+}
+
 # Identity Cloud Scheduler uses to start the sweep job. It can invoke that
 # one job and nothing else.
 resource "google_service_account" "scheduler" {

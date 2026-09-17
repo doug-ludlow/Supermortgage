@@ -30,6 +30,17 @@ resource "google_compute_region_network_endpoint_group" "borrower" {
   }
 }
 
+# The servicing partner portal (apps/partner) — a third serverless NEG behind the same load balancer.
+resource "google_compute_region_network_endpoint_group" "partner" {
+  name                  = "supermortgage-partner-neg"
+  region                = var.region
+  network_endpoint_type = "SERVERLESS"
+
+  cloud_run {
+    service = google_cloud_run_v2_service.partner.name
+  }
+}
+
 # Cloud Armor: default allow, a per-IP rate limit, and Google's preconfigured
 # SQLi/XSS signatures in preview (logged, not enforced) until the false-positive
 # rate on real traffic is understood. Prod takes them out of preview.
@@ -141,12 +152,29 @@ resource "google_compute_backend_service" "borrower" {
   }
 }
 
+resource "google_compute_backend_service" "partner" {
+  name                  = "supermortgage-partner-backend"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  protocol              = "HTTPS"
+  security_policy       = google_compute_security_policy.armor.id
+
+  backend {
+    group = google_compute_region_network_endpoint_group.partner.id
+  }
+
+  log_config {
+    enable      = true
+    sample_rate = 1.0
+  }
+}
+
 resource "google_compute_url_map" "https" {
   name            = "supermortgage-https"
   default_service = google_compute_backend_service.api.id
 
   # The API and console hostnames (one name, or two) route to the API service, except
-  # / (302 → /app) and /app, /app/* which go to the borrower app (Next.js basePath "/app").
+  # / (302 → /app), /app, /app/* which go to the borrower app (Next.js basePath "/app") and
+  # /partners, /partners/* which go to the partner portal (Next.js basePath "/partners").
   host_rule {
     hosts        = local.hostnames
     path_matcher = "supermortgage"
@@ -183,6 +211,13 @@ resource "google_compute_url_map" "https" {
     path_rule {
       paths   = ["/app", "/app/*"]
       service = google_compute_backend_service.borrower.id
+    }
+
+    # 36: the servicing partner portal (apps/partner, Next.js basePath "/partners") — its own backend;
+    # the app's cookie proxy under /partners/api/* rides here too and reaches the API from the service.
+    path_rule {
+      paths   = ["/partners", "/partners/*"]
+      service = google_compute_backend_service.partner.id
     }
   }
 }

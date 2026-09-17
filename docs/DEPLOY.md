@@ -9,15 +9,16 @@ What you end up with, in one Google Cloud project (every row is a resource in `i
 |---|---|
 | Cloud Run service `supermortgage-api` | the HTTP server (`serve` mode: the API and the ops console), `min_instances` 1 to `max_instances` 10 by default (`variables.tf`), ingress from the load balancer only (`run.tf`) |
 | Cloud Run service `supermortgage-borrower` | the borrower app (`apps/borrower`, Next.js standalone from `Dockerfile.borrower`, basePath `/app`), `borrower_min_instances` 1 to `borrower_max_instances` 10 by default; built with three build args — `NEXT_PUBLIC_ENVIRONMENT=<environment>` (a nonprod bundle shows the FAKE vendor paths the `INTEGRATIONS=fake` API expects, Google sign-in included), `NEXT_PUBLIC_PARTNER_LEGAL_NAME` and `NEXT_PUBLIC_PARTNER_NMLSR_ID` (the disclosure footer's partner before a session exists) — served at `https://demo.supermortgage.com/app` by the `/app`, `/app/*` URL-map rule to its own serverless NEG and backend |
+| Cloud Run service `supermortgage-partner` | the servicing partner portal (section 36: `apps/partner`, Next.js standalone from `Dockerfile.partner`, basePath `/partners`), `partner_min_instances` 1 to `partner_max_instances` 10 by default; built with the borrower image's three build args (`NEXT_PUBLIC_ENVIRONMENT=<environment>`, `NEXT_PUBLIC_PARTNER_LEGAL_NAME` and `NEXT_PUBLIC_PARTNER_NMLSR_ID` — the partner named on the sign-in door before a session exists); its server-side cookie proxy forwards only `/v1/partner/*` to the API with the partner session as the bearer and holds no API token — served at `https://demo.supermortgage.com/partners` by the `/partners`, `/partners/*` URL-map rule to its own serverless NEG and backend ("The partner portal" below) |
 | Cloud Run job `supermortgage-migrate` | applies `db/migrations/*.sql` (`migrate` mode); run before every deploy |
 | Cloud Run job `supermortgage-sweep` | one sweep minute (`sweep` mode): the borrower flows' scheduled tick, then `Runtime.sweep()` — the outbox drain, the cycles pass, the daily refinance check, the partner-book passes, the FAKE reviewers, the roles / work / posture / orchestration passes, the record verify, the breach pass and the rest, in the order "The sweep" below lists |
 | Cloud Run job `supermortgage-seed-demo` | boards the 100-loan demo transfer batch, the entry demo and the partner book (`seed-demo` mode, idempotent); run on demand |
 | Cloud Scheduler `supermortgage-sweep-every-minute` | starts the sweep job on `* * * * *` in `America/New_York` with a 180 s attempt deadline (`scheduler.tf`) |
 | Cloud SQL (PostgreSQL 16) `supermortgage-nonprod` | the database, encrypted with a customer-managed key (KMS key ring `supermortgage-nonprod`, key `supermortgage-sql`, `kms.tf`), `ssl_mode = "ENCRYPTED_ONLY"`, a public IP with no authorized networks (only the Cloud Run socket path reaches it, `sql.tf`), daily backups + point-in-time recovery |
 | Secret Manager | `supermortgage-database-url` and `supermortgage-api-token` (written by Terraform), plus five secrets Terraform creates with the placeholder first version `unset` for you to replace by hand: `supermortgage-anthropic-api-key`, `supermortgage-tavus-api-key`, `supermortgage-video-callback-secret`, `supermortgage-google-oauth-client-id`, `supermortgage-google-oauth-client-secret` (`secrets.tf`) |
-| Artifact Registry `supermortgage` | the `api` and `borrower` container images built by GitHub Actions |
-| Global HTTPS load balancer + Cloud Armor | `demo.supermortgage.com` (the API, the console and the borrower app on one name), a Google-managed certificate; Cloud Armor with the preconfigured SQLi / XSS WAF rules in `preview = true` (logged, not enforced) and an enforced rate limit of 1200 requests per 60 s per source IP; the URL map sends `/` → 302 `/app`, `/video` and `/video/*` → 302 `/app/video`, `/app` and `/app/*` to the borrower backend and everything else to the API backend (`lb.tf`) |
-| Three service accounts | `runtime` (the API service and the three jobs), `borrower` (the borrower app; reads only the API token secret) and `scheduler` (holds `run.invoker` on the sweep job alone) — `iam.tf` |
+| Artifact Registry `supermortgage` | the `api`, `borrower` and `partner` container images built by GitHub Actions |
+| Global HTTPS load balancer + Cloud Armor | `demo.supermortgage.com` (the API, the console, the borrower app and the partner portal on one name), a Google-managed certificate; Cloud Armor with the preconfigured SQLi / XSS WAF rules in `preview = true` (logged, not enforced) and an enforced rate limit of 1200 requests per 60 s per source IP; the URL map sends `/` → 302 `/app`, `/video` and `/video/*` → 302 `/app/video`, `/app` and `/app/*` to the borrower backend, `/partners` and `/partners/*` to the partner backend and everything else to the API backend (`lb.tf`) |
+| Four service accounts | `runtime` (the API service and the three jobs), `borrower` (the borrower app; reads only the API token secret), `partner` (the partner portal; writes logs and metrics, reads no secret) and `scheduler` (holds `run.invoker` on the sweep job alone) — `iam.tf` |
 
 Everything is created by Terraform (`infra/terraform/`) from a GitHub Actions
 workflow (`.github/workflows/deploy.yml`). The only thing you run by hand is a
@@ -40,10 +41,10 @@ one-time bootstrap script.
    (or create) one. Nothing below can be created until this is done.
 
 Rough nonprod cost with the defaults: Cloud SQL `db-custom-1-3840` zonal
-(about $50/month), two always-on Cloud Run instances — the API service (about
-$30/month, CPU always allocated) and the borrower app's minimum instance
-(`cpu_idle = true`, 512Mi) — the load balancer forwarding rules (about
-$18/month), plus cents for the rest.
+(about $50/month), three always-on Cloud Run instances — the API service (about
+$30/month, CPU always allocated), the borrower app's minimum instance and the
+partner portal's (`cpu_idle = true`, 512Mi each) — the load balancer forwarding
+rules (about $18/month), plus cents for the rest.
 
 ## 2. Run the bootstrap script in Cloud Shell
 
@@ -108,6 +109,12 @@ them and falls back to the demo partner when they are unset
 | `PARTNER_LEGAL_NAME` | `NEXT_PUBLIC_PARTNER_LEGAL_NAME` | `Partner Bank` |
 | `PARTNER_NMLSR_ID` | `NEXT_PUBLIC_PARTNER_NMLSR_ID` | `123456` |
 
+The partner image's build (`deploy.yml` "docker build (partner)"; `Dockerfile.partner`)
+reads the same two variables for the partner named on the portal's sign-in door before
+a session exists; no variable is added for it. The walk job passes the same values to
+the partner walk (`WALK_DOOR_PARTNER_LEGAL_NAME`, `WALK_DOOR_PARTNER_NMLSR_ID`) so it
+asserts the door the image was built with.
+
 Two repository **secrets** (Settings → Secrets → Actions) are read by the
 pipelines, both optional and both missing until you add them:
 
@@ -139,7 +146,7 @@ turn hands the model the current step's rules) and
 copy from it). `workflow_dispatch` always deploys.
 
 The job graph (`deploy.yml` header: preflight -> terraform -> build (api +
-borrower, in parallel) -> migrate -> deploy):
+borrower + partner, in parallel) -> migrate -> deploy):
 
 1. `preflight` — checks the five variables; when one is missing the run stops
    here quietly instead of failing.
@@ -147,18 +154,19 @@ borrower, in parallel) -> migrate -> deploy):
    takes 15-25 minutes, mostly Cloud SQL) and collects the outputs the later
    jobs read (the artifact repo, the load balancer IP, the hostnames, the DNS
    records, the API token's secret name).
-3. `build image` and `build borrower image` — run in parallel, both needing
-   only `terraform`. Each pushes an image tagged with the commit SHA and with
-   the branch slug to Artifact Registry.
+3. `build image`, `build borrower image` and `build partner image` — run in
+   parallel, each needing only `terraform`. Each pushes an image tagged with
+   the commit SHA and with the branch slug to Artifact Registry.
 4. `migrate database` — needs `terraform` and `build`: points the
    `supermortgage-migrate` job at the new API image and executes it with
    `--wait`.
-5. `deploy` — needs `terraform`, `build`, `build-borrower` and `migrate`:
-   points the sweep and seed-demo jobs at the new API image, deploys
-   `supermortgage-api` and `supermortgage-borrower`, then runs the steps below.
+5. `deploy` — needs `terraform`, `build`, `build-borrower`, `build-partner`
+   and `migrate`: points the sweep and seed-demo jobs at the new API image,
+   deploys `supermortgage-api`, `supermortgage-borrower` and
+   `supermortgage-partner`, then runs the steps below.
 6. `demo walk` — needs `terraform` and `deploy`; described in "The demo walk".
 
-Inside `deploy`, after the two services are deployed:
+Inside `deploy`, after the three services are deployed:
 
 - **Record the environment manifest (35.12 posture.record)** —
   `continue-on-error`. With `POSTURE_PRINCIPAL_TOKEN` set, the step gathers an
@@ -169,21 +177,25 @@ Inside `deploy`, after the two services are deployed:
   `POST /v1/posture/manifests` under that token; `posture.record` hashes it,
   runs the posture check and opens drift findings. Without the secret the step
   prints a notice and exits 0. A failure never fails the deploy.
-- **Three smoke steps**, each `continue-on-error`, each pinning the hostname to
+- **Four smoke steps**, each `continue-on-error`, each pinning the hostname to
   the load balancer IP with `--resolve` so they work before DNS propagates but
   with TLS fully verified, so they pass only once the DNS record exists and the
   managed certificate has provisioned:
   1. `/healthz` → 200;
   2. `/app` (the borrower app) → 200;
   3. `/` → 302, `/video` → 302, `/ops` → 200 (the staff sign-in page is public
-     by design, 34.1 rule 1) and `/ops/api/me` → 401 without a staff session.
+     by design, 34.1 rule 1) and `/ops/api/me` → 401 without a staff session;
+  4. `/partners` → 200 and `/partners/sign-in` → 200 (the portal's shell and its
+     door; unauthenticated, the shell sends the browser to the door from the page,
+     never a 3xx from the server) and `/partners/api/v1/partner/me` → 401 (the
+     cookie proxy reached the API through the load balancer with no session).
 - **Board the demo transfer batch** — only on a `workflow_dispatch` with
   `seed_demo` ticked (executes `supermortgage-seed-demo` with `--wait`).
 - **Job summary** — prints the images, the Cloud SQL connection name, the load
   balancer IP and the DNS record for the next step.
 
 The `deploy` job's **Summary** (click the run, then the summary at the top)
-prints the load balancer IP and the DNS record for the next step. The three
+prints the load balancer IP and the DNS record for the next step. The four
 smoke steps are expected to show a warning on the first run: they cannot pass
 until DNS and the certificate are in place.
 
@@ -229,7 +241,17 @@ outcome fails the walk job, never the `deploy` job that preceded it. The walk
 takes about two and a half minutes (deploy run 189 on 2026-09-16 read 10 of 10
 in 2 min 28 s).
 
-The same walk runs on demand from
+After the borrower walk, whatever it read, the same job walks the partner portal
+(`node --experimental-strip-types tests/walk/partner-walk.mts` from `apps/partner`,
+the same `DEMO_BASE`; "The partner portal" below lists its seven outcomes). Its
+screenshots and `report.json` are the run artifact `partner-walk` (14 days), its
+own `walk-out` beside the borrower's, and the job summary adds a "Partner walk"
+block in the same form. The seeded `partner_admin` it signs in as comes from the
+same `seed_demo=true` dispatch as the partner book; unseeded, outcome 2 fails by
+name ("the seeded partner_admin is absent: dispatch seed_demo") and the outcomes
+after it cannot pass. The log dump on failure covers both walks.
+
+The same borrower walk runs on demand from
 <https://github.com/doug-ludlow/Supermortgage/actions/workflows/walk.yml>
 (`.github/workflows/walk.yml`; `timeout-minutes: 25`): **Run workflow** with
 any base URL (default `https://demo.supermortgage.com`). That workflow does not
@@ -281,6 +303,8 @@ curl -i https://demo.supermortgage.com/readyz      # 200 once Postgres answers
 curl -i https://demo.supermortgage.com/             # 302 → /app, the Apply product (32.19)
 curl -i https://demo.supermortgage.com/ops         # 200: the staff sign-in page (34.1 rule 1)
 curl -i https://demo.supermortgage.com/ops/api/me  # 401 AUTH_REQUIRED without a staff session
+curl -i https://demo.supermortgage.com/partners     # 200: the partner portal's shell (the door follows, from the page)
+curl -i https://demo.supermortgage.com/partners/api/v1/partner/me  # 401 without a partner session (the cookie proxy, through to the API)
 ```
 
 Read the API token (generated by Terraform and stored in Secret Manager) in
@@ -836,6 +860,63 @@ as the OTP route does). A password session opens without a fresh code, so a mone
 still asks for one (`FRESH_L1_COMMANDS` in `src/runtime/borrower/commands.ts`:
 `payment.makeOneTime`, `payment.extraPrincipal`, `autodraft.enroll`, `autodraft.change`,
 `autodraft.pause`, `autodraft.revoke`, `escrow.electShortage`, `party.updateContact`).
+
+## The partner portal
+
+**The servicing partner's book is at `/partners` (section 36; `apps/partner`).** A browser
+with no session sees the door, `/partners/sign-in` (`apps/partner/components/Door.tsx`): the
+partner's legal name and NMLSR ID from the image's build args (`NEXT_PUBLIC_PARTNER_LEGAL_NAME`,
+`NEXT_PUBLIC_PARTNER_NMLSR_ID` — the repository variables of §3), a six-digit code to the
+work e-mail (the FAKE e-delivery port echoes it on the door outside production, as the borrower
+and staff doors do), then the password — set on the enrol token at the first sign-in, asked on
+every later one. Nothing of the book renders before the session. Past the door: Home, Book,
+Eligibility, Pipeline, Reports and, for a `partner_admin`, Admin (docs/partner-portal/
+00-CLAUDE-BUILD-INSTRUCTIONS.md §7). Every page runs on `/v1/partner/*`, which a partner
+session alone opens (36.1 rule 7: the staff cookie, the header actor and the machine
+`API_TOKEN` open nothing there).
+
+**The cookie.** The app's server-side proxy (`apps/partner/app/api/[...path]/route.ts`)
+turns a sign-in answer's token into `sm_partner_session` — `HttpOnly`, `Secure` (the image
+runs `NODE_ENV=production`), `SameSite=Lax`, `Path=/partners`, no longer than the session's
+12-hour absolute limit — and forwards it as `Authorization: Bearer` on `/partners/api/v1/partner/*`
+only (`lib/proxy-allow.ts`: `/v1/partner-book/*`, `/ops`, `/v1/borrower/*` and `/v1/video/*`
+answer 404 there). The browser never holds a bearer; the service holds no API token
+(`infra/terraform/run.tf`: its env is `API_BASE_URL` and `ENVIRONMENT`; `iam.tf`: the `partner`
+service account has no Secret Manager grant). A 401 from the API drops the cookie and the
+shell returns to the door keeping the return path.
+
+**The seed.** The demo partner's first `partner_admin` is seeded beside the partner book by
+the `seed-demo` job (`src/runtime/main.ts seed-demo` → `seedPartnerPortalDemo`, 36.1
+Operational prerequisites; the address `partner.admin@northlight.example`, invited, idempotent,
+non-production only) — so the portal has a person to sign in as only after a
+`workflow_dispatch` with `seed_demo=true` (§4 "Board the demo transfer batch") or
+`gcloud run jobs execute supermortgage-seed-demo … --wait`. Until then the door still echoes
+a code for that address (no enumeration) and refuses its verification (`OTP_INVALID`), and the
+walk below names that as the unseeded demo.
+
+**The walk** (`apps/partner/tests/walk/partner-walk.mts`, the walk job after the borrower
+walk; seven outcomes, each a screenshot and a `report.json` line, exit 1 under the count):
+
+1. A fresh window at `/partners` reaches the door — `/partners/sign-in?return=/partners`,
+   the partner named on the door, no loan, no cookie.
+2. The seeded `partner_admin` signs in — the echoed code, the password (set at enrolment on
+   the first walk against a seed, `WALK_PARTNER_PASSWORD` or its deterministic default;
+   entered on every later walk); Home opens under the partner's legal name from
+   `GET /v1/partner/me` with the nav in its fixed order and Admin; the cookie's flags.
+   Unseeded: "the seeded partner_admin is absent: dispatch seed_demo".
+3. Home shows the monitored count (12 after the seed) and the three bucket counts, equal to
+   `GET /v1/partner/home` through the page's proxy; the tape as-of and in-flight.
+4. Eligibility's three buckets sum to monitored − on hold; three tabs, the state filter and
+   no other; each tab lists its count.
+5. A monitored loan's page shows "Monitored — <legal name> remains servicer" with the name
+   the shell read, and no Pay, Escrow, Draft or other servicing control.
+6. The Serviced tab is visible and disabled with the 36.6 copy.
+7. Sign out returns to the door, the cookie is gone, a second fresh context sees the door.
+
+The tape re-upload and the `partner_ops` invitation of the local walk
+(`src/domain/servicing-partner-portal/36-app.walk.test.ts`, run at landing and in CI) are
+not repeated on the deployed demo: the fixture tape is built by a module `apps/partner` does
+not ship, and an invitation would leave a new person on the tenant after every deploy.
 
 ## The conversation trace (docs/ux/17 §6, DELTA-28's console view)
 

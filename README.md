@@ -41,9 +41,9 @@ Twenty-seven T-ids are retired by a dated owner decision in [docs/decisions/](do
 | The partner book | §33 | 69 / 69 | 3 / 3 |
 | The operator portal | §34 | 63 / 80 | 4 / 5 |
 | The operations runtime | §35 | 715 / 715 | 12 / 12 |
-| The servicing partner portal | §36 | 0 / 40 | 0 / 6 (specified, not built) |
+| The servicing partner portal | §36 | 40 / 40 | 6 / 6 |
 
-After every deploy a real browser walks the Apply product on the deployed demo and checks ten things a person must see work (`apps/borrower/tests/walk/demo-walk.mts`): the door, the account, a purchase to the underwriting run, a purchase still looking for a home, a cash-out refinance to the same run, errors shown in plain words, My Loan and Tasks, sign-out, the partner-book homeowner's door, and returns and deep links. A failed outcome fails the deploy. The walk takes about two and a half minutes and read ten of ten on the latest deploy. That walk, not the fractions, is the platform's claim that the surface works.
+After every deploy a real browser walks the Apply product on the deployed demo and checks ten things a person must see work (`apps/borrower/tests/walk/demo-walk.mts`): the door, the account, a purchase to the underwriting run, a purchase still looking for a home, a cash-out refinance to the same run, errors shown in plain words, My Loan and Tasks, sign-out, the partner-book homeowner's door, and returns and deep links. A failed outcome fails the deploy. The walk takes about two and a half minutes and read ten of ten on the latest deploy. That walk, not the fractions, is the platform's claim that the surface works. The same job then walks the partner portal at `/partners` (`apps/partner/tests/walk/partner-walk.mts`: the door, the seeded admin's sign-in, Home, Eligibility, a loan page's banner and Serviced tab, sign-out — seven outcomes, each recorded by name).
 
 ## What is here
 
@@ -59,7 +59,7 @@ After every deploy a real browser walks the Apply product on the deployed demo a
 
 **The operations runtime (section 35).** What takes a measured-complete spec from a demonstration to a platform that runs loans over time: the persistence seam and the typed record, documents and artifacts (the object store, the PDF writer, e-sign envelopes, print and mail manifests), cycles and jobs with receipts, month-end and year-end close, the installment schedule and the daily cashiering cycle (lockbox, ACH, NACHA returns), closing-to-delivery orchestration, operating roles and credentials for every person the spec names, operator work screens, default operations over time, the refinance close of the loop (the prior loan paid off, released and linked), operations stewardship with hosted measurement, and production posture (a production environment apart from nonprod, a vendor switch per integration, backups, the restore drill, the go-live checklist).
 
-**The servicing partner portal (section 36).** Specified, registered and scaffolded; nothing built yet. Partner users and roles under a tenant scope, the tape drop, an eligibility board, the refinance pipeline feed, the partner's home and reports, and the post-refinance serviced pane.
+**The servicing partner portal (section 36).** Partner users and roles under a tenant scope, the tape drop, an eligibility board, the refinance pipeline feed, the partner's home and reports, and the post-refinance serviced pane — on `/v1/partner/*` and the `/partners` app, its own Cloud Run service behind the load balancer, walked after every deploy.
 
 **Surfaces.**
 
@@ -68,7 +68,7 @@ After every deploy a real browser walks the Apply product on the deployed demo a
 | Apply | `/app` | the borrower product: Apply, Chat, My Loan, Tasks, Account; sign-in by code, password, passkey or Google (`apps/borrower`, Next.js) |
 | Video door | `/video` | a live call with Michelle that opens an account on the spot (a FAKE stage unless a Tavus key is set) |
 | Operator portal | `/ops` | staff sign-in, the directory, the partner book, clocks, escalations, agent decisions, the AI log, the work screens (`src/console`) |
-| Partner portal | `/partners` | the servicing partner's people: sign-in by code and password, the tape drop, the eligibility board, the refinance pipeline, the daily report, the partner's users (`apps/partner`, Next.js, over `/v1/partner/*`) |
+| Partner portal | `/partners` | the servicing partner's people: sign-in by code and password, the tape drop, the eligibility board, the refinance pipeline, the daily report, the partner's users (`apps/partner`, Next.js, over `/v1/partner/*`); deployed at `/partners` on the demo host as its own Cloud Run service behind the load balancer (`Dockerfile.partner`, `infra/terraform`), walked after every deploy by `apps/partner/tests/walk/partner-walk.mts` |
 | API | `/v1/*` | every command the surfaces use, the operator endpoints (transfers, partner-book imports, the sweep, the demo clock) |
 
 **Agents.** Forty named agents (`spec/registry/agents.json`), from boarding and cashiering to the refinance analyst, the readiness agent and the ops steward, each with an allowlist of tools, guardrails and a decision record per action. Decisions that matter (credit, selection, money) are deterministic engines with decision records; the model speaks to the borrower and explains the analyst's review, and a guard rejects any figure it types.
@@ -166,7 +166,7 @@ The process is spec-first and measured; the rules are in [CLAUDE.md](CLAUDE.md).
 
 ## Next
 
-1. The open spec units: 34.5 (the portal's information architecture and the accounts list, 5 of 22), 32.19-T18 (every rendered string a copy key, one test), and section 36, the servicing partner portal (40 units, spec only).
+1. The open spec units: 34.5 (the portal's information architecture and the accounts list, 5 of 22) and 32.19-T18 (every rendered string a copy key, one test).
 2. The Direct Integration transport to Desktop Underwriter, blocked on TSP onboarding and on Fannie Mae's DU Error Codes document; until then the port stays a FAKE that validates what it is sent.
 3. The real vendor adapters behind the 35.12 switches: one is written (the BAI2 lockbox reader); identity, credit, income and asset verification, rates, e-mail and SMS, print and mail, e-vault, MERS, e-OSCAR, RON, title and Google sign-in are not.
 4. The two arcs whose endpoints disagree in Fannie's ArcRoles tab (`UNDERWRITING_VERIFICATION` to `ASSET` and to `EMPLOYER`): a question for Fannie Mae, never a guess ([docs/du-graph.md](docs/du-graph.md)); and `COUNSELING_EVENT` on the graph before HomeReady is offered.

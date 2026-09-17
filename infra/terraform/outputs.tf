@@ -23,6 +23,16 @@ output "borrower_cloud_run_service_url" {
   value       = google_cloud_run_v2_service.borrower.uri
 }
 
+output "partner_url" {
+  description = "Public servicing partner portal URL (Next.js basePath /partners on the API/console hostname) once DNS and the certificate are in place."
+  value       = "https://${var.api_hostname}/partners"
+}
+
+output "partner_cloud_run_service_url" {
+  description = "The partner portal service's run.app URL. Not reachable from the internet (ingress is load-balancer only)."
+  value       = google_cloud_run_v2_service.partner.uri
+}
+
 output "cloud_run_service_url" {
   description = "The service's run.app URL. Not reachable from the internet (ingress is load-balancer only); shown for `gcloud` reference."
   value       = google_cloud_run_v2_service.api.uri

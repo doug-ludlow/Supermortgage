@@ -603,3 +603,85 @@ resource "google_cloud_run_v2_service_iam_member" "borrower_public_invoker" {
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
+
+# ---------------------------------------------------------------------------
+# HTTP service: the servicing partner portal (apps/partner — Next.js standalone, basePath /partners)
+# ---------------------------------------------------------------------------
+# Built from Dockerfile.partner by the deploy workflow's `build-partner` job. Served on the same
+# hostname as the API behind the load balancer; the URL map sends /partners/* here. Its server-side
+# cookie proxy forwards only /v1/partner/* to the API over HTTPS through the load balancer
+# (https://<api_hostname>) with the partner session as the bearer; it holds no API token and the
+# browser never holds a bearer (docs/partner-portal/00-CLAUDE-BUILD-INSTRUCTIONS.md §6).
+resource "google_cloud_run_v2_service" "partner" {
+  name     = "supermortgage-partner"
+  location = var.region
+
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+
+  deletion_protection = false
+
+  template {
+    service_account = google_service_account.partner.email
+
+    scaling {
+      min_instance_count = var.partner_min_instances
+      max_instance_count = var.partner_max_instances
+    }
+
+    containers {
+      image = var.image # placeholder until the workflow deploys the partner image
+
+      env {
+        name  = "API_BASE_URL"
+        value = "https://${var.api_hostname}"
+      }
+
+      env {
+        name  = "ENVIRONMENT"
+        value = var.environment
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+        cpu_idle          = true
+        startup_cpu_boost = true
+      }
+
+      startup_probe {
+        tcp_socket {
+          port = 8080
+        }
+        initial_delay_seconds = 0
+        period_seconds        = 5
+        timeout_seconds       = 3
+        failure_threshold     = 12
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image,
+      client,
+      client_version,
+    ]
+  }
+
+  depends_on = [
+    google_project_iam_member.partner_roles,
+  ]
+}
+
+# Same reasoning as the borrower service: ingress is load-balancer only, so allUsers at the
+# Cloud Run layer just lets the serverless NEG forward traffic; the door is public, the book is not
+# (every page past it needs the partner session the proxy carries).
+resource "google_cloud_run_v2_service_iam_member" "partner_public_invoker" {
+  project  = google_cloud_run_v2_service.partner.project
+  location = google_cloud_run_v2_service.partner.location
+  name     = google_cloud_run_v2_service.partner.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}

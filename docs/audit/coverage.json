@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8761/8787 (99.7%): tids 2458/2480, tables 852/852, timers 2097/2097, notices 309/309, tools 1575/1579, figures 1470/1470; processes at 100%: 208/212; retired 27; hosted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql), persisted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql)",
+ "brief": "spec units built 8769/8787 (99.8%): tids 2466/2480, tables 852/852, timers 2097/2097, notices 309/309, tools 1575/1579, figures 1470/1470; processes at 100%: 210/212; retired 27; hosted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql), persisted: not measured (stale: 0242_staff_oidc_append_only.sql vs 0243_36_partner_portal.sql)",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2458
+   "built": 2466
   },
   "tables": {
    "spec": 852,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8787,
-   "built": 8761
+   "built": 8769
   }
  },
  "exec_totals": {
@@ -437,9 +437,9 @@
   },
   "36": {
    "spec": 40,
-   "built": 32,
+   "built": 40,
    "processes": 6,
-   "done": 4
+   "done": 6
   }
  },
  "done": [
@@ -650,7 +650,9 @@
   "36.1",
   "36.2",
   "36.3",
-  "36.4"
+  "36.4",
+  "36.5",
+  "36.6"
  ],
  "processes": [
   {
@@ -11630,15 +11632,9 @@
    "title": "Home, the daily report and the two-mode loan page",
    "tids": {
     "spec": 5,
-    "built": 0,
-    "todo": 5,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5
-    ]
+    "built": 5,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -11678,9 +11674,9 @@
    },
    "units": {
     "spec": 5,
-    "built": 0
+    "built": 5
    },
-   "pct": 0.0,
+   "pct": 100.0,
    "retired": []
   },
   {
@@ -11688,13 +11684,9 @@
    "title": "The post-refinance serviced pane contract: dark in V1, one refusal everywhere",
    "tids": {
     "spec": 3,
-    "built": 0,
-    "todo": 3,
-    "missing": [
-     1,
-     2,
-     3
-    ]
+    "built": 3,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -11734,9 +11726,9 @@
    },
    "units": {
     "spec": 3,
-    "built": 0
+    "built": 3
    },
-   "pct": 0.0,
+   "pct": 100.0,
    "retired": []
   }
  ]

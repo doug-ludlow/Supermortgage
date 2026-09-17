@@ -28,6 +28,12 @@
  *   GET  /v1/partner/eligibility?bucket=&state=&on_hold=  every partner role  36.3: the board — { as_of_date, counts, loans: PartnerLoanRow[] } (./eligibility.ts); every other query key dropped unread
  *   GET  /v1/partner/pipeline                       every partner role    36.4: the feed — { items: PipelineItem[] } newest first (./pipeline.ts); no query key in V1
  *   GET  /v1/partner/pipeline/{loan_id}             every partner role    36.4: the member's { loan, stages, current, clocks }; another tenant's, the new active loan's or an unknown id → 404 NOT_FOUND
+ *   GET  /v1/partner/home                           every partner role    36.5 rule 1: { as_of_date, partner, book, eligibility, pipeline, latest_report_id } — counts of the tenant's rows (./home.ts)
+ *   GET  /v1/partner/reports/daily[?as_of=]         partner_admin, partner_auditor  36.5 rule 2: 34.3's report row for the tenant and the day (404 for a day with no row), or the tenant's rows newest first;
+ *                                                                         a partner_ops-only session → 403 ROLE_REQUIRED{role: partner_auditor, act_as: []} before any read
+ *   GET  /v1/partner/reports/daily/export?as_of=&format=json|csv  partner_admin, partner_auditor  36.5 rule 3: the stored row as a file — a read, no documents row, no newer report row
+ *   GET  /v1/partner/loans/{id}                     every partner role    36.5 rules 4–10: PartnerLoanDetail — the banner, the page's bucket, the stage, the row, the histories, `serviced`; another tenant's → 404
+ *   GET  /v1/partner/loans/{id}/serviced[/...]      every partner role    36.6 rule 1: the tenant rule first (404), then 409 { available: false, code: SERVICED_PANE_NOT_BUILT } for every loan, every status, every path beneath
  *
  * Rule 3 on every session route: the request may name a held role (body `role` or `?role=`); a read falls back to the
  * least-privileged accepted held role and answers `acted_as`; an act is 403 ROLE_REQUIRED{role, held, act_as} before any write.
@@ -44,12 +50,14 @@ import type { Runtime } from "../app.ts";
 import type { Logger } from "../log.ts";
 import { PartnerAuth, type PartnerContext, type PartnerAuthOptions } from "./auth.ts";
 import { PgPartnerRepository, type PartnerActionInput } from "./repo.ts";
-import { PartnerError, chooseRole, defaultRole, ADMIN_ROLES, READ_ROLES, type PartnerRole, type RoleMode } from "./roles.ts";
-import { tenantLoan } from "./scope.ts";
+import { PartnerError, chooseRole, defaultRole, ADMIN_ROLES, EXPORT_ROLES, READ_ROLES, type PartnerRole, type RoleMode } from "./roles.ts";
+import { tenantLoan, tenantLoanRow } from "./scope.ts";
 import { firstNameLastInitial } from "./mask.ts";
 import { BOOK_COPY, maskReportNumbers as maskFor, partnerHolds, partnerImport, partnerImportInputOf, partnerImportReport, partnerImports, partnerStatus } from "./book.ts";
 import { eligibilityQueryFromUrl, partnerEligibility } from "./eligibility.ts";
 import { partnerPipeline, partnerPipelineLoan } from "./pipeline.ts";
+import { partnerDailyReport, partnerDailyReportExport, partnerDailyReports, partnerHome, partnerLoanDetail } from "./home.ts";
+import { SERVICED_PANE_STATUS, SERVICED_REFUSAL } from "../../domain/servicing-partner-portal/serviced.ts";
 export { firstNameLastInitial };
 
 export const PARTNER_PREFIX = "/v1/partner/";
@@ -57,6 +65,9 @@ const PROCESS_36_1 = "36.1";
 type Json = Record<string, unknown>;
 const plain = (_k: string, v: unknown): unknown => (typeof v === "bigint" ? v.toString() : v);
 const sendJson = (res: ServerResponse, status: number, body: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(JSON.stringify(body, plain)); };
+/** 36.5 rule 3: a stored row answered as a file (the export) — the bytes as they are, named for the download; still one log row, still no documents row. */
+type RawFile = { readonly content_type: string; readonly filename: string; readonly content: string };
+const sendRaw = (res: ServerResponse, status: number, f: RawFile): void => { res.writeHead(status, { "content-type": f.content_type, "content-disposition": `attachment; filename="${f.filename.replace(/["\\]/g, "")}"`, "cache-control": "no-store" }); res.end(f.content); };
 const MAX_BODY = 1024 * 1024;
 async function readJson(req: IncomingMessage): Promise<Json> {
   const chunks: Buffer[] = []; let size = 0;
@@ -78,7 +89,7 @@ export interface PartnerRouterOptions extends Omit<PartnerAuthOptions, "runtime"
 export interface PartnerRouter { handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean>; readonly auth: PartnerAuth }
 
 /** A route's answer: the status, the body, and what the log row records. */
-interface Answer { readonly status: number; readonly body: unknown; readonly subject?: { kind: string; id: string | null }; readonly command?: string; readonly acted_as?: string }
+interface Answer { readonly status: number; readonly body: unknown; readonly subject?: { kind: string; id: string | null }; readonly command?: string; readonly acted_as?: string; readonly raw?: RawFile }
 
 export function createPartnerRouter(opts: PartnerRouterOptions): PartnerRouter {
   const { runtime, logger } = opts;
@@ -89,6 +100,8 @@ export function createPartnerRouter(opts: PartnerRouterOptions): PartnerRouter {
   const actAs = (ctx: PartnerContext, required: readonly PartnerRole[], preferred: string | null, mode: RoleMode): string => chooseRole(ctx.user.roles, required, preferred, { mode });
   /** The partner actor on the bus (rule 2 / Verified requirement): `{human, partner_user_id, role}` — never a staff role. */
   const actorOf = (ctx: PartnerContext, role: string): Actor => ({ kind: "human", id: ctx.user.id, role });
+  /** 36.6 rule 6: the loan is the tenant's or it does not exist — read on the `loans` row itself (no facts row needed: the new active loan is the tenant's too); nothing of sections 2–19 is read (rule 3). */
+  const partnerServicedLoan = async (ctx: PartnerContext, loanId: string): Promise<void> => { await tenantLoanRow(runtime, ctx.session, loanId); };
 
   async function handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean> {
     const path = url.pathname;
@@ -97,7 +110,7 @@ export function createPartnerRouter(opts: PartnerRouterOptions): PartnerRouter {
     const log: { user: string | null; tenant: string | null; role: string | null; action: string; subject_kind: string | null; subject_id: string | null } = { user: null, tenant: null, role: null, action: "partner_portal.door", subject_kind: null, subject_id: null };
     /** What a route records before it does anything that can refuse (rule 5: the refused row names the subject asked for — 36.1-T3). */
     const note = (n: { subject?: { kind: string; id: string | null }; command?: string; acted_as?: string }): void => { if (n.command) log.action = n.command; if (n.subject) { log.subject_kind = n.subject.kind; log.subject_id = n.subject.id; } if (n.acted_as) log.role = n.acted_as; };
-    let answer: { status: number; body: unknown; code: string | null };
+    let answer: { status: number; body: unknown; code: string | null; raw?: RawFile };
     try {
       const preferred = url.searchParams.get("role");
       // ───────── the doors (no session)
@@ -121,7 +134,7 @@ export function createPartnerRouter(opts: PartnerRouterOptions): PartnerRouter {
         log.user = ctx.user.id; log.tenant = ctx.session.partner_party_id; log.action = "partner_portal.viewed";
         const a = await route(ctx, method, path, url, preferred, req, note);
         note(a);
-        answer = { status: a.status, body: a.body, code: a.status >= 400 ? ((a.body as { code?: unknown } | null)?.code as string | undefined) ?? (a.status === 404 ? "NOT_FOUND" : "REFUSED") : null };
+        answer = { status: a.status, body: a.body, code: a.status >= 400 ? ((a.body as { code?: unknown } | null)?.code as string | undefined) ?? (a.status === 404 ? "NOT_FOUND" : "REFUSED") : null, ...(a.raw ? { raw: a.raw } : {}) };
       }
     } catch (e) {
       if (e instanceof PartnerError) { if (e.code === "ROLE_REQUIRED" && typeof e.extra["role"] === "string") log.role = e.extra["role"] as string; answer = { status: e.status, body: { error: e.code.toLowerCase(), code: e.code, reason: e.message, ...e.extra }, code: e.logCode }; }
@@ -133,7 +146,7 @@ export function createPartnerRouter(opts: PartnerRouterOptions): PartnerRouter {
     // rule 5: one row per request, on the log BEFORE the answer is on the wire — ids and the role only (the query string is never on the row: a filter's text is never logged)
     const row: PartnerActionInput = { at, partner_user_id: log.user, partner_party_id: log.tenant, role: log.role, action: log.action, subject_kind: log.subject_kind, subject_id: log.subject_id, result: answer.status >= 400 ? "refused" : "ok", refusal_code: answer.status >= 400 ? answer.code ?? "REFUSED" : null };
     try { await repo.logAction(row); } catch (e) { logger.error("partner.action_log.failed", { method, path, error: e }); }
-    sendJson(res, answer.status, answer.body);
+    if (answer.raw) sendRaw(res, answer.status, answer.raw); else sendJson(res, answer.status, answer.body);
     logger.info("http", { method, path, status: answer.status, ms: Date.now() - started, surface: "partner", ...(answer.code ? { refused: answer.code } : {}) });
     return true;
   }
@@ -242,6 +255,49 @@ export function createPartnerRouter(opts: PartnerRouterOptions): PartnerRouter {
       const subject = { kind: "pipeline.loan", id: UUID.test(loanId) ? loanId : null }; note({ subject, acted_as: role });
       if (!UUID.test(loanId)) throw new PartnerError(404, "NOT_FOUND", "no such loan");
       return { status: 200, acted_as: role, subject, body: { ...(await partnerPipelineLoan(runtime, ctx.session, loanId, role, now)), acted_as: role } };
+    }
+    // ───────── 36.5 rule 1: Home — every partner role reads it; counts of the tenant's rows the owners keep (33.1's line, 34.3's counts, 36.3's board, 36.4's feed, the newest report row)
+    if (method === "GET" && rest === "home") {
+      const role = actAs(ctx, READ_ROLES, preferred, "read");
+      const subject = { kind: "home", id: ctx.session.partner_party_id }; note({ subject, acted_as: role });
+      return { status: 200, acted_as: role, subject, body: { ...(await partnerHome(runtime, ctx.session, now)), acted_as: role } };
+    }
+    // ───────── 36.5 rules 2–3: the daily report — partner_admin and partner_auditor (36.1 rule 2); a partner_ops-only session is 403 ROLE_REQUIRED{role: partner_auditor, act_as: []} before any read
+    // (Edge cases); the row is 34.3's for the tenant and the day (404 for a day with no row — never produced here, Open question 3); the export is the stored row as a file (no documents row)
+    if (method === "GET" && (rest === "reports/daily" || rest === "reports/daily/export")) {
+      const exporting = rest.endsWith("/export");
+      note({ subject: { kind: exporting ? "report.export" : "report", id: null } });
+      const role = actAs(ctx, EXPORT_ROLES, preferred, "read");
+      const asOf = url.searchParams.get("as_of");
+      if (exporting) {
+        if (asOf === null) throw new RangeError("as_of is required (YYYY-MM-DD)");
+        const x = await partnerDailyReportExport(runtime, ctx.session, asOf, url.searchParams.get("format"));   // another tenant's day or a day with no row → 404 NOT_FOUND
+        const subject = { kind: "report.export", id: x.report_id }; note({ subject, acted_as: role });
+        return { status: 200, acted_as: role, subject, body: { report_id: x.report_id, as_of_date: x.as_of_date, format: x.format, byte_size: x.byte_size, acted_as: role }, raw: { content_type: x.content_type, filename: x.filename, content: x.content } };
+      }
+      if (asOf === null) {
+        const subject = { kind: "reports", id: ctx.session.partner_party_id }; note({ subject, acted_as: role });
+        return { status: 200, acted_as: role, subject, body: { ...(await partnerDailyReports(runtime, ctx.session)), acted_as: role } };
+      }
+      const r = await partnerDailyReport(runtime, ctx.session, asOf);
+      const subject = { kind: "report", id: r.id }; note({ subject, acted_as: role });
+      return { status: 200, acted_as: role, subject, body: { ...r, acted_as: role } };
+    }
+    // ───────── 36.6 rule 1: the serviced pane — the tenant rule first (another tenant's, an unknown or a malformed id: 404 NOT_FOUND, rule 6), then the one refusal for every loan of the tenant whatever its
+    // status, under every role, on the route and every path beneath it (V2's module paths are covered before they are named — Open question 1); no other method is routed (the ordinary 404 below)
+    if (method === "GET" && (m = /^loans\/([^/]+)\/serviced(?:\/.*)?$/.exec(rest))) {
+      const role = actAs(ctx, READ_ROLES, preferred, "read");
+      const loanId = decodeURIComponent(m[1]!);
+      const subject = { kind: "serviced", id: UUID.test(loanId) ? loanId : null }; note({ subject, acted_as: role });
+      await partnerServicedLoan(ctx, loanId);
+      return { status: SERVICED_PANE_STATUS, acted_as: role, subject, body: { ...SERVICED_REFUSAL } };
+    }
+    // ───────── 36.5 rules 4–10: the two-mode loan page — every partner role (the full servicer loan number for partner_admin / partner_ops, the last four for partner_auditor); another tenant's loan or an unknown id → 404
+    if (method === "GET" && (m = /^loans\/([^/]+)$/.exec(rest))) {
+      const role = actAs(ctx, READ_ROLES, preferred, "read");
+      const loanId = decodeURIComponent(m[1]!);
+      const subject = { kind: "loan", id: UUID.test(loanId) ? loanId : null }; note({ subject, acted_as: role });
+      return { status: 200, acted_as: role, subject, body: { ...(await partnerLoanDetail(runtime, ctx.session, loanId, role, now)), acted_as: role } };
     }
     const fallback = defaultRole(ctx.user.roles);
     return { status: 404, body: { error: "not_found", code: "NOT_FOUND", reason: "no such partner route" }, subject: { kind: "route", id: null }, ...(fallback ? { acted_as: fallback } : {}) };

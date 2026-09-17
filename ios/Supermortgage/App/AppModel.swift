@@ -49,7 +49,7 @@ final class AppModel: ObservableObject {
     init(clock: AppClock = RealClock(), runsTimers: Bool = true) {
         self.clock = clock
         self.runsTimers = runsTimers
-        self.router = Router(clock: clock)
+        self.router = Router(clock: clock, autoClearsToasts: runsTimers)
     }
 
     // MARK: - Derived numbers

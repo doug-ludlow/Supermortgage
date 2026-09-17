@@ -11,9 +11,12 @@ final class Router: ObservableObject {
 
     private var toastTask: Task<Void, Never>?
     private let clock: AppClock
+    /// False in unit tests, where the last toast must stay readable.
+    private let autoClearsToasts: Bool
 
-    init(clock: AppClock = RealClock()) {
+    init(clock: AppClock = RealClock(), autoClearsToasts: Bool = true) {
         self.clock = clock
+        self.autoClearsToasts = autoClearsToasts
     }
 
     func present(_ kind: SheetKind) {
@@ -28,6 +31,7 @@ final class Router: ObservableObject {
     func toast(_ text: String) {
         toastText = text
         toastTask?.cancel()
+        guard autoClearsToasts else { return }
         toastTask = Task { [weak self] in
             guard let self else { return }
             do { try await self.clock.sleep(ms: 2200) } catch { return }

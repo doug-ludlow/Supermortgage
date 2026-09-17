@@ -28,6 +28,8 @@
  *                                                     channels.ts renders copy from docs/ux/12)
  *   apps/borrower/**                               → the app's own gates (apps/borrower typecheck, lint, test:unit);
  *                                                     the Chromium suites only with --browser
+ *   apps/partner/**                                → the app's own gates (apps/partner typecheck, lint, test:unit);
+ *                                                     its walk suite (36-app.walk) only with --browser
  *   other spec/**, docs/**, *.md                   → nothing
  *   anything else under src/** or tools/**\/*.ts   → everything (unknown reach is treated as total reach)
  *   anything else                                  → nothing
@@ -73,6 +75,7 @@ for (const m of block[1].matchAll(/(\d+)\s*:\s*\[([^\]]*)\]/g)) {
 const EVERYTHING = "src/**/*.test.ts";
 const RUNTIME_SUITES = ["src/runtime/**/*.test.ts", "src/console/*.test.ts"];
 const CHROMIUM_SUITES = ["src/domain/borrower/32-13.spec.test.ts", "src/domain/borrower/32-16.rail.spec.test.ts", "src/domain/borrower/32-17.spec.test.ts", "src/domain/borrower/32-19.spec.test.ts"];
+const PARTNER_CHROMIUM_SUITES = ["src/domain/servicing-partner-portal/36-app.walk.test.ts"];
 const decisions = []; // { file, reason, suites: string[] | "everything" | [] }
 for (const file of changed) {
   let d;
@@ -89,7 +92,8 @@ for (const file of changed) {
   else if (/^src\/(runtime|console)\//.test(file)) d = { reason: "runtime/console", suites: RUNTIME_SUITES };
   else if (/^spec\/sections\//.test(file)) d = { reason: "a process file: the agent turn reads its rules (src/runtime/borrower/agent/rules.ts)", suites: RUNTIME_SUITES };
   else if (file === "docs/ux/12-message-copy-library.md") d = { reason: "the copy library channels.ts renders from", suites: RUNTIME_SUITES };
-  else if (/^apps\/borrower\//.test(file)) d = { reason: "borrower app: its own typecheck, lint and unit tests (the Chromium suites only with --browser)", suites: withBrowser ? CHROMIUM_SUITES : [], app: true };
+  else if (/^apps\/borrower\//.test(file)) d = { reason: "borrower app: its own typecheck, lint and unit tests (the Chromium suites only with --browser)", suites: withBrowser ? CHROMIUM_SUITES : [], app: "apps/borrower" };
+  else if (/^apps\/partner\//.test(file)) d = { reason: "partner app: its own typecheck, lint and unit tests (the walk suite only with --browser)", suites: withBrowser ? PARTNER_CHROMIUM_SUITES : [], app: "apps/partner" };
   else if (/^(spec|docs)\//.test(file) || /\.md$/.test(file)) d = { reason: "spec/docs/markdown the runtime does not read: no suite", suites: [] };
   else if (/^src\//.test(file) || /^tools\/.*\.ts$/.test(file)) d = { reason: "unknown reach under src/ or tools/: reaches every suite", suites: "everything" };
   else d = { reason: "outside the test surface: no suite", suites: [] };
@@ -103,7 +107,7 @@ const expanded = [...new Set(patterns.flatMap((p) => globSync(p, { cwd: root }))
 const isBrowser = (f) => /\bacquireBrowserLock\b/.test(readFileSync(new URL(f, new URL("../", import.meta.url)), "utf8"));
 const browserSuites = withBrowser ? [] : expanded.filter(isBrowser);
 const suites = expanded.filter((f) => !browserSuites.includes(f));
-const appGates = decisions.some((d) => d.app);
+const appGates = [...new Set(decisions.map((d) => d.app).filter(Boolean))].sort();
 
 // --- report ----------------------------------------------------------------------------------------------
 console.log(`affected-tests: ${changed.length} changed file(s) (${explicit !== -1 ? "from --files" : `git diff ${base} + working tree`})`);
@@ -112,7 +116,7 @@ if (browserSuites.length) console.log(`left out (browser-driven; run at landing 
 if (everything) console.log(`decision: run every non-browser suite (${suites.length} files)`);
 else if (suites.length) console.log(`decision: run ${suites.length} suite(s):\n  ${suites.join("\n  ")}`);
 else console.log("decision: no suite reached; typecheck and the audit ratchet still run");
-if (appGates) console.log("apps/borrower changed: npm run typecheck && npm run lint && npm run test:unit in apps/borrower");
+for (const app of appGates) console.log(`${app} changed: npm run typecheck && npm run lint && npm run test:unit in ${app}`);
 console.log("always: npm run typecheck; python3 tools/audit.py --check");
 if (listOnly) process.exit(0);
 
@@ -123,7 +127,7 @@ function run(cmd, args) {
   if (r.status !== 0) { console.error(`affected-tests: ${cmd} exited ${r.status}`); process.exit(r.status ?? 1); }
 }
 if (suites.length) run("node", ["--test", "--experimental-strip-types", ...suites]);
-if (appGates) for (const script of ["typecheck", "lint", "test:unit"]) run("npm", ["--prefix", "apps/borrower", "run", script]);
+for (const app of appGates) for (const script of ["typecheck", "lint", "test:unit"]) run("npm", ["--prefix", app, "run", script]);
 run("npm", ["run", "typecheck"]);
 run("python3", ["tools/audit.py", "--check"]);
 console.log("\naffected-tests: all gates passed");

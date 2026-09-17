@@ -1,0 +1,68 @@
+name: Supermortgage
+options:
+  bundleIdPrefix: com.supermortgage
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+  configs:
+    Debug:
+      ENABLE_TESTABILITY: "YES"
+targets:
+  Supermortgage:
+    type: application
+    platform: iOS
+    sources:
+      - path: Supermortgage
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.supermortgage.app
+        PRODUCT_NAME: Supermortgage
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: Supermortgage
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: "YES"
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_EMIT_LOC_STRINGS: "YES"
+    scheme:
+      testTargets:
+        - SupermortgageTests
+        - SupermortgageUITests
+      gatherCoverageData: false
+  SupermortgageTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SupermortgageTests
+    dependencies:
+      - target: Supermortgage
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.supermortgage.app.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+  SupermortgageUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: SupermortgageUITests
+    dependencies:
+      - target: Supermortgage
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.supermortgage.app.uitests
+        GENERATE_INFOPLIST_FILE: "YES"

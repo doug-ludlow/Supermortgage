@@ -1,0 +1,60 @@
+name: iOS
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test (XcodeGen project)
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)
+          echo "Using $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/Supermortgage.xcodeproj -scheme Supermortgage \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -only-testing:SupermortgageTests \
+            test
+      - name: The walk
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/Supermortgage.xcodeproj -scheme Supermortgage \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -only-testing:SupermortgageUITests \
+            test
+
+  build-committed-project:
+    name: Build (committed .xcodeproj, no tooling)
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+      - name: Build the app and both test bundles from the committed project
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/Supermortgage.xcodeproj -scheme Supermortgage \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            build-for-testing
